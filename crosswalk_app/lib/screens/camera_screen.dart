@@ -42,35 +42,49 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   Future<void> _initCamera() async {
-    final status = await Permission.camera.request();
-    if (!status.isGranted) {
-      setState(() => _statusLabel = '카메라 권한이 필요합니다');
-      return;
+    try {
+      final status = await Permission.camera.request();
+      if (!status.isGranted) {
+        setState(() => _statusLabel = '카메라 권한이 필요합니다');
+        return;
+      }
+
+      setState(() => _statusLabel = '모델 로딩 중...');
+      await _classifier.init();
+
+      setState(() => _statusLabel = '카메라 연결 중...');
+      await _feedback.init();
+
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        setState(() => _statusLabel = '카메라를 찾을 수 없습니다');
+        return;
+      }
+
+      final back = cameras.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.back,
+        orElse: () => cameras.first,
+      );
+
+      _controller = CameraController(
+        back,
+        ResolutionPreset.medium,
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.yuv420,
+      );
+
+      await _controller!.initialize();
+      await _controller!.lockCaptureOrientation();
+
+      if (!mounted) return;
+
+      _controller!.startImageStream(_onFrame);
+      setState(() => _statusLabel = '감지 중...');
+    } catch (e) {
+      if (mounted) {
+        setState(() => _statusLabel = '오류: $e');
+      }
     }
-
-    await _classifier.init();
-    await _feedback.init();
-
-    final cameras = await availableCameras();
-    final back = cameras.firstWhere(
-      (c) => c.lensDirection == CameraLensDirection.back,
-      orElse: () => cameras.first,
-    );
-
-    _controller = CameraController(
-      back,
-      ResolutionPreset.medium,
-      enableAudio: false,
-      imageFormatGroup: ImageFormatGroup.yuv420,
-    );
-
-    await _controller!.initialize();
-    await _controller!.lockCaptureOrientation();
-
-    if (!mounted) return;
-
-    _controller!.startImageStream(_onFrame);
-    setState(() => _statusLabel = '감지 중...');
   }
 
   void _onFrame(CameraImage image) {
