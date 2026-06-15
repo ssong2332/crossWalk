@@ -13,11 +13,12 @@ model.load_state_dict(torch.load(MODEL_PT, map_location="cpu"))
 model.eval()
 
 dummy = torch.randn(1, 3, IMG_SIZE, IMG_SIZE)
+# dynamo=False: 구형 TorchScript 기반 exporter 사용 → IR version 8 (모바일 호환)
 torch.onnx.export(
     model, dummy, ONNX_OUT,
     input_names=["input"],
     output_names=["output"],
-    dynamic_axes={"input": {0: "batch"}, "output": {0: "batch"}},
-    opset_version=17,
+    opset_version=12,
+    dynamo=False,
 )
 print(f"ONNX 저장 완료: {ONNX_OUT}")
