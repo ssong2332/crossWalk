@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 import 'package:camera/camera.dart';
-import 'package:tflite_flutter/tflite_flutter.dart';
+import 'package:onnxruntime/onnxruntime.dart';
 import 'package:image/image.dart' as img;
 
 class ClassificationResult {
@@ -16,15 +16,19 @@ class Classifier {
   static const _confidenceThreshold = 0.70;
   static const _throttleFrames = 10;
 
-  Interpreter? _interpreter;
+  OrtSession? _session;
   int _frameCount = 0;
   final List<List<double>> _recentProbs = [];
 
   Future<void> init() async {
-    _interpreter = await Interpreter.fromAsset('assets/model/crosswalk_model.tflite');
+    OrtEnv.instance.init();
+    final sessionOptions = OrtSessionOptions();
+    _session = await OrtSession.fromAsset(
+      'assets/model/crosswalk_model.onnx',
+      sessionOptions,
+    );
   }
 
-  // 10프레임마다 1회 추론, 5회 평균 스무딩
   ClassificationResult? processFrame(CameraImage cameraImage) {
     _frameCount++;
     if (_frameCount % _throttleFrames != 0) return null;
@@ -32,16 +36,27 @@ class Classifier {
     final input = _preprocessCamera(cameraImage);
     if (input == null) return null;
 
-    final output = List.filled(1 * _labels.length, 0.0).reshape([1, _labels.length]);
-    _interpreter!.run(input, output);
+    final inputTensor = OrtValueTensor.createTensorWithDataList(
+      input,
+      [1, 3, _inputSize, _inputSize],
+    );
+    final runOptions = OrtRunOptions();
+    final outputs = _session!.run(runOptions, {'input': inputTensor});
+    inputTensor.release();
+    runOptions.release();
 
-    final probs = List<double>.from(output[0] as List);
+    if (outputs == null || outputs.isEmpty) return null;
+
+    final outputTensor = outputs.first as OrtValueTensor;
+    final rawOutput = outputTensor.value as List;
+    final probs = (rawOutput.first as List).map((e) => (e as double)).toList();
+    outputTensor.release();
+
     _recentProbs.add(probs);
     if (_recentProbs.length > _smoothingWindow) {
       _recentProbs.removeAt(0);
     }
 
-    // 최근 N회 평균
     final avgProbs = List<double>.filled(_labels.length, 0.0);
     for (final p in _recentProbs) {
       for (int i = 0; i < _labels.length; i++) {
@@ -58,7 +73,7 @@ class Classifier {
     return ClassificationResult(_labels[bestIdx], avgProbs[bestIdx]);
   }
 
-  List<List<List<List<double>>>>? _preprocessCamera(CameraImage image) {
+  Float32List? _preprocessCamera(CameraImage image) {
     try {
       img.Image? decoded;
 
@@ -77,22 +92,21 @@ class Classifier {
 
       final resized = img.copyResize(decoded, width: _inputSize, height: _inputSize);
 
-      // ImageNet 정규화
+      // NCHW 포맷 [1, 3, 224, 224] + ImageNet 정규화
       const mean = [0.485, 0.456, 0.406];
       const std = [0.229, 0.224, 0.225];
 
-      return List.generate(1, (_) =>
-        List.generate(_inputSize, (y) =>
-          List.generate(_inputSize, (x) {
-            final pixel = resized.getPixel(x, y);
-            return [
-              (pixel.r / 255.0 - mean[0]) / std[0],
-              (pixel.g / 255.0 - mean[1]) / std[1],
-              (pixel.b / 255.0 - mean[2]) / std[2],
-            ];
-          })
-        )
-      );
+      final buffer = Float32List(3 * _inputSize * _inputSize);
+      for (int y = 0; y < _inputSize; y++) {
+        for (int x = 0; x < _inputSize; x++) {
+          final pixel = resized.getPixel(x, y);
+          final idx = y * _inputSize + x;
+          buffer[0 * _inputSize * _inputSize + idx] = (pixel.r / 255.0 - mean[0]) / std[0];
+          buffer[1 * _inputSize * _inputSize + idx] = (pixel.g / 255.0 - mean[1]) / std[1];
+          buffer[2 * _inputSize * _inputSize + idx] = (pixel.b / 255.0 - mean[2]) / std[2];
+        }
+      }
+      return buffer;
     } catch (_) {
       return null;
     }
@@ -124,6 +138,7 @@ class Classifier {
   }
 
   void dispose() {
-    _interpreter?.close();
+    _session?.release();
+    OrtEnv.instance.release();
   }
 }

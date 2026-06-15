@@ -30,13 +30,14 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: TFLite 모델 파일 확인
+      - name: ONNX 모델 파일 확인
         run: |
-          if [ ! -f "crosswalk_app/assets/model/crosswalk_model.tflite" ]; then
+          if [ ! -f "crosswalk_app/assets/model/crosswalk_model.onnx" ]; then
             echo "⚠️  모델 파일 없음 - 더미 파일로 빌드 진행"
-            echo "placeholder" > crosswalk_app/assets/model/crosswalk_model.tflite
+            echo "placeholder" > crosswalk_app/assets/model/crosswalk_model.onnx
           else
-            echo "✅ 모델 파일 존재"
+            SIZE=$(du -sh crosswalk_app/assets/model/crosswalk_model.onnx | cut -f1)
+            echo "✅ ONNX 모델 존재 ($SIZE)"
           fi
 
       - name: Flutter 패키지 설치
