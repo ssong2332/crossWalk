@@ -1,0 +1,8 @@
+torch>=2.3.0
+torchvision>=0.18.0
+onnx>=1.16.0
+onnx2tf>=1.20.0
+numpy
+pillow
+scikit-learn
+matplotlib

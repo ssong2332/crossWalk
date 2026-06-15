@@ -1,0 +1,32 @@
+# 학습 데이터 (대용량)
+image/
+
+# 학습 중간 데이터
+train/data_prepared/
+
+# 학습된 모델 바이너리
+model/
+crosswalk_app/assets/model/*.tflite
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Flutter
+crosswalk_app/.dart_tool/
+crosswalk_app/.flutter-plugins
+crosswalk_app/.flutter-plugins-dependencies
+crosswalk_app/build/
+crosswalk_app/.packages
+
+# Android
+crosswalk_app/android/.gradle/
+crosswalk_app/android/local.properties
+crosswalk_app/android/key.properties
+*.jks
+
+# IDE
+.idea/
+.vscode/
+*.iml

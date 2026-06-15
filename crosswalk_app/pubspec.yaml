@@ -1,0 +1,29 @@
+name: crosswalk_app
+description: 시각 장애인을 위한 횡단보도 이탈 감지 앱
+
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  camera: ^0.11.0+2
+  tflite_flutter: ^0.10.4
+  flutter_tts: ^4.0.2
+  vibration: ^2.0.0
+  image: ^4.1.7
+  permission_handler: ^11.3.0
+  wakelock_plus: ^1.2.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/model/
