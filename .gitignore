@@ -4,8 +4,9 @@ image/
 # 학습 중간 데이터
 train/data_prepared/
 
-# 학습된 모델 바이너리
-model/
+# 학습된 모델 바이너리 (루트 model 폴더)
+/model/
+# Flutter assets 내 tflite 파일만 제외 (디렉토리는 유지)
 crosswalk_app/assets/model/*.tflite
 
 # Python
