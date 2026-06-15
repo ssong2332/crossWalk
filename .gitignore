@@ -14,6 +14,9 @@ __pycache__/
 *.py[cod]
 *.pyo
 
+# Flutter scaffold (임시 생성 폴더)
+crosswalk_app_scaffold/
+
 # Flutter
 crosswalk_app/.dart_tool/
 crosswalk_app/.flutter-plugins

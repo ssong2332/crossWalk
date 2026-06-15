@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:camera/camera.dart';
+import 'package:flutter/services.dart';
 import 'package:onnxruntime/onnxruntime.dart';
 import 'package:image/image.dart' as img;
 
@@ -22,11 +23,9 @@ class Classifier {
 
   Future<void> init() async {
     OrtEnv.instance.init();
-    final sessionOptions = OrtSessionOptions();
-    _session = await OrtSession.fromAsset(
-      'assets/model/crosswalk_model.onnx',
-      sessionOptions,
-    );
+    final rawAsset = await rootBundle.load('assets/model/crosswalk_model.onnx');
+    final bytes = rawAsset.buffer.asUint8List();
+    _session = OrtSession.fromBuffer(bytes, OrtSessionOptions());
   }
 
   ClassificationResult? processFrame(CameraImage cameraImage) {
