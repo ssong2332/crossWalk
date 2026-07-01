@@ -38,6 +38,12 @@ class FeedbackService {
     }
   }
 
+  // 앱 초기화 실패 시 사용자에게 오류 상황을 음성으로 안내
+  Future<void> announceError(String message) async {
+    await _tts.stop();
+    await _tts.speak(message);
+  }
+
   Future<void> dispose() async {
     await _tts.stop();
   }

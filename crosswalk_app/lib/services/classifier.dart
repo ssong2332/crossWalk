@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:camera/camera.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:onnxruntime/onnxruntime.dart';
 import 'package:image/image.dart' as img;
@@ -10,12 +11,24 @@ class ClassificationResult {
   const ClassificationResult(this.label, this.confidence);
 }
 
+class ModelIntegrityException implements Exception {
+  final String message;
+  const ModelIntegrityException(this.message);
+  @override
+  String toString() => message;
+}
+
 class Classifier {
   static const _labels = ['front', 'left', 'right'];
   static const _inputSize = 224;
   static const _smoothingWindow = 5;
-  static const _confidenceThreshold = 0.70;
-  static const _throttleFrames = 10;
+
+  // 이탈(left/right)은 민감하게, 정상(front) 확인은 엄격하게
+  static const _deviationThreshold = 0.55;
+  static const _frontThreshold = 0.85;
+
+  // 10 → 5: 약 6fps@30fps, 이탈 감지 지연 단축
+  static const _throttleFrames = 5;
 
   OrtSession? _session;
   int _frameCount = 0;
@@ -25,7 +38,30 @@ class Classifier {
     OrtEnv.instance.init();
     final rawAsset = await rootBundle.load('assets/model/crosswalk_model.onnx');
     final bytes = rawAsset.buffer.asUint8List();
+    await _verifyModelIntegrity(bytes);
     _session = OrtSession.fromBuffer(bytes, OrtSessionOptions());
+  }
+
+  Future<void> _verifyModelIntegrity(Uint8List modelBytes) async {
+    try {
+      final hashFile = await rootBundle.loadString(
+        'assets/model/crosswalk_model.onnx.sha256',
+      );
+      final expectedHash = hashFile.trim();
+
+      // placeholder 해시이거나 형식이 다르면 검증 건너뜀 (더미 빌드 / 개발 환경)
+      if (expectedHash.length != 64 || expectedHash == 'placeholder_hash') return;
+
+      final actualHash = sha256.convert(modelBytes).toString();
+      if (actualHash != expectedHash) {
+        throw ModelIntegrityException(
+          '모델 파일이 손상되었거나 변조되었습니다. 앱을 다시 설치해주세요.',
+        );
+      }
+    } catch (e) {
+      if (e is ModelIntegrityException) rethrow;
+      // 해시 파일 없음 → 개발 환경, 건너뜀
+    }
   }
 
   ClassificationResult? processFrame(CameraImage cameraImage) {
@@ -52,9 +88,7 @@ class Classifier {
     outputTensor.release();
 
     _recentProbs.add(probs);
-    if (_recentProbs.length > _smoothingWindow) {
-      _recentProbs.removeAt(0);
-    }
+    if (_recentProbs.length > _smoothingWindow) _recentProbs.removeAt(0);
 
     final avgProbs = List<double>.filled(_labels.length, 0.0);
     for (final p in _recentProbs) {
@@ -68,8 +102,12 @@ class Classifier {
       if (avgProbs[i] > avgProbs[bestIdx]) bestIdx = i;
     }
 
-    if (avgProbs[bestIdx] < _confidenceThreshold) return null;
-    return ClassificationResult(_labels[bestIdx], avgProbs[bestIdx]);
+    final label = _labels[bestIdx];
+    final conf = avgProbs[bestIdx];
+    final threshold = label == 'front' ? _frontThreshold : _deviationThreshold;
+    if (conf < threshold) return null;
+
+    return ClassificationResult(label, conf);
   }
 
   Float32List? _preprocessCamera(CameraImage image) {

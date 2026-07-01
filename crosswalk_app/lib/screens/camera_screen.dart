@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -20,6 +21,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   String _statusLabel = '초기화 중...';
   double _confidence = 0.0;
   bool _isProcessing = false;
+  bool _hasError = false;
 
   static const _labelColors = {
     'front': Colors.green,
@@ -42,10 +44,24 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   Future<void> _initCamera() async {
+    setState(() {
+      _hasError = false;
+      _statusLabel = '초기화 중...';
+    });
+
     try {
+      // TTS를 먼저 초기화해야 이후 오류 발생 시 음성 안내 가능
+      await _feedback.init();
+
       final status = await Permission.camera.request();
       if (!status.isGranted) {
-        setState(() => _statusLabel = '카메라 권한이 필요합니다');
+        await _feedback.announceError('카메라 권한이 필요합니다. 설정에서 허용해주세요.');
+        if (mounted) {
+          setState(() {
+            _hasError = true;
+            _statusLabel = '카메라 권한 필요';
+          });
+        }
         return;
       }
 
@@ -53,11 +69,15 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       await _classifier.init();
 
       setState(() => _statusLabel = '카메라 연결 중...');
-      await _feedback.init();
-
       final cameras = await availableCameras();
       if (cameras.isEmpty) {
-        setState(() => _statusLabel = '카메라를 찾을 수 없습니다');
+        await _feedback.announceError('카메라를 찾을 수 없습니다.');
+        if (mounted) {
+          setState(() {
+            _hasError = true;
+            _statusLabel = '카메라 없음';
+          });
+        }
         return;
       }
 
@@ -80,9 +100,25 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
       _controller!.startImageStream(_onFrame);
       setState(() => _statusLabel = '감지 중...');
-    } catch (e) {
+    } on ModelIntegrityException {
+      await _feedback.announceError(
+        '모델 파일이 손상되었습니다. 앱을 다시 설치해주세요.',
+      );
       if (mounted) {
-        setState(() => _statusLabel = '오류: $e');
+        setState(() {
+          _hasError = true;
+          _statusLabel = '오류: 모델 손상';
+        });
+      }
+    } catch (e) {
+      await _feedback.announceError(
+        '앱 오류로 감지를 시작할 수 없습니다. 앱을 다시 시작해주세요.',
+      );
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _statusLabel = '오류: 감지 불가';
+        });
       }
     }
   }
@@ -125,11 +161,13 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     super.dispose();
   }
 
-  Color get _statusColor => _labelColors[
-    _statusLabel == '정상 진행' ? 'front' :
-    _statusLabel == '왼쪽 이탈' ? 'left' :
-    _statusLabel == '오른쪽 이탈' ? 'right' : 'front'
-  ] ?? Colors.grey;
+  Color get _statusColor {
+    if (_hasError) return Colors.red;
+    if (_statusLabel == '정상 진행') return Colors.green;
+    if (_statusLabel == '왼쪽 이탈') return Colors.red;
+    if (_statusLabel == '오른쪽 이탈') return Colors.orange;
+    return Colors.grey;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -137,13 +175,17 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // 카메라 프리뷰
           if (_controller != null && _controller!.value.isInitialized)
             Positioned.fill(
               child: CameraPreview(_controller!),
             ),
 
-          // 상태 오버레이 (하단)
+          // 오류 상태: 화면 전체를 반투명 빨간 오버레이로 덮어 시각적으로 명확히 표시
+          if (_hasError)
+            Positioned.fill(
+              child: ColoredBox(color: Colors.red.withOpacity(0.25)),
+            ),
+
           Positioned(
             bottom: 0,
             left: 0,
@@ -162,12 +204,23 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  if (_confidence > 0)
+                  if (_confidence > 0 && !_hasError)
                     Padding(
                       padding: const EdgeInsets.only(top: 6),
                       child: Text(
                         '신뢰도: ${(_confidence * 100).toStringAsFixed(1)}%',
                         style: const TextStyle(color: Colors.white70, fontSize: 14),
+                      ),
+                    ),
+                  if (_hasError)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: TextButton(
+                        onPressed: _initCamera,
+                        child: const Text(
+                          '다시 시도',
+                          style: TextStyle(color: Colors.white, fontSize: 16),
+                        ),
                       ),
                     ),
                 ],
