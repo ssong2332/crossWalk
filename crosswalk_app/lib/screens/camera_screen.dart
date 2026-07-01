@@ -35,6 +35,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     'right': '오른쪽 이탈',
   };
 
+  static const _labelIcons = {
+    'front': Icons.check_circle,
+    'left':  Icons.chevron_left,
+    'right': Icons.chevron_right,
+  };
+
   @override
   void initState() {
     super.initState();
@@ -169,8 +175,20 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     return Colors.grey;
   }
 
+  IconData? get _statusIcon {
+    if (_hasError) return Icons.error_outline;
+    if (_statusLabel == '정상 진행') return _labelIcons['front'];
+    if (_statusLabel == '왼쪽 이탈') return _labelIcons['left'];
+    if (_statusLabel == '오른쪽 이탈') return _labelIcons['right'];
+    return null;
+  }
+
+  bool get _isLoading =>
+      !_hasError && (_controller == null || !_controller!.value.isInitialized);
+
   @override
   Widget build(BuildContext context) {
+    final statusIcon = _statusIcon;
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
@@ -190,40 +208,76 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
             bottom: 0,
             left: 0,
             right: 0,
-            child: Container(
-              color: Colors.black.withOpacity(0.65),
-              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    _statusLabel,
-                    style: TextStyle(
-                      color: _statusColor,
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  if (_confidence > 0 && !_hasError)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        '신뢰도: ${(_confidence * 100).toStringAsFixed(1)}%',
-                        style: const TextStyle(color: Colors.white70, fontSize: 14),
-                      ),
-                    ),
-                  if (_hasError)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 12),
-                      child: TextButton(
-                        onPressed: _initCamera,
-                        child: const Text(
-                          '다시 시도',
-                          style: TextStyle(color: Colors.white, fontSize: 16),
+            child: SafeArea(
+              top: false,
+              child: Container(
+                color: Colors.black.withOpacity(0.65),
+                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_isLoading)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 12),
+                        child: SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 3,
+                            color: Colors.white70,
+                          ),
                         ),
                       ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (!_isLoading && statusIcon != null) ...[
+                          Icon(statusIcon, color: _statusColor, size: 32),
+                          const SizedBox(width: 8),
+                        ],
+                        Flexible(
+                          child: Text(
+                            _statusLabel,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: _statusColor,
+                              fontSize: 26,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                ],
+                    if (_confidence > 0 && !_hasError)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          '신뢰도: ${(_confidence * 100).toStringAsFixed(1)}%',
+                          style: const TextStyle(color: Colors.white70, fontSize: 14),
+                        ),
+                      ),
+                    if (_hasError)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 16),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _initCamera,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text(
+                              '다시 시도',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              minimumSize: const Size.fromHeight(52),
+                              backgroundColor: Colors.white,
+                              foregroundColor: Colors.black,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
