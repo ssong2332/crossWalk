@@ -36,8 +36,22 @@ class Classifier {
   int _frameCount = 0;
   final List<List<double>> _recentProbs = [];
 
+  // OrtEnv.instance.init()은 호출할 때마다 네이티브 OrtEnv를 새로 생성하며
+  // 이전 포인터를 해제하지 않으므로(onnxruntime 1.4.1, lib/src/ort_env.dart),
+  // 최초 1회만 초기화하고 dispose() 시 release() 후 다시 false로 되돌린다.
+  bool _envInitialized = false;
+
   Future<void> init() async {
-    OrtEnv.instance.init();
+    // 동일 인스턴스에 대해 init()이 재호출되는 경우(앱 재개, 재시도 등)
+    // 이전 세션을 해제하지 않으면 네이티브 OrtSession이 누수된다.
+    _session?.release();
+    _session = null;
+
+    if (!_envInitialized) {
+      OrtEnv.instance.init();
+      _envInitialized = true;
+    }
+
     final rawAsset = await rootBundle.load('assets/model/crosswalk_model.onnx');
     final bytes = rawAsset.buffer.asUint8List();
     await _verifyModelIntegrity(bytes);
@@ -206,6 +220,8 @@ class Classifier {
 
   void dispose() {
     _session?.release();
+    _session = null;
     OrtEnv.instance.release();
+    _envInitialized = false;
   }
 }
