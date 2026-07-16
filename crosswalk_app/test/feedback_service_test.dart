@@ -14,6 +14,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:crosswalk_app/services/feedback_service.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   const leftMessage = '왼쪽으로 이탈했습니다. 오른쪽으로 이동하세요';
   const rightMessage = '오른쪽으로 이탈했습니다. 왼쪽으로 이동하세요';
 
