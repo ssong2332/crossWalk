@@ -11,9 +11,12 @@ Early-stage / not release-ready.
 |---|---|---|
 | Core detection pipeline | Implemented | Camera stream → ONNX inference → smoothing → threshold → TTS/vibration alert (`docs/PRD.md` Features #1-9) |
 | Open product decisions | 14 unresolved | See `docs/PRD.md` "Open Questions" (platform, min OS, accuracy target, offline confirmation, accessibility standard, language, distribution, phone mounting, legal disclaimer, model provenance, performance targets, low-light scope, reassurance feedback, camera choice) |
-| Known correctness concern under investigation | Open | Model output may be raw logits, not softmax probabilities, while the app compares them against probability thresholds (0.55/0.85) — see `docs/Tasks.md` T21 |
-| Model integrity check | Disabled | Bundled hash file is a placeholder; verification is skipped (`docs/PRD.md` Feature #12) |
-| Automated tests | None | No `crosswalk_app/test/` directory yet (`docs/PRD.md` Feature #19) |
+| Logits-vs-probability threshold defect (T21) | Fixed (unit-test level) | Model graph has no Softmax node (raw logits) but was compared against probability-scale thresholds 0.55/0.85 — fixed by adding a numerically-stable softmax before thresholding (`crosswalk_app/lib/services/classifier.dart:188-194`, commit `33786d7`). Verified only by unit tests (see `docs/Tasks.md` T9); real-camera/field detection-rate re-validation is still open (`docs/Tasks.md` T1, T12) |
+| Camera re-init re-entrancy (T23) | Fixed | `_initCamera()` could run concurrently via rapid resume/retry, racing two `CameraController`/ONNX sessions. Fixed with an `_isInitializing` guard (`crosswalk_app/lib/screens/camera_screen.dart:54-55,135-137`, commit `a9b77f4`) |
+| Native ONNX session/env leak (T24) | Fixed | `Classifier.init()` leaked `OrtSession`/`OrtEnv` on every re-init. Now releases the prior session first and inits the env only once per instance (`crosswalk_app/lib/services/classifier.dart:44-53,221-226`, commit `bc0bba8`) |
+| Stale TTS alert (T25) | Fixed | `FeedbackService.alert()` now stops any in-progress speech before speaking a new alert, preventing a stale left/right cue on iOS (`AVSpeechSynthesizer` queues by default) (`crosswalk_app/lib/services/feedback_service.dart:42-43`, commit `e5ca05f`) |
+| Model integrity check | Disabled | Bundled hash file is a placeholder; verification is skipped (`docs/PRD.md` Feature #12) — unchanged this session |
+| Automated tests | 14 tests, CI-verified | 7 `Classifier` tests (`crosswalk_app/test/classifier_test.dart`, T9, commit `eb688a7`) + 7 `FeedbackService` tests (`crosswalk_app/test/feedback_service_test.dart`, T10, commits `cf81a77`/`d61bfa6`). **CI is the only place any test in this repo has actually run** — local `flutter_tester.exe` is broken on the dev machine, so "tests pass" claims before a CI run are unverified (`docs/Tasks.md` T10 note; latest passing run: GitHub Actions run 29474000817, 14/14) |
 
 ## Tech Stack
 
@@ -81,10 +84,10 @@ Notes:
 | `docs/DefinitionOfDone.md` | Checklist gating `docs/Tasks.md` status → `done` — template only (`docs/DefinitionOfDone.md:1-7`) |
 | `docs/GitWorkflow.md` | Git branching/commit rules — template only, not yet filled in (`docs/GitWorkflow.md:1-6`) |
 | `docs/PromptRules.md` | How to invoke the six agents + approval-gated pipeline (planner → architect → ...) (`docs/PromptRules.md:1-6`) |
-| `docs/CHANGELOG.md` | Keep a Changelog-format log — template only, no released entries yet (`docs/CHANGELOG.md:1-6`) |
+| `docs/CHANGELOG.md` | Keep a Changelog-format log — `[Unreleased]` now populated with this session's changes (T9/T10/T21/T23/T24/T25); no tagged release yet |
 | `docs/adr/` | Architecture Decision Records — currently only `0000-template.md`, no real ADRs written yet |
 | `AGENTS.md` | Agent contract: pipeline, authority, document ownership, priority order |
 
 ## Known Limitations / Open Questions
 
-See `docs/PRD.md` "Open Questions" (14 items) and "Risks" for the full list — not duplicated here. Highlights: no measured accuracy/recall target, model integrity check disabled, no automated tests, inference runs synchronously on the UI isolate (possible frame drops), and the logits-vs-probability threshold concern tracked as `docs/Tasks.md` T21.
+See `docs/PRD.md` "Open Questions" (14 items) and "Risks" for the full list — not duplicated here. Highlights: no measured accuracy/recall target (still open, `docs/Tasks.md` T1/T12), model integrity check disabled, inference runs synchronously on the UI isolate (possible frame drops). The logits-vs-probability threshold defect (`docs/Tasks.md` T21) and the T23/T24/T25 camera-reinit/memory-leak/stale-TTS bugs are fixed this session (see Status table above) but field/real-camera accuracy validation remains open.
