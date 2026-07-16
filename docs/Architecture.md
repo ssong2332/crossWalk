@@ -1,7 +1,7 @@
 # Architecture — crosswalk_app (횡단보도 이탈 감지)
 
 Owner: architect (see AGENTS.md). Others read-only.
-Last updated: 2026-07-16 (synced against T9/T10/T21/T23/T24/T25 fixes, see `docs/Tasks.md`). Basis: direct inspection of `crosswalk_app/lib/**`, `crosswalk_app/test/**`, `crosswalk_app/pubspec.yaml`, `.github/workflows/build_apk.yml`, `train/train_model.py`. Every claim is cited to `file:line` or command output.
+Last updated: 2026-07-16 (synced against T9/T10/T21/T23/T24/T25 fixes and T22 ONNX export-path trace, see `docs/Tasks.md`). Basis: direct inspection of `crosswalk_app/lib/**`, `crosswalk_app/test/**`, `crosswalk_app/pubspec.yaml`, `.github/workflows/build_apk.yml`, `train/train_model.py`, `train/export_onnx.py`, git history (commits `30a799e`, `3153d50`), and Python `onnx.load()` inspection of the shipped model. Every claim is cited to `file:line`, commit hash, or command output.
 Requirements source: `docs/PRD.md`. Unresolved product decisions are NOT re-decided here — they are cross-referenced to `docs/PRD.md` Open Questions (Q#…).
 
 > This document describes the system **as-built**. Where the root `ARCHITECTURE.md` disagrees with code, code wins (drift list in `docs/PRD.md` §"Known Documentation Drift"). Do not treat root `ARCHITECTURE.md` as authoritative.
@@ -233,16 +233,39 @@ Drift note: root `ARCHITECTURE.md` says the build uses `--no-shrink`; actual CI 
 
 Separate, offline, developer-run; not part of the APK runtime.
 
+**Correction (this update):** an earlier documentation pass claimed `train/export_onnx.py` "described but absent from `train/`". This was factually wrong — `train/export_onnx.py` exists in the repo now and has git history. There are actually **two separate export code paths**; see table below.
+
 | Item | Detail | Evidence |
 |---|---|---|
 | Base model | MobileNetV3-Small (ImageNet weights), final layer → 3 classes | `train_model.py:106-109` |
 | Classes / order | `["front","left","right"]` | `train_model.py:30` |
 | Preprocessing (train) | Resize 224², ImageNet mean/std — matches app | `train_model.py:74-85` vs `classifier.dart:133-134` |
 | Class-imbalance handling | front capped 500, WeightedRandomSampler, loss weights front=1/left=10/right=20 | `train_model.py:23,91-94,146` |
-| ONNX export | `torch.onnx.export`, `input_names=["input"]`, `output_names=["output"]`, `opset_version=17`, dynamic batch | `train_model.py:221-227` |
 | Runtime tensor contract match | app feeds `'input'`, reads `outputs.first` | `classifier.dart:79,85-87` |
 
-Consistency check: tensor names and normalization match between training and app. Two unresolved gaps below.
+### 11.1 Two export scripts (not one)
+
+| # | Script | Role | Export settings | Evidence |
+|---|---|---|---|---|
+| 1 | `train_model.py`'s embedded `export_onnx()` | Called as pipeline step 6, immediately after training, exporting the in-memory trained model | `opset_version=17`, `dynamic_axes={"input":{0:"batch"},"output":{0:"batch"}}`, no `dynamo` arg | `train_model.py:217-232`; invoked from `if __name__ == "__main__":` block, `train_model.py:256` |
+| 2 | `export_onnx.py` (standalone, separate, later-added) | Does NOT retrain — loads a saved PyTorch checkpoint (`MODEL_PT = r"C:\crossWalk\model\crosswalk_model.pt"`), rebuilds the identical `mobilenet_v3_small` + 3-class `nn.Linear` head, `load_state_dict`, re-exports | `opset_version=12`, `dynamo=False` (comment says "구형 TorchScript 기반 exporter 사용 → IR version 8 (모바일 호환)") | `export_onnx.py:1-25` |
+
+Git history of the export path: commit `30a799e` ("TFLite 대신 ONNX Runtime으로 앱 추론 엔진 교체") introduced the initial ONNX Runtime migration. Commit `3153d50` ("fix: ONNX 모델 IR version 다운그레이드 (10→7)") modified `train/export_onnx.py` (changed `dynamic_axes` + `opset_version=17` to `opset_version=12` + `dynamo=False`) and replaced the binary `crosswalk_app/assets/model/crosswalk_model.onnx` asset. Commit message: "모바일 onnxruntime 최대 지원 IR version이 9이므로 opset 12 + dynamo=False 레거시 익스포터로 재수출. IR version: 10 → 7, Opset: 18 → 12".
+
+**Verified ground truth of the currently-shipped model** (loaded `crosswalk_app/assets/model/crosswalk_model.onnx` with Python `onnx` library): `ir_version: 7`, `opset imports: [('', 12)]`. This matches `export_onnx.py`'s `opset_version=12` setting exactly, confirming **`train/export_onnx.py` — not `train_model.py`'s embedded exporter — is the script whose settings reproduce the currently-shipped artifact.** Note: `export_onnx.py:16`'s code comment says "IR version 8", but the verified actual IR version is 7 — a minor inaccuracy in the script's own comment, not corrected here (documentation-only change; script left untouched).
+
+### 11.2 Reproducibility check
+
+| Artifact referenced by scripts | Committed in repo? | Evidence |
+|---|---|---|
+| Raw training images (`image/front`, `image/left`, `image/right`) | Yes | glob `image/**` → 4022 files |
+| Prepared train/val/test split (`train/data_prepared/`) | Yes | glob `train/data_prepared/**` → present (e.g. `train/data_prepared/train/front/*.jpg`) |
+| Trained checkpoint (`model/crosswalk_model.pt`) | Yes | glob `model/*` → `model/crosswalk_model.pt` present |
+| Exported ONNX + external-data file | Yes | `model/crosswalk_model.onnx`, `model/crosswalk_model.onnx.data` |
+
+All inputs both scripts need ARE present in the repo. However, both `train_model.py` and `export_onnx.py` hardcode absolute Windows paths under `C:\crossWalk\...` (`train_model.py:19-22`, `export_onnx.py:5-6`) rather than paths relative to this repo's actual location (`C:\vibecoding\crossWalk`). Running either script as-is on a machine where the repo isn't checked out at `C:\crossWalk` will fail or silently read/write the wrong location — this is a portability gap, not a missing-data gap.
+
+Consistency check: tensor names and normalization match between training and app.
 
 ---
 
@@ -281,7 +304,7 @@ These are NOT decided here. They extend `docs/PRD.md` Open Questions.
 | ID | Question | Why it matters | Related PRD Q |
 |---|---|---|---|
 | A | **RESOLVED at code level (T21, commit `33786d7`)**: reviewer loaded the shipped ONNX graph directly and confirmed no Softmax node exists (final ops `['Flatten','Gemm','HardSigmoid','Mul','Gemm']`); the app now applies a numerically-stable softmax to the raw logits before thresholding (`classifier.dart:119-120,188-194`). Still open: unit-test-only verification (T9) is not the same as field/real-camera accuracy validation on a labeled test set. | Directly affects detection correctness/safety | Q#3, Q#10; Tasks T1, T12 |
-| B | Shipped ONNX was exported with which opset/IR? `train_model.py` uses opset 17 (`:226`); git log shows "ONNX IR version 다운그레이드 (10→7)"; PRD notes an `export_onnx.py` (opset 12) referenced by root doc but absent. The exact export path of the bundled model is untracked. | Runtime compat + reproducibility | Q#10 |
+| B | **RESOLVED (this update)**: shipped ONNX export path traced end-to-end. `train_model.py`'s embedded exporter uses opset 17 (`train_model.py:217-232`); the separate standalone `train/export_onnx.py` (exists in repo, contra an earlier false "absent" claim) re-exports from the saved checkpoint at opset 12 / `dynamo=False` (`export_onnx.py:1-25`). Verified actual shipped model: `ir_version=7`, `opset=12` — matching `export_onnx.py`, confirming it (not `train_model.py`) produced the shipped asset. See §11.1/§11.2. Remaining open item: whether this exact model is "real" trained weights vs. a placeholder is still PRD Q#10 (unaffected by this correction). | Runtime compat + reproducibility | Q#10 |
 | C | Is BGRA preprocessing path (`classifier.dart:119-125`) dead code on Android-only builds, or a committed intent to support iOS? | Scope of platform support | Q#1 |
 
 See `docs/PRD.md` §"Open Questions" for the full unresolved-decisions list; not duplicated here.
