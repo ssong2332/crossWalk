@@ -2,6 +2,12 @@
 
 시각 장애인이 횡단보도를 건널 때 좌/우 이탈 여부를 실시간으로 감지하고 음성+진동으로 알려주는 Android 앱 프로젝트입니다.
 
+> **레거시 문서 안내**: 이 문서(`ARCHITECTURE.md`, 루트)는 architect 에이전트가 관리하지 않는 보조 설명 문서입니다.
+> 최신 상태·근거 인용이 포함된 **공식 아키텍처 문서는 `docs/Architecture.md`**이며, 이 문서를 대체합니다
+> (`README.md` "Documentation Index" 참조, `docs/Tasks.md` T14). 이 문서는 2026-07 시점 코드로 드리프트(누락/오류)
+> 항목을 이번 업데이트에서 바로잡았으나, 상세 근거·§11 export 경로 검증·CI 단계별 인용 등은
+> `docs/Architecture.md`(특히 §4 초기화 순서, §11.1/§11.2 export 검증, §9 CI)를 우선 참고하십시오.
+
 ---
 
 ## 프로젝트 구조
@@ -91,8 +97,9 @@ crossWalk/
 
 `train_model.py`와 별개로 이미 저장된 `.pt` 파일을 ONNX로 변환할 때 사용합니다.
 
-- `dynamo=False` 옵션으로 구형 TorchScript 기반 exporter 사용 → ONNX IR version 8 생성 (모바일 런타임 호환)
+- `dynamo=False` 옵션으로 구형 TorchScript 기반 exporter 사용 → 모바일 런타임 호환 목적 (`export_onnx.py:16` 코드 주석은 "IR version 8"이라고 적혀 있으나, **실제 검증된 값은 IR version 7**입니다 — Python `onnx.load()`로 현재 배포된 `crosswalk_model.onnx`를 직접 로드해 확인한 값이며, 스크립트 주석 자체의 오기입니다. 상세 검증 근거: `docs/Architecture.md` §11.1~§11.2)
 - `opset_version=12` 사용 (모바일 ONNX Runtime이 지원하는 안정적인 버전)
+- 참고: `train_model.py`의 내장 `export_onnx()`는 별도로 `opset_version=17`을 사용하며 실제 배포 모델을 생성한 스크립트가 아닙니다 — 배포된 모델(`ir_version=7`, `opset=12`)과 설정이 일치하는 쪽은 이 `export_onnx.py`입니다 (`docs/Architecture.md` §11.1)
 
 ---
 
@@ -122,18 +129,24 @@ crossWalk/
 
 앱의 메인 화면으로, 카메라 미리보기 위에 감지 결과를 오버레이합니다.
 
-#### 초기화 순서 (`_initCamera`)
+#### 초기화 순서 (`_initCamera`, `camera_screen.dart:54-140`)
+
+재진입 방지 가드(`_isInitializing`, `camera_screen.dart:55-56`)로 감싸져 있으며, 전체가 `try/finally` 구조입니다.
+실제 순서는 문서에 예전부터 있던 순서와 다르며, TTS를 **가장 먼저** 초기화합니다 — 이후 어떤 단계에서 오류가
+나더라도 음성으로 안내할 수 있어야 하기 때문입니다 (`camera_screen.dart:66` 코드 주석).
 
 ```
-카메라 권한 요청
+TTS/진동 초기화 (FeedbackService.init)               ← camera_screen.dart:67
     ↓
-ONNX 모델 로드 (Classifier.init)
+카메라 권한 요청 (Permission.camera.request())        ← camera_screen.dart:69
+    ├─ 거부 + isPermanentlyDenied → 설정 화면 안내 문구, _permissionPermanentlyDenied=true ← :71-81
+    └─ 일반 거부 → 오류 안내 후 재시도 유도                                                ← :82-90
+    ↓ (권한 허용 시에만 계속)
+ONNX 모델 로드 (Classifier.init) — ModelIntegrityException 시 "모델 손상" 오류 화면 ← :94-95,129-138
     ↓
-TTS/진동 초기화 (FeedbackService.init)
+후면 카메라 연결 (YUV420 포맷, 중간 해상도, lockCaptureOrientation)  ← :97-123
     ↓
-후면 카메라 연결 (YUV420 포맷, 중간 해상도)
-    ↓
-프레임 스트림 시작
+프레임 스트림 시작 (startImageStream)                  ← camera_screen.dart:127
 ```
 
 #### 프레임 처리 (`_onFrame`)
@@ -163,37 +176,62 @@ TTS/진동 초기화 (FeedbackService.init)
 
 ONNX Runtime을 사용해 카메라 프레임을 실시간으로 분류합니다.
 
-#### 주요 상수
+#### 주요 상수 (`classifier.dart:24-33`)
 
 | 상수 | 값 | 설명 |
 |------|----|------|
 | `_inputSize` | `224` | 모델 입력 크기 |
 | `_smoothingWindow` | `5` | 평균낼 최근 프레임 수 |
-| `_confidenceThreshold` | `0.70` | 결과 반환 최소 신뢰도 |
-| `_throttleFrames` | `10` | N프레임마다 1번만 추론 |
+| `_deviationThreshold` | `0.55` | `left`/`right` 판정 최소 확률 — 이탈은 민감하게 감지 |
+| `_frontThreshold` | `0.85` | `front` 판정 최소 확률 — 정상 확인은 엄격하게 (비대칭 임계값, `classifier.dart:28-30` 주석) |
+| `_throttleFrames` | `5` | N프레임마다 1번만 추론 (과거 `10`에서 하향 — `classifier.dart:32` 주석: "이탈 감지 지연 단축") |
 
-#### 처리 흐름
+두 임계값으로 나뉜 이유는 이탈(위험)을 놓치는 것이 정상을 오탐하는 것보다 더 위험하다는 판단입니다
+(`classifier.dart:28` 주석, `docs/Architecture.md` §14 리스크 표에도 동일 근거 기재).
+
+#### 처리 흐름 (`classifier.dart:88-148`)
+
+모델은 **raw logits**을 출력합니다 — ONNX 그래프에 Softmax 노드가 없습니다(마지막 연산: `Flatten→Gemm→HardSigmoid→Mul→Gemm`,
+`docs/Architecture.md` §15 항목 A). 따라서 추론 직후 반드시 softmax를 거쳐 확률로 변환한 뒤 스무딩합니다.
 
 ```
 카메라 프레임 (YUV420 or BGRA)
     ↓
-_preprocessCamera: YUV420 → RGB 변환 → 224×224 리사이즈
+_preprocessCamera: YUV420 → RGB 변환 → 224×224 리사이즈           (classifier.dart:150-187)
     ↓
 NCHW 포맷 변환 + ImageNet 정규화
     (mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ↓
-OrtSession.run() 추론
+OrtSession.run() 추론 → raw logits                                (classifier.dart:98-107)
     ↓
-최근 5프레임 확률 평균 (스무딩)
+softmax(logits) — 수치적으로 안정적인 구현 (max 차감 후 exp)        (classifier.dart:125,194-199)
     ↓
-신뢰도 70% 미만이면 null 반환
+최근 5프레임 확률 평균 (스무딩)                                     (classifier.dart:127-135)
+    ↓
+label별 임계값 검사: front는 0.85, left/right는 0.55 미만이면 null   (classifier.dart:144-145)
     ↓
 ClassificationResult(label, confidence) 반환
 ```
 
-#### 스로틀링
+#### 스로틀링 (`classifier.dart:32-33,116-119`)
 
-매 10프레임마다 1번만 추론하여 CPU 부하를 줄입니다. 30fps 카메라 기준 약 3fps로 추론.
+매 5프레임마다 1번만 추론하여 CPU 부하를 줄입니다. 30fps 카메라 기준 약 6fps로 추론 (과거 10프레임/약 3fps에서 단축).
+
+#### 모델 무결성 검증 (`_verifyModelIntegrity`, `classifier.dart:66-86`)
+
+번들 모델(`assets/model/crosswalk_model.onnx`)의 SHA-256 해시를 `crosswalk_model.onnx.sha256`와 비교합니다.
+해시 파일이 없거나 64자가 아니거나 `placeholder_hash`이면 검증을 건너뜁니다 — **현재 저장소에는 placeholder 해시만
+있어 사실상 비활성 상태**이며 (`docs/PRD.md` 추적 중인 갭), 불일치 시 `ModelIntegrityException`을 던져
+`camera_screen.dart:129-138`에서 "모델 손상" 오류 화면으로 처리합니다.
+
+#### 세션/환경 수명주기 (`classifier.dart:39-64,226-233`)
+
+- `OrtEnv.instance.init()`은 호출할 때마다 네이티브 리소스를 새로 생성하고 이전 포인터를 해제하지 않으므로
+  (onnxruntime 1.4.1), `_envInitialized` 플래그로 **인스턴스당 최초 1회만** 초기화합니다.
+- `init()` 재호출(앱 재개, 재시도) 시 이전 `OrtSession`을 먼저 `release()`한 뒤 새로 생성해 세션 누수를 방지합니다.
+- `init()` 재호출 시 `_recentProbs`/`_frameCount`도 초기화합니다 — 이전 실행의 스무딩 상태가 남아 재개 직후
+  판정이 지연되는 것을 방지합니다.
+- `dispose()`에서 세션 해제 후 `OrtEnv.release()`를 호출하고 `_envInitialized`를 다시 `false`로 되돌립니다.
 
 #### YUV420 → RGB 변환 (`_convertYUV420`)
 
@@ -225,6 +263,11 @@ B = Y + 1.772 × (U - 128)
 | `right` | "오른쪽으로 이탈했습니다. 왼쪽으로 이동하세요" | 500ms |
 
 - TTS 언어: 한국어(`ko-KR`), 말하기 속도: 0.5(느리게)
+- `alert()`는 새 메시지를 말하기 전 `_tts.stop()`을 먼저 호출합니다(`feedback_service.dart:42`) — iOS의
+  `AVSpeechSynthesizer`가 기본적으로 발화를 큐잉하므로, 이 처리가 없으면 이미 상황이 바뀐 뒤에도 오래된
+  left/right 안내가 뒤늦게 재생될 수 있었던 문제(수정됨)입니다.
+- 초기화 실패 등 오류 안내용 `announceError()`도 동일하게 `stop()` 후 `speak()`합니다(`feedback_service.dart:51-54`),
+  `camera_screen.dart`의 각 오류 분기에서 호출됩니다.
 
 ---
 
@@ -245,18 +288,27 @@ GitHub Actions로 APK를 자동 빌드합니다.
 | Java | 17 (Temurin) |
 | Flutter | 3.32.2 stable |
 
-#### 빌드 단계
+#### 빌드 단계 (`.github/workflows/build_apk.yml:20-127`)
 
-1. 코드 체크아웃
-2. Java 17 설정
-3. Flutter 3.32.2 설정 (캐시 활성화)
-4. ONNX 모델 파일 확인 (없으면 placeholder로 대체)
-5. `flutter pub get`
-6. `flutter build apk --release --no-shrink`
-7. APK를 Artifacts로 업로드 (30일 보관)
-8. 빌드 요약 출력
+1. 코드 체크아웃 (`build_apk.yml:20-21`)
+2. Java 17 설정 (Temurin) (`:23-27`)
+3. Flutter 3.32.2 설정 (캐시 활성화) (`:29-34`)
+4. ONNX 모델 파일 확인 및 SHA-256 해시 생성 (없으면 `placeholder`/`placeholder_hash`로 대체) (`:36-50`)
+5. `flutter pub get` (`:52-54`)
+6. **`flutter test`** ("Flutter 테스트" 단계 — 테스트 실패 시 빌드 중단) (`:56-58`)
+7. `flutter build apk --release` — **`--no-shrink` 플래그는 사용하지 않습니다** (실제 워크플로우에 없음) (`:60-62`)
+8. **APK 서명**: `KEYSTORE_BASE64` 시크릿이 있으면 base64 디코딩 → `zipalign` → `apksigner sign`으로 수동 서명,
+   시크릿이 없으면 미서명 APK로 건너뜀 (`:64-95`)
+9. APK를 Artifacts로 업로드 — 서명본/미서명본 둘 다 시도, 30일 보관 (`:97-105`)
+10. 빌드 요약 출력 — 서명 상태/파일 크기/커밋/브랜치를 `$GITHUB_STEP_SUMMARY`에 기록 (`:107-127`)
 
 빌드된 APK는 GitHub Actions → 해당 워크플로우 실행 → Artifacts에서 다운로드할 수 있습니다.
+
+#### 릴리스 서명 가드 (`crosswalk_app/android/app/build.gradle.kts:33-54`)
+
+`release` 빌드 타입은 CI 환경(`GITHUB_ACTIONS=true`) 또는 `-PallowDebugSigningForRelease=true` 플래그가 없으면
+`GradleException`을 던져 빌드를 중단시킵니다 — 디버그 키로 서명된 릴리스 APK가 실수로 배포되는 것을 막기 위함입니다.
+CI에서는 일단 디버그 키로 서명한 뒤, 위 "APK 서명" 단계가 실제 릴리스 키로 재서명합니다.
 
 ---
 
@@ -269,8 +321,9 @@ GitHub Actions로 APK를 자동 빌드합니다.
 | `flutter_tts` | 한국어 음성 안내 |
 | `vibration` | 진동 피드백 |
 | `image` | YUV420→RGB 이미지 처리 |
-| `permission_handler` | 카메라 권한 요청 |
+| `permission_handler` | 카메라 권한 요청 (일반 거부/영구 거부(`isPermanentlyDenied`) 분기 처리, `camera_screen.dart:71`) |
 | `wakelock_plus` | 화면 꺼짐 방지 |
+| `crypto` | 모델 파일 SHA-256 무결성 검증 (`classifier.dart:66-86`) — 현재 placeholder 해시로 사실상 비활성 |
 
 ---
 
@@ -279,7 +332,7 @@ GitHub Actions로 APK를 자동 빌드합니다.
 ```
 [카메라 프레임]
       ↓
-[Classifier] YUV420 디코딩 → 전처리 → ONNX 추론 → 스무딩
+[Classifier] YUV420 디코딩 → 전처리 → ONNX 추론(logits) → softmax → 스무딩 → 임계값 판정
       ↓
 [ClassificationResult] label + confidence
       ↓
