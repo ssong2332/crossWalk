@@ -22,6 +22,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   double _confidence = 0.0;
   bool _isProcessing = false;
   bool _hasError = false;
+  bool _isInitializing = false;
 
   static const _labelColors = {
     'front': Colors.green,
@@ -50,82 +51,89 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   Future<void> _initCamera() async {
-    setState(() {
-      _hasError = false;
-      _statusLabel = '초기화 중...';
-    });
+    if (_isInitializing) return;
+    _isInitializing = true;
 
     try {
-      // TTS를 먼저 초기화해야 이후 오류 발생 시 음성 안내 가능
-      await _feedback.init();
+      setState(() {
+        _hasError = false;
+        _statusLabel = '초기화 중...';
+      });
 
-      final status = await Permission.camera.request();
-      if (!status.isGranted) {
-        await _feedback.announceError('카메라 권한이 필요합니다. 설정에서 허용해주세요.');
+      try {
+        // TTS를 먼저 초기화해야 이후 오류 발생 시 음성 안내 가능
+        await _feedback.init();
+
+        final status = await Permission.camera.request();
+        if (!status.isGranted) {
+          await _feedback.announceError('카메라 권한이 필요합니다. 설정에서 허용해주세요.');
+          if (mounted) {
+            setState(() {
+              _hasError = true;
+              _statusLabel = '카메라 권한 필요';
+            });
+          }
+          return;
+        }
+
+        setState(() => _statusLabel = '모델 로딩 중...');
+        await _classifier.init();
+
+        setState(() => _statusLabel = '카메라 연결 중...');
+        final cameras = await availableCameras();
+        if (cameras.isEmpty) {
+          await _feedback.announceError('카메라를 찾을 수 없습니다.');
+          if (mounted) {
+            setState(() {
+              _hasError = true;
+              _statusLabel = '카메라 없음';
+            });
+          }
+          return;
+        }
+
+        final back = cameras.firstWhere(
+          (c) => c.lensDirection == CameraLensDirection.back,
+          orElse: () => cameras.first,
+        );
+
+        _controller = CameraController(
+          back,
+          ResolutionPreset.medium,
+          enableAudio: false,
+          imageFormatGroup: ImageFormatGroup.yuv420,
+        );
+
+        await _controller!.initialize();
+        await _controller!.lockCaptureOrientation();
+
+        if (!mounted) return;
+
+        _controller!.startImageStream(_onFrame);
+        setState(() => _statusLabel = '감지 중...');
+      } on ModelIntegrityException {
+        await _feedback.announceError(
+          '모델 파일이 손상되었습니다. 앱을 다시 설치해주세요.',
+        );
         if (mounted) {
           setState(() {
             _hasError = true;
-            _statusLabel = '카메라 권한 필요';
+            _statusLabel = '오류: 모델 손상';
           });
         }
-        return;
-      }
-
-      setState(() => _statusLabel = '모델 로딩 중...');
-      await _classifier.init();
-
-      setState(() => _statusLabel = '카메라 연결 중...');
-      final cameras = await availableCameras();
-      if (cameras.isEmpty) {
-        await _feedback.announceError('카메라를 찾을 수 없습니다.');
+      } catch (e) {
+        await _feedback.announceError(
+          '앱 오류로 감지를 시작할 수 없습니다. 앱을 다시 시작해주세요.',
+        );
         if (mounted) {
           setState(() {
             _hasError = true;
-            _statusLabel = '카메라 없음';
+            _statusLabel = '오류: 감지 불가';
           });
         }
-        return;
       }
-
-      final back = cameras.firstWhere(
-        (c) => c.lensDirection == CameraLensDirection.back,
-        orElse: () => cameras.first,
-      );
-
-      _controller = CameraController(
-        back,
-        ResolutionPreset.medium,
-        enableAudio: false,
-        imageFormatGroup: ImageFormatGroup.yuv420,
-      );
-
-      await _controller!.initialize();
-      await _controller!.lockCaptureOrientation();
-
-      if (!mounted) return;
-
-      _controller!.startImageStream(_onFrame);
-      setState(() => _statusLabel = '감지 중...');
-    } on ModelIntegrityException {
-      await _feedback.announceError(
-        '모델 파일이 손상되었습니다. 앱을 다시 설치해주세요.',
-      );
-      if (mounted) {
-        setState(() {
-          _hasError = true;
-          _statusLabel = '오류: 모델 손상';
-        });
-      }
-    } catch (e) {
-      await _feedback.announceError(
-        '앱 오류로 감지를 시작할 수 없습니다. 앱을 다시 시작해주세요.',
-      );
-      if (mounted) {
-        setState(() {
-          _hasError = true;
-          _statusLabel = '오류: 감지 불가';
-        });
-      }
+    } finally {
+      _isInitializing = false;
     }
   }
 
@@ -262,7 +270,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                         child: SizedBox(
                           width: double.infinity,
                           child: ElevatedButton.icon(
-                            onPressed: _initCamera,
+                            onPressed: _isInitializing ? null : _initCamera,
                             icon: const Icon(Icons.refresh),
                             label: const Text(
                               '다시 시도',
