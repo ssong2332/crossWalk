@@ -23,6 +23,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   bool _isProcessing = false;
   bool _hasError = false;
   bool _isInitializing = false;
+  bool _permissionPermanentlyDenied = false;
 
   static const _labelColors = {
     'front': Colors.green,
@@ -57,6 +58,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     try {
       setState(() {
         _hasError = false;
+        _permissionPermanentlyDenied = false;
         _statusLabel = '초기화 중...';
       });
 
@@ -66,12 +68,25 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
         final status = await Permission.camera.request();
         if (!status.isGranted) {
-          await _feedback.announceError('카메라 권한이 필요합니다. 설정에서 허용해주세요.');
-          if (mounted) {
-            setState(() {
-              _hasError = true;
-              _statusLabel = '카메라 권한 필요';
-            });
+          if (status.isPermanentlyDenied) {
+            await _feedback.announceError(
+              '카메라 권한이 영구적으로 거부되었습니다. 설정 화면에서 권한을 허용해주세요.',
+            );
+            if (mounted) {
+              setState(() {
+                _hasError = true;
+                _permissionPermanentlyDenied = true;
+                _statusLabel = '카메라 권한 필요 (설정 이동)';
+              });
+            }
+          } else {
+            await _feedback.announceError('카메라 권한이 필요합니다. 설정에서 허용해주세요.');
+            if (mounted) {
+              setState(() {
+                _hasError = true;
+                _statusLabel = '카메라 권한 필요';
+              });
+            }
           }
           return;
         }
@@ -270,11 +285,22 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                         child: SizedBox(
                           width: double.infinity,
                           child: ElevatedButton.icon(
-                            onPressed: _isInitializing ? null : _initCamera,
-                            icon: const Icon(Icons.refresh),
-                            label: const Text(
-                              '다시 시도',
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                            onPressed: _isInitializing
+                                ? null
+                                : (_permissionPermanentlyDenied
+                                    ? openAppSettings
+                                    : _initCamera),
+                            icon: Icon(
+                              _permissionPermanentlyDenied
+                                  ? Icons.settings
+                                  : Icons.refresh,
+                            ),
+                            label: Text(
+                              _permissionPermanentlyDenied ? '설정 열기' : '다시 시도',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                             style: ElevatedButton.styleFrom(
                               minimumSize: const Size.fromHeight(52),
