@@ -31,6 +31,7 @@ class FeedbackService {
         ? '왼쪽으로 이탈했습니다. 오른쪽으로 이동하세요'
         : '오른쪽으로 이탈했습니다. 왼쪽으로 이동하세요';
 
+    await _tts.stop();
     await _tts.speak(message);
 
     if (await Vibration.hasVibrator() ?? false) {
