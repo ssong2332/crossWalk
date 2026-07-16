@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -20,6 +21,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   String _statusLabel = '초기화 중...';
   double _confidence = 0.0;
   bool _isProcessing = false;
+  bool _hasError = false;
 
   static const _labelColors = {
     'front': Colors.green,
@@ -33,6 +35,12 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     'right': '오른쪽 이탈',
   };
 
+  static const _labelIcons = {
+    'front': Icons.check_circle,
+    'left':  Icons.chevron_left,
+    'right': Icons.chevron_right,
+  };
+
   @override
   void initState() {
     super.initState();
@@ -42,35 +50,83 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   }
 
   Future<void> _initCamera() async {
-    final status = await Permission.camera.request();
-    if (!status.isGranted) {
-      setState(() => _statusLabel = '카메라 권한이 필요합니다');
-      return;
+    setState(() {
+      _hasError = false;
+      _statusLabel = '초기화 중...';
+    });
+
+    try {
+      // TTS를 먼저 초기화해야 이후 오류 발생 시 음성 안내 가능
+      await _feedback.init();
+
+      final status = await Permission.camera.request();
+      if (!status.isGranted) {
+        await _feedback.announceError('카메라 권한이 필요합니다. 설정에서 허용해주세요.');
+        if (mounted) {
+          setState(() {
+            _hasError = true;
+            _statusLabel = '카메라 권한 필요';
+          });
+        }
+        return;
+      }
+
+      setState(() => _statusLabel = '모델 로딩 중...');
+      await _classifier.init();
+
+      setState(() => _statusLabel = '카메라 연결 중...');
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        await _feedback.announceError('카메라를 찾을 수 없습니다.');
+        if (mounted) {
+          setState(() {
+            _hasError = true;
+            _statusLabel = '카메라 없음';
+          });
+        }
+        return;
+      }
+
+      final back = cameras.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.back,
+        orElse: () => cameras.first,
+      );
+
+      _controller = CameraController(
+        back,
+        ResolutionPreset.medium,
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.yuv420,
+      );
+
+      await _controller!.initialize();
+      await _controller!.lockCaptureOrientation();
+
+      if (!mounted) return;
+
+      _controller!.startImageStream(_onFrame);
+      setState(() => _statusLabel = '감지 중...');
+    } on ModelIntegrityException {
+      await _feedback.announceError(
+        '모델 파일이 손상되었습니다. 앱을 다시 설치해주세요.',
+      );
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _statusLabel = '오류: 모델 손상';
+        });
+      }
+    } catch (e) {
+      await _feedback.announceError(
+        '앱 오류로 감지를 시작할 수 없습니다. 앱을 다시 시작해주세요.',
+      );
+      if (mounted) {
+        setState(() {
+          _hasError = true;
+          _statusLabel = '오류: 감지 불가';
+        });
+      }
     }
-
-    await _classifier.init();
-    await _feedback.init();
-
-    final cameras = await availableCameras();
-    final back = cameras.firstWhere(
-      (c) => c.lensDirection == CameraLensDirection.back,
-      orElse: () => cameras.first,
-    );
-
-    _controller = CameraController(
-      back,
-      ResolutionPreset.medium,
-      enableAudio: false,
-      imageFormatGroup: ImageFormatGroup.yuv420,
-    );
-
-    await _controller!.initialize();
-    await _controller!.lockCaptureOrientation();
-
-    if (!mounted) return;
-
-    _controller!.startImageStream(_onFrame);
-    setState(() => _statusLabel = '감지 중...');
   }
 
   void _onFrame(CameraImage image) {
@@ -111,52 +167,117 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     super.dispose();
   }
 
-  Color get _statusColor => _labelColors[
-    _statusLabel == '정상 진행' ? 'front' :
-    _statusLabel == '왼쪽 이탈' ? 'left' :
-    _statusLabel == '오른쪽 이탈' ? 'right' : 'front'
-  ] ?? Colors.grey;
+  Color get _statusColor {
+    if (_hasError) return Colors.red;
+    if (_statusLabel == '정상 진행') return Colors.green;
+    if (_statusLabel == '왼쪽 이탈') return Colors.red;
+    if (_statusLabel == '오른쪽 이탈') return Colors.orange;
+    return Colors.grey;
+  }
+
+  IconData? get _statusIcon {
+    if (_hasError) return Icons.error_outline;
+    if (_statusLabel == '정상 진행') return _labelIcons['front'];
+    if (_statusLabel == '왼쪽 이탈') return _labelIcons['left'];
+    if (_statusLabel == '오른쪽 이탈') return _labelIcons['right'];
+    return null;
+  }
+
+  bool get _isLoading =>
+      !_hasError && (_controller == null || !_controller!.value.isInitialized);
 
   @override
   Widget build(BuildContext context) {
+    final statusIcon = _statusIcon;
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // 카메라 프리뷰
           if (_controller != null && _controller!.value.isInitialized)
             Positioned.fill(
               child: CameraPreview(_controller!),
             ),
 
-          // 상태 오버레이 (하단)
+          // 오류 상태: 화면 전체를 반투명 빨간 오버레이로 덮어 시각적으로 명확히 표시
+          if (_hasError)
+            Positioned.fill(
+              child: ColoredBox(color: Colors.red.withOpacity(0.25)),
+            ),
+
           Positioned(
             bottom: 0,
             left: 0,
             right: 0,
-            child: Container(
-              color: Colors.black.withOpacity(0.65),
-              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    _statusLabel,
-                    style: TextStyle(
-                      color: _statusColor,
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  if (_confidence > 0)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        '신뢰도: ${(_confidence * 100).toStringAsFixed(1)}%',
-                        style: const TextStyle(color: Colors.white70, fontSize: 14),
+            child: SafeArea(
+              top: false,
+              child: Container(
+                color: Colors.black.withOpacity(0.65),
+                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_isLoading)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 12),
+                        child: SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 3,
+                            color: Colors.white70,
+                          ),
+                        ),
                       ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (!_isLoading && statusIcon != null) ...[
+                          Icon(statusIcon, color: _statusColor, size: 32),
+                          const SizedBox(width: 8),
+                        ],
+                        Flexible(
+                          child: Text(
+                            _statusLabel,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: _statusColor,
+                              fontSize: 26,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                ],
+                    if (_confidence > 0 && !_hasError)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          '신뢰도: ${(_confidence * 100).toStringAsFixed(1)}%',
+                          style: const TextStyle(color: Colors.white70, fontSize: 14),
+                        ),
+                      ),
+                    if (_hasError)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 16),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: _initCamera,
+                            icon: const Icon(Icons.refresh),
+                            label: const Text(
+                              '다시 시도',
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              minimumSize: const Size.fromHeight(52),
+                              backgroundColor: Colors.white,
+                              foregroundColor: Colors.black,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),

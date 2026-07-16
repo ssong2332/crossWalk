@@ -1,0 +1,122 @@
+name: Flutter APK Build
+
+on:
+  push:
+    branches:
+      - develop
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+
+    steps:
+      # 공급망 보안: SHA 고정으로 액션 버전 변조 방지
+      # 나머지 액션도 동일하게 SHA를 고정할 것:
+      #   gh api repos/{owner}/{repo}/git/ref/tags/{tag} --jq '.object.sha'
+      - name: 코드 체크아웃
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+
+      - name: Java 17 설정
+        uses: actions/setup-java@v4  # TODO: SHA 고정 필요
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Flutter 설정
+        uses: subosito/flutter-action@v2  # TODO: SHA 고정 필요
+        with:
+          flutter-version: '3.32.2'
+          channel: 'stable'
+          cache: true
+
+      - name: ONNX 모델 파일 확인 및 해시 생성
+        run: |
+          MODEL_PATH="crosswalk_app/assets/model/crosswalk_model.onnx"
+          HASH_PATH="crosswalk_app/assets/model/crosswalk_model.onnx.sha256"
+
+          if [ ! -f "$MODEL_PATH" ] || [ "$(cat "$MODEL_PATH")" = "placeholder" ]; then
+            echo "⚠️  실제 모델 없음 - 더미 파일로 빌드 (배포 불가)"
+            echo "placeholder" > "$MODEL_PATH"
+            echo "placeholder_hash" > "$HASH_PATH"
+          else
+            SIZE=$(du -sh "$MODEL_PATH" | cut -f1)
+            HASH=$(sha256sum "$MODEL_PATH" | awk '{print $1}')
+            echo "$HASH" > "$HASH_PATH"
+            echo "✅ 모델 확인 완료 (크기: $SIZE, SHA256: $HASH)"
+          fi
+
+      - name: Flutter 패키지 설치
+        working-directory: crosswalk_app
+        run: flutter pub get
+
+      - name: APK 빌드
+        working-directory: crosswalk_app
+        run: flutter build apk --release
+
+      - name: APK 서명
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "⚠️  서명 키(KEYSTORE_BASE64 시크릿) 미설정 - 미서명 APK 사용"
+            echo "   배포용 APK는 GitHub Secrets에 키스토어를 등록하세요."
+            exit 0
+          fi
+
+          echo "$KEYSTORE_BASE64" | base64 --decode > /tmp/release.jks
+
+          BUILD_TOOLS=$(ls "$ANDROID_HOME/build-tools/" | sort -V | tail -1)
+          APK_DIR="crosswalk_app/build/app/outputs/flutter-apk"
+
+          "$ANDROID_HOME/build-tools/$BUILD_TOOLS/zipalign" -v 4 \
+            "$APK_DIR/app-release.apk" \
+            "$APK_DIR/app-release-aligned.apk"
+
+          "$ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner" sign \
+            --ks /tmp/release.jks \
+            --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass "pass:$STORE_PASSWORD" \
+            --key-pass "pass:$KEY_PASSWORD" \
+            --out "$APK_DIR/app-release-signed.apk" \
+            "$APK_DIR/app-release-aligned.apk"
+
+          rm -f /tmp/release.jks "$APK_DIR/app-release-aligned.apk"
+          echo "✅ APK 서명 완료"
+
+      - name: APK 업로드 (Artifacts)
+        uses: actions/upload-artifact@v4  # TODO: SHA 고정 필요
+        with:
+          name: crosswalk-app-${{ github.sha }}
+          path: |
+            crosswalk_app/build/app/outputs/flutter-apk/app-release-signed.apk
+            crosswalk_app/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: 빌드 결과 요약
+        run: |
+          APK_DIR="crosswalk_app/build/app/outputs/flutter-apk"
+          if [ -f "$APK_DIR/app-release-signed.apk" ]; then
+            APK_PATH="$APK_DIR/app-release-signed.apk"
+            SIGNED="✅ 서명됨"
+          else
+            APK_PATH="$APK_DIR/app-release.apk"
+            SIGNED="⚠️ 미서명 (배포 불가)"
+          fi
+          APK_SIZE=$(du -sh "$APK_PATH" | cut -f1)
+          echo "## APK 빌드 완료" >> $GITHUB_STEP_SUMMARY
+          echo "| 항목 | 내용 |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| 서명 상태 | $SIGNED |" >> $GITHUB_STEP_SUMMARY
+          echo "| 파일 크기 | $APK_SIZE |" >> $GITHUB_STEP_SUMMARY
+          echo "| 커밋 | ${{ github.sha }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 브랜치 | ${{ github.ref_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Actions 탭 → 해당 워크플로우 → Artifacts에서 APK 다운로드**" >> $GITHUB_STEP_SUMMARY

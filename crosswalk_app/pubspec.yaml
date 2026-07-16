@@ -11,12 +11,13 @@ dependencies:
   flutter:
     sdk: flutter
   camera: ^0.11.0+2
-  tflite_flutter: ^0.10.4
+  onnxruntime: ^1.4.0
   flutter_tts: ^4.0.2
   vibration: ^2.0.0
   image: ^4.1.7
   permission_handler: ^11.3.0
   wakelock_plus: ^1.2.5
+  crypto: ^3.0.3
 
 dev_dependencies:
   flutter_test:
