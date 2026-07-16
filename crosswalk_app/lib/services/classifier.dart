@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:crypto/crypto.dart';
@@ -84,8 +85,10 @@ class Classifier {
 
     final outputTensor = outputs.first as OrtValueTensor;
     final rawOutput = outputTensor.value as List;
-    final probs = (rawOutput.first as List).map((e) => (e as double)).toList();
+    final logits = (rawOutput.first as List).map((e) => (e as double)).toList();
     outputTensor.release();
+
+    final probs = _softmax(logits);
 
     _recentProbs.add(probs);
     if (_recentProbs.length > _smoothingWindow) _recentProbs.removeAt(0);
@@ -147,6 +150,17 @@ class Classifier {
     } catch (_) {
       return null;
     }
+  }
+
+  /// 모델이 raw logits(softmax 미적용)를 출력하므로, 확률로 변환한다.
+  /// (train/train_model.py는 CrossEntropyLoss로 학습되어 logits를 기대함)
+  /// 오버플로 방지를 위해 최대 logit을 뺀 뒤 exponentiate하는
+  /// 수치적으로 안정적인 softmax 구현.
+  List<double> _softmax(List<double> logits) {
+    final maxLogit = logits.reduce((a, b) => a > b ? a : b);
+    final exps = logits.map((l) => math.exp(l - maxLogit)).toList();
+    final sumExps = exps.fold<double>(0.0, (a, b) => a + b);
+    return exps.map((e) => e / sumExps).toList();
   }
 
   img.Image _convertYUV420(CameraImage image) {
