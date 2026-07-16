@@ -47,6 +47,11 @@ class Classifier {
     _session?.release();
     _session = null;
 
+    // 재호출 이전 실행의 상태(일시정지/에러 전 프레임의 확률 벡터)가 남아 있으면
+    // 재개 직후 스무딩 평균에 섞여 판정이 지연될 수 있으므로 초기화 시 비운다.
+    _recentProbs.clear();
+    _frameCount = 0;
+
     if (!_envInitialized) {
       OrtEnv.instance.init();
       _envInitialized = true;
