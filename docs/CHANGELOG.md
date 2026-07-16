@@ -18,6 +18,9 @@ Owner: docs agent (see AGENTS.md). Format: [Keep a Changelog](https://keepachang
 - **T24 (P1, memory leak)**: `Classifier.init()` unconditionally created a new `OrtSession` without releasing the previous one, and re-initialized the non-idempotent native `OrtEnv` on every call. Fixed by releasing the prior session before reassigning and gating `OrtEnv.instance.init()` to once per instance — `crosswalk_app/lib/services/classifier.dart:44-53,221-226` (commit `bc0bba8`).
 - **T25 (P1, stale safety cue)**: `FeedbackService.alert()` did not stop prior in-progress TTS speech before speaking a new alert. Load-bearing on iOS, where `AVSpeechSynthesizer` queues utterances by default (Android's `flutter_tts` 4.2.5 already defaults to `QUEUE_FLUSH`). Fixed with `await _tts.stop()` before `speak()` — `crosswalk_app/lib/services/feedback_service.dart:42-43` (commit `e5ca05f`).
 
+### Documentation
+- **T22**: Traced and documented the actual ONNX export path from `train/` to the shipped `crosswalk_model.onnx`. Corrected a false claim (in `docs/PRD.md` "Known Documentation Drift" and a prior `docs/Architecture.md` Open Question) that `train/export_onnx.py` was "absent" — it exists and is a separate standalone re-export script from `train_model.py`'s embedded exporter. Verified the shipped model's actual `ir_version=7`/`opset=12` via `onnx.load()`, matching `export_onnx.py`'s settings (not `train_model.py`'s opset-17 exporter). See `docs/Architecture.md` §11.1/§11.2.
+
 ## [0.1.0] - {{YYYY-MM-DD}}
 ### Added
 - Initial release.

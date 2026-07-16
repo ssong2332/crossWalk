@@ -54,7 +54,7 @@ Evidence: `pubspec.yaml:2` (description), `ARCHITECTURE.md:3`, `crosswalk_app/li
 - Throttle: doc says 10 (`ARCHITECTURE.md:174,196`); code is 5 (`classifier.dart:31`).
 - Threshold: doc says single 0.70 (`ARCHITECTURE.md:172,189`); code uses 0.85/0.55 (`classifier.dart:27-28`).
 - Init order: doc says permission→model→TTS (`ARCHITECTURE.md:127-137`); code is TTS→permission→model (`camera_screen.dart:60-75`).
-- `export_onnx.py` described (`ARCHITECTURE.md:90`) but absent from `train/` (only `train_model.py`, `convert_to_tflite.py`).
+- `export_onnx.py` described (`ARCHITECTURE.md:90`) — **correction**: an earlier pass of this doc claimed it was "absent from `train/`"; that was wrong. `train/export_onnx.py` exists (25 lines) as a standalone re-export script separate from `train_model.py`'s embedded exporter; it is the script whose settings (opset 12, `dynamo=False`) match the currently-shipped model's verified `ir_version=7`/`opset=12`. Full trace: `docs/Architecture.md` §11.1/§11.2.
 
 ## Out of Scope (current build)
 - iOS build/signing (CI produces APK only; BGRA preprocessing path exists but no confirmed iOS target — Open Q #1).
