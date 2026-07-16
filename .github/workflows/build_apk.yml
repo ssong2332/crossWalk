@@ -53,6 +53,10 @@ jobs:
         working-directory: crosswalk_app
         run: flutter pub get
 
+      - name: Flutter 테스트
+        working-directory: crosswalk_app
+        run: flutter test
+
       - name: APK 빌드
         working-directory: crosswalk_app
         run: flutter build apk --release

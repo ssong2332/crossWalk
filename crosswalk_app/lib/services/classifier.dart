@@ -1,7 +1,9 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
+import 'package:meta/meta.dart';
 import 'package:onnxruntime/onnxruntime.dart';
 import 'package:image/image.dart' as img;
 
@@ -65,8 +67,7 @@ class Classifier {
   }
 
   ClassificationResult? processFrame(CameraImage cameraImage) {
-    _frameCount++;
-    if (_frameCount % _throttleFrames != 0) return null;
+    if (!shouldProcessFrame()) return null;
 
     final input = _preprocessCamera(cameraImage);
     if (input == null) return null;
@@ -84,8 +85,25 @@ class Classifier {
 
     final outputTensor = outputs.first as OrtValueTensor;
     final rawOutput = outputTensor.value as List;
-    final probs = (rawOutput.first as List).map((e) => (e as double)).toList();
+    final logits = (rawOutput.first as List).map((e) => (e as double)).toList();
     outputTensor.release();
+
+    return decideFromLogits(logits);
+  }
+
+  /// 프레임 카운터를 증가시키고, 이번 프레임을 처리할 차례인지(스로틀 게이트 통과 여부) 반환한다.
+  /// `processFrame`에서 분리되어 있어 ONNX 세션 없이도 스로틀 동작을 단위 테스트할 수 있다.
+  @visibleForTesting
+  bool shouldProcessFrame() {
+    _frameCount++;
+    return _frameCount % _throttleFrames == 0;
+  }
+
+  /// 로짓을 확률로 변환하고, 스무딩 평균 및 임계값 판정을 거쳐 최종 결과를 결정한다.
+  /// `processFrame`에서 분리되어 있어 `OrtSession` 없이도 단위 테스트가 가능하다.
+  @visibleForTesting
+  ClassificationResult? decideFromLogits(List<double> logits) {
+    final probs = softmax(logits);
 
     _recentProbs.add(probs);
     if (_recentProbs.length > _smoothingWindow) _recentProbs.removeAt(0);
@@ -147,6 +165,18 @@ class Classifier {
     } catch (_) {
       return null;
     }
+  }
+
+  /// 모델이 raw logits(softmax 미적용)를 출력하므로, 확률로 변환한다.
+  /// (train/train_model.py는 CrossEntropyLoss로 학습되어 logits를 기대함)
+  /// 오버플로 방지를 위해 최대 logit을 뺀 뒤 exponentiate하는
+  /// 수치적으로 안정적인 softmax 구현.
+  @visibleForTesting
+  List<double> softmax(List<double> logits) {
+    final maxLogit = logits.reduce((a, b) => a > b ? a : b);
+    final exps = logits.map((l) => math.exp(l - maxLogit)).toList();
+    final sumExps = exps.fold<double>(0.0, (a, b) => a + b);
+    return exps.map((e) => e / sumExps).toList();
   }
 
   img.Image _convertYUV420(CameraImage image) {
