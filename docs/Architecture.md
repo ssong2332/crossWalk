@@ -1,7 +1,7 @@
 # Architecture — crosswalk_app (횡단보도 이탈 감지)
 
 Owner: architect (see AGENTS.md). Others read-only.
-Last updated: 2026-07-16. Basis: direct inspection of `crosswalk_app/lib/**`, `crosswalk_app/pubspec.yaml`, `.github/workflows/build_apk.yml`, `train/train_model.py`. Every claim is cited to `file:line` or command output.
+Last updated: 2026-07-16 (synced against T9/T10/T21/T23/T24/T25 fixes, see `docs/Tasks.md`). Basis: direct inspection of `crosswalk_app/lib/**`, `crosswalk_app/test/**`, `crosswalk_app/pubspec.yaml`, `.github/workflows/build_apk.yml`, `train/train_model.py`. Every claim is cited to `file:line` or command output.
 Requirements source: `docs/PRD.md`. Unresolved product decisions are NOT re-decided here — they are cross-referenced to `docs/PRD.md` Open Questions (Q#…).
 
 > This document describes the system **as-built**. Where the root `ARCHITECTURE.md` disagrees with code, code wins (drift list in `docs/PRD.md` §"Known Documentation Drift"). Do not treat root `ARCHITECTURE.md` as authoritative.
@@ -95,9 +95,9 @@ Evidence: file layout confirmed by glob of `crosswalk_app/lib/**`, `train/**`; `
 | Component | File | Responsibility | Must NOT do |
 |---|---|---|---|
 | `main()` / `CrosswalkApp` | `main.dart:5-23` | Portrait lock (`main.dart:7`), dark theme, mount `CameraScreen` | Business logic |
-| `CameraScreen` (StatefulWidget) | `camera_screen.dart:9-288` | Orchestrate init sequence, own `CameraController`, handle lifecycle & wakelock, render overlay UI, route frames to services | Preprocess/infer directly (delegates to `Classifier`) |
-| `Classifier` (service) | `classifier.dart:21-181` | Load+verify model, throttle, preprocess frame, run ONNX, smooth probs, apply thresholds, return `ClassificationResult?` | Touch UI / TTS / vibration |
-| `FeedbackService` (service) | `feedback_service.dart:4-50` | TTS + vibration, per-class cooldown, spoken error announcements | Touch camera / inference |
+| `CameraScreen` (StatefulWidget) | `camera_screen.dart:9-296` | Orchestrate init sequence (re-entrancy-guarded via `_isInitializing`, T23 fix, `camera_screen.dart:54-55,135-137`), own `CameraController`, handle lifecycle & wakelock, render overlay UI, route frames to services | Preprocess/infer directly (delegates to `Classifier`) |
+| `Classifier` (service) | `classifier.dart:23-227` | Load+verify model (releasing any prior `OrtSession` first, env init gated to once/instance — T24 fix, `classifier.dart:44-53,221-226`), throttle, preprocess frame, run ONNX, **softmax raw logits → probabilities** (T21 fix, `classifier.dart:188-194`), smooth probs, apply thresholds, return `ClassificationResult?` | Touch UI / TTS / vibration |
+| `FeedbackService` (service) | `feedback_service.dart:5-59` | TTS + vibration, per-class cooldown, **stops any in-progress speech before a new alert** (T25 fix, `feedback_service.dart:42-43`), spoken error announcements | Touch camera / inference |
 | `ClassificationResult` (DTO) | `classifier.dart:8-12` | Immutable `{label, confidence}` | — |
 | `ModelIntegrityException` | `classifier.dart:14-19` | Signal corrupt/tampered model → surfaced as error UI (`camera_screen.dart:109`) | — |
 
@@ -114,8 +114,9 @@ flowchart TD
   CLS -->|frameCount %% 5 != 0| SKIP[return null — throttled]
   CLS -->|every 5th frame| PRE[_preprocessCamera<br/>YUV420/BGRA -> RGB -> 224x224<br/>NCHW + ImageNet norm]
   PRE --> ORT[OrtSession.run input:1x3x224x224]
-  ORT --> OUT[output vector, 3 values]
-  OUT --> SMOOTH[append to last-5 window, average]
+  ORT --> OUT[raw logits, 3 values]
+  OUT --> SOFTMAX[softmax logits -> probabilities<br/>T21 fix, numerically stable]
+  SOFTMAX --> SMOOTH[append to last-5 window, average]
   SMOOTH --> ARGMAX[argmax -> label]
   ARGMAX --> TH{conf >= threshold?<br/>front 0.85 / left,right 0.55}
   TH -->|no| NULL[return null]
@@ -134,11 +135,12 @@ Step-by-step with evidence:
 | 3 | Throttle: infer only every 5th frame | `classifier.dart:31,68-69` |
 | 4 | Preprocess: format branch YUV420 vs BGRA, resize 224², NCHW + ImageNet mean/std | `classifier.dart:113-146` |
 | 5 | YUV420→RGB per-pixel BT.601 conversion | `classifier.dart:152-175` |
-| 6 | Inference: `OrtSession.run(..., {'input': tensor})`, read `outputs.first` | `classifier.dart:74-88` |
-| 7 | Smoothing: keep last 5 prob vectors, average | `classifier.dart:24,90-98` |
-| 8 | Decision: argmax + asymmetric threshold (front 0.85 / deviation 0.55) | `classifier.dart:27-28,100-108` |
-| 9 | UI update via `setState` (label text + confidence %) | `camera_screen.dart:139-144,231-258` |
-| 10 | Feedback: front silent; left/right → TTS + 500ms vibrate with 3s per-class cooldown | `feedback_service.dart:17-38` |
+| 6 | Inference: `OrtSession.run(..., {'input': tensor})`, read raw logits from `outputs.first` | `classifier.dart:89-105` |
+| 7 | **Softmax**: model has no Softmax node, so raw logits are converted to probabilities via a numerically-stable softmax before any thresholding (T21 fix, commit `33786d7`) | `classifier.dart:119-120,188-194` |
+| 8 | Smoothing: keep last 5 prob vectors, average | `classifier.dart:26,122-130` |
+| 9 | Decision: argmax + asymmetric threshold (front 0.85 / deviation 0.55) | `classifier.dart:29-30,132-140` |
+| 10 | UI update via `setState` (label text + confidence %) | `camera_screen.dart:147-152`, `239-266` |
+| 11 | Feedback: front silent; left/right → **stop any in-progress speech (T25 fix, `feedback_service.dart:42`)**, then TTS + 500ms vibrate with 3s per-class cooldown | `feedback_service.dart:18-48` |
 
 ---
 
@@ -148,7 +150,9 @@ Step-by-step with evidence:
 |---|---|---|---|
 | Inference isolate | **None** — runs on the frame-stream callback (main isolate) | `classifier.dart:67-111` is fully synchronous; called directly in `camera_screen.dart:136` | Heavy per-pixel YUV→RGB Dart loop + ONNX run on UI isolate can drop/stall frames on low-end devices |
 | YUV→RGB conversion | Synchronous nested `for` over every pixel | `classifier.dart:162-173` | O(width×height) on UI isolate per inferred frame |
-| Re-entrancy control | Boolean flag `_isProcessing`, not a queue | `camera_screen.dart:133-134,147` | Because `processFrame` is synchronous, the flag is set/cleared within one synchronous call — it drops overlapping native callbacks rather than parallelizing |
+| Re-entrancy control (per-frame) | Boolean flag `_isProcessing`, not a queue | `camera_screen.dart:141-155` | Because `processFrame` is synchronous, the flag is set/cleared within one synchronous call — it drops overlapping native callbacks rather than parallelizing |
+| Re-entrancy control (`_initCamera`) | Boolean flag `_isInitializing`, whole async body wrapped in try/finally; retry button disabled while set (T23 fix, commit `a9b77f4`) | `camera_screen.dart:25,54-55,135-137,273` | Prevents concurrent `CameraController`/`Classifier.init()` invocation from rapid resume/pause cycling or double-tapping retry — no dedicated automated test covers this guard yet (`docs/Tasks.md` T23 caveat, T11 relates) |
+| Native resource lifecycle (`Classifier`) | `init()` releases any existing `OrtSession` before creating a new one; `OrtEnv.instance.init()` gated to once per instance via `_envInitialized` (T24 fix, commit `bc0bba8`) | `classifier.dart:44-53,221-226` | Prior to fix, repeated resume/retry cycles leaked native ONNX Runtime memory (`OrtEnv.instance.init()` is non-idempotent per `onnxruntime` 1.4.1's `ort_env.dart`); no dedicated leak-measurement test exists (`docs/Tasks.md` T24 caveat) |
 | `compute`/`Isolate` usage | None | grep `Isolate\|compute(` in `lib/` → 0 matches | Moving work off UI isolate is deferred: `docs/Tasks.md` T13 |
 
 Performance targets (FPS/latency/battery/min device) are **undefined** → PRD Q#11; do not optimize blindly without a target (Tasks T12→T13).
@@ -170,16 +174,18 @@ Adequate for a single-screen app. Adding screens (onboarding/settings, PRD F16 /
 
 ## 8. Initialization & Lifecycle (as-built — differs from root doc)
 
-Actual `_initCamera` order (root `ARCHITECTURE.md` is wrong here — PRD drift note):
+Actual `_initCamera` order (root `ARCHITECTURE.md` is wrong here — PRD drift note); the whole body is now guarded by `_isInitializing` (T23 fix, commit `a9b77f4`) so concurrent calls (rapid resume/retry) return immediately instead of racing:
 ```
-FeedbackService.init (TTS first, so later errors can be spoken)  camera_screen.dart:60
-  -> Permission.camera.request                                   camera_screen.dart:62-72
-  -> Classifier.init (load + verify + OrtSession)                camera_screen.dart:74-75
-  -> availableCameras / pick back camera                         camera_screen.dart:78-93
-  -> CameraController.initialize + lockCaptureOrientation        camera_screen.dart:95-103
-  -> startImageStream(_onFrame)                                  camera_screen.dart:107
+if (_isInitializing) return; _isInitializing = true            camera_screen.dart:54-55
+FeedbackService.init (TTS first, so later errors can be spoken)  camera_screen.dart:65
+  -> Permission.camera.request                                   camera_screen.dart:67-77
+  -> Classifier.init (releases prior OrtSession, load + verify)  camera_screen.dart:80-81
+  -> availableCameras / pick back camera                         camera_screen.dart:83-99
+  -> CameraController.initialize + lockCaptureOrientation        camera_screen.dart:100-108
+  -> startImageStream(_onFrame)                                  camera_screen.dart:112
+finally { _isInitializing = false }                               camera_screen.dart:135-137
 ```
-Lifecycle: background (`inactive`) → dispose controller (`camera_screen.dart:153-154`); `resumed` → re-run `_initCamera` (`camera_screen.dart:155-156`). Wakelock enabled in `initState` (`:48`), disabled in `dispose` (`:163`).
+Lifecycle: background (`inactive`) → dispose controller (`camera_screen.dart:161-162`); `resumed` → re-run `_initCamera` (`camera_screen.dart:163-164`, now safely re-entrant per above). Wakelock enabled in `initState` (`:49`), disabled in `dispose` (`:171`). Retry button also disabled while `_isInitializing` is true (`camera_screen.dart:273`).
 
 Error handling → red overlay + spoken message + "다시 시도" retry button:
 | Failure | Message | Evidence |
@@ -263,8 +269,8 @@ N/A. No user accounts, no network, no protected resource. Only OS runtime permis
 | Integrity check disabled (placeholder hash) | Ships without tamper detection | Tasks T7; PRD Q#10 |
 | Asymmetric thresholds (0.85/0.55) favor catching deviations | More false alarms accepted to reduce missed deviations; no measured recall | PRD Q#3, Risks table |
 | Single-screen `setState` | Fast to build; limited if onboarding/settings added | PRD F16; Tasks T19 |
-| No automated tests | Regression risk in classifier/feedback logic | Tasks T9–T11 |
-| Model output treated as probabilities without confirmed softmax | Thresholds may be meaningless if ONNX emits raw logits | Open Question A below |
+| Automated tests: 14 unit tests exist (T9 `Classifier`, T10 `FeedbackService`) | No widget/integration coverage (`CameraScreen`, T11 open); CI is the only place tests have ever actually run — local `flutter_tester.exe` is broken on the dev machine, so a passing local claim before CI cannot be trusted | Tasks T9 (done), T10 (done), T11 (todo) |
+| Model output was raw logits compared against probability thresholds — **fixed** (softmax added, T21, commit `33786d7`) | Fix verified only by unit test (synthetic logits); real-camera/field detection-rate re-validation still open | Tasks T1, T12; Open Question A below (resolved at code level) |
 
 ---
 
@@ -274,7 +280,7 @@ These are NOT decided here. They extend `docs/PRD.md` Open Questions.
 
 | ID | Question | Why it matters | Related PRD Q |
 |---|---|---|---|
-| A | Does the shipped `crosswalk_model.onnx` include a final softmax? `train_model.py` `build_model` has **no** softmax (`:105-109`) and trains with `CrossEntropyLoss` on logits (`:151`), yet the app compares outputs to probability thresholds 0.55/0.85 (`classifier.dart:107-108`). If the ONNX emits logits, thresholds are ill-defined. Cannot be confirmed from Dart/py alone — inspect the ONNX graph. | Directly affects detection correctness/safety | Q#3, Q#10 |
+| A | **RESOLVED at code level (T21, commit `33786d7`)**: reviewer loaded the shipped ONNX graph directly and confirmed no Softmax node exists (final ops `['Flatten','Gemm','HardSigmoid','Mul','Gemm']`); the app now applies a numerically-stable softmax to the raw logits before thresholding (`classifier.dart:119-120,188-194`). Still open: unit-test-only verification (T9) is not the same as field/real-camera accuracy validation on a labeled test set. | Directly affects detection correctness/safety | Q#3, Q#10; Tasks T1, T12 |
 | B | Shipped ONNX was exported with which opset/IR? `train_model.py` uses opset 17 (`:226`); git log shows "ONNX IR version 다운그레이드 (10→7)"; PRD notes an `export_onnx.py` (opset 12) referenced by root doc but absent. The exact export path of the bundled model is untracked. | Runtime compat + reproducibility | Q#10 |
 | C | Is BGRA preprocessing path (`classifier.dart:119-125`) dead code on Android-only builds, or a committed intent to support iOS? | Scope of platform support | Q#1 |
 
