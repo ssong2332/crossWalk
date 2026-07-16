@@ -22,6 +22,7 @@ Tasks marked ⛔BLOCKED depend on an Open Question in `docs/PRD.md` and must not
 | T9 | Add unit tests for `Classifier` (smoothing, thresholds, throttle) | P1 | — | Tests exist under `crosswalk_app/test/` and pass. Gap: no test dir | todo |
 | T10 | Add unit tests for `FeedbackService` (cooldown, class-change, front-silence) | P1 | — | Tests cover `feedback_service.dart:17-39` | todo |
 | T11 | Add widget test for `CameraScreen` error/retry states | P2 | — | Covers `_hasError` overlay + retry (`camera_screen.dart:202-278`) | todo |
+| T21 | Verify ONNX model output activation vs app threshold logic | P0 | — | Confirm whether exported ONNX graph applies softmax. Gap: `train/train_model.py:105-109` trains with `CrossEntropyLoss` (raw logits, no softmax layer), but `classifier.dart:107-108` compares output directly against probability thresholds 0.55/0.85. If ONNX output is logits, thresholds are meaningless and detection may be silently wrong. Inspect ONNX graph (e.g. via Netron or `onnx.checker`) and fix export or thresholds accordingly | todo |
 
 ## C. Ready — performance
 | ID | Task | Priority | Depends on | Acceptance Criteria | Status |
@@ -32,8 +33,9 @@ Tasks marked ⛔BLOCKED depend on an Open Question in `docs/PRD.md` and must not
 ## D. Documentation sync (docs agent)
 | ID | Task | Priority | Depends on | Acceptance Criteria | Status |
 |---|---|---|---|---|---|
-| T14 | Fix `ARCHITECTURE.md` drift: throttle 10→5, threshold 0.70→0.85/0.55, init order, remove `export_onnx.py` | P1 | — | Doc matches code (see PRD "Documentation Drift") | todo |
+| T14 | Fix `ARCHITECTURE.md` drift: throttle 10→5, threshold 0.70→0.85/0.55, init order, remove `export_onnx.py`, build command `--no-shrink`→`flutter build apk --release` | P1 | — | Doc matches code (see PRD "Documentation Drift"). Gap: `ARCHITECTURE.md` states `--no-shrink` but CI runs `flutter build apk --release` (`.github/workflows/build_apk.yml:58`) | todo |
 | T15 | Fill `CLAUDE.md` project overview + verified build/test/run commands | P2 | — | Placeholders replaced with real values | todo |
+| T22 | Trace/document actual ONNX export path from `train/` to shipped `crosswalk_model.onnx` | P1 | — | Gap: training script targets opset 17; git log only records "IR version 10→7 downgrade"; no `export_onnx.py` found in repo. Document (or restore) the real export script and its opset/IR settings so the model can be reproduced | todo |
 
 ## E. Deferred / decision-gated features
 | ID | Task | Priority | Depends on | Acceptance Criteria | Status |
