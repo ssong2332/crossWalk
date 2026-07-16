@@ -226,7 +226,9 @@ class Classifier {
   void dispose() {
     _session?.release();
     _session = null;
-    OrtEnv.instance.release();
-    _envInitialized = false;
+    if (_envInitialized) {
+      OrtEnv.instance.release();
+      _envInitialized = false;
+    }
   }
 }
