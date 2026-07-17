@@ -9,9 +9,65 @@
 // failed" — both of which return null from `processFrame` and are otherwise
 // indistinguishable from the outside.
 import 'dart:typed_data';
+import 'package:camera/camera.dart';
+import 'package:camera_platform_interface/camera_platform_interface.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:crosswalk_app/services/classifier.dart';
+
+/// Builds a BGRA8888 [CameraImage] with exactly two pixels wide/high, laid
+/// out at an arbitrary [bytesOffset] within a larger native buffer and with
+/// an arbitrary [rowStride] (>= `width * 4` when row padding is desired).
+///
+/// The region *outside* the real pixel data (the prefix before
+/// [bytesOffset] and any trailing per-row padding introduced by [rowStride])
+/// is filled with a sentinel byte (`0xEE`) that never appears in the real
+/// pixel values below, so a regression that ignores `bytesOffset`/`rowStride`
+/// reads that sentinel instead of the intended color and fails the
+/// assertion.
+CameraImage buildBgra8888CameraImage({
+  required int bytesOffset,
+  required int rowStride,
+}) {
+  const width = 2;
+  const height = 2;
+  const bytesPerPixel = 4;
+
+  // Each pixel gets a distinct, easily verifiable (b, g, r) triple.
+  const pixels = [
+    [10, 20, 30], // (0, 0)
+    [40, 50, 60], // (1, 0)
+    [70, 80, 90], // (0, 1)
+    [100, 110, 120], // (1, 1)
+  ];
+
+  final totalSize = bytesOffset + rowStride * height;
+  final raw = Uint8List(totalSize)..fillRange(0, totalSize, 0xEE);
+
+  for (int y = 0; y < height; y++) {
+    for (int x = 0; x < width; x++) {
+      final pixel = pixels[y * width + x];
+      final pixelStart = bytesOffset + y * rowStride + x * bytesPerPixel;
+      raw[pixelStart] = pixel[0]; // B
+      raw[pixelStart + 1] = pixel[1]; // G
+      raw[pixelStart + 2] = pixel[2]; // R
+      raw[pixelStart + 3] = 255; // A
+    }
+  }
+
+  // A Uint8List *view* into `raw`, starting at `bytesOffset` — mirrors how
+  // `camera`'s native platform code hands back a plane that is a slice of a
+  // larger buffer (see T29 comment in classifier.dart).
+  final view = Uint8List.view(raw.buffer, bytesOffset, rowStride * height);
+
+  final data = CameraImageData(
+    format: const CameraImageFormat(ImageFormatGroup.bgra8888, raw: 0),
+    planes: [CameraImagePlane(bytes: view, bytesPerRow: rowStride)],
+    height: height,
+    width: width,
+  );
+  return CameraImage.fromPlatformInterface(data);
+}
 
 void main() {
   group('Classifier.softmax', () {
@@ -184,6 +240,65 @@ void main() {
       final wrongHash = sha256.convert(Uint8List.fromList([9, 9, 9, 9, 9])).toString();
 
       expect(classifier.hashMatches(bytes, '$wrongHash\r\n'), isFalse);
+    });
+  });
+
+  group('Classifier.convertBGRA8888 — buffer offset/row-stride (T29)', () {
+    test('reads pixels correctly when the plane view has a non-zero bytesOffset', () {
+      final classifier = Classifier();
+      final image = buildBgra8888CameraImage(bytesOffset: 16, rowStride: 8);
+
+      final decoded = classifier.convertBGRA8888(image);
+
+      final p00 = decoded.getPixel(0, 0);
+      expect(p00.b, 10);
+      expect(p00.g, 20);
+      expect(p00.r, 30);
+
+      final p11 = decoded.getPixel(1, 1);
+      expect(p11.b, 100);
+      expect(p11.g, 110);
+      expect(p11.r, 120);
+    });
+
+    test('reads pixels correctly when rowStride exceeds width * 4 (row padding)', () {
+      final classifier = Classifier();
+      // width * 4 = 8, so rowStride = 12 leaves 4 padding bytes per row.
+      final image = buildBgra8888CameraImage(bytesOffset: 0, rowStride: 12);
+
+      final decoded = classifier.convertBGRA8888(image);
+
+      final p00 = decoded.getPixel(0, 0);
+      expect(p00.b, 10);
+      expect(p00.g, 20);
+      expect(p00.r, 30);
+
+      final p01 = decoded.getPixel(0, 1);
+      expect(p01.b, 70);
+      expect(p01.g, 80);
+      expect(p01.r, 90);
+
+      final p11 = decoded.getPixel(1, 1);
+      expect(p11.b, 100);
+      expect(p11.g, 110);
+      expect(p11.r, 120);
+    });
+
+    test('combines a non-zero bytesOffset and row padding correctly', () {
+      final classifier = Classifier();
+      final image = buildBgra8888CameraImage(bytesOffset: 24, rowStride: 12);
+
+      final decoded = classifier.convertBGRA8888(image);
+
+      final p10 = decoded.getPixel(1, 0);
+      expect(p10.b, 40);
+      expect(p10.g, 50);
+      expect(p10.r, 60);
+
+      final p01 = decoded.getPixel(0, 1);
+      expect(p01.b, 70);
+      expect(p01.g, 80);
+      expect(p01.r, 90);
     });
   });
 }
