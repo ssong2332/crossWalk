@@ -1,16 +1,22 @@
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:meta/meta.dart';
 import 'package:vibration/vibration.dart';
+import '../localization/app_strings.dart';
 
 class FeedbackService {
   final FlutterTts _tts = FlutterTts();
   DateTime? _lastAlertTime;
   String? _lastAlertClass;
 
+  // Defaults to Korean so behavior is unchanged for callers/tests that
+  // never call init() (matches this app's pre-localization fallback).
+  AppLanguage _language = AppLanguage.ko;
+
   static const _cooldownSeconds = 3;
 
-  Future<void> init() async {
-    await _tts.setLanguage('ko-KR');
+  Future<void> init({AppLanguage language = AppLanguage.ko}) async {
+    _language = language;
+    await _tts.setLanguage(ttsLocaleCode(_language));
     await _tts.setSpeechRate(0.5);
     await _tts.setVolume(1.0);
   }
@@ -30,9 +36,10 @@ class FeedbackService {
     _lastAlertTime = now;
     _lastAlertClass = detectedClass;
 
+    final strings = AppStrings.of(_language);
     return detectedClass == 'left'
-        ? '왼쪽으로 이탈했습니다. 오른쪽으로 이동하세요'
-        : '오른쪽으로 이탈했습니다. 왼쪽으로 이동하세요';
+        ? strings.leftDeviationMessage
+        : strings.rightDeviationMessage;
   }
 
   Future<void> alert(String detectedClass) async {
