@@ -162,12 +162,7 @@ class Classifier {
       if (image.format.group == ImageFormatGroup.yuv420) {
         decoded = _convertYUV420(image);
       } else if (image.format.group == ImageFormatGroup.bgra8888) {
-        decoded = img.Image.fromBytes(
-          width: image.width,
-          height: image.height,
-          bytes: image.planes[0].bytes.buffer,
-          order: img.ChannelOrder.bgra,
-        );
+        decoded = convertBGRA8888(image);
       } else {
         return null;
       }
@@ -204,6 +199,34 @@ class Classifier {
     final exps = logits.map((l) => math.exp(l - maxLogit)).toList();
     final sumExps = exps.fold<double>(0.0, (a, b) => a + b);
     return exps.map((e) => e / sumExps).toList();
+  }
+
+  /// (T29) iOS BGRA8888 is a single plane. `image.planes[0].bytes` is a
+  /// `Uint8List` *view* into a larger native `ByteBuffer` — its
+  /// `offsetInBytes` is not guaranteed to be 0, and its row stride
+  /// (`bytesPerRow`) is not guaranteed to equal `width * 4` (rows may be
+  /// padded). Passing the raw `.buffer` with no offset/stride, as a
+  /// previous version of this code did, would misalign pixels whenever
+  /// either of those holds — this path was never exercised because the
+  /// app currently forces `ImageFormatGroup.yuv420` in
+  /// `camera_screen.dart`, but `img.Image.fromBytes` supports
+  /// `bytesOffset`/`rowStride` params precisely for this case, so we
+  /// pass them through explicitly to keep this path correct once iOS
+  /// (yuv420 not supported there) reaches it (see Tasks.md T29/T33).
+  ///
+  /// Extracted from `_preprocessCamera` (behavior-preserving) so the
+  /// buffer offset/row-stride handling can be unit tested without a real
+  /// camera stream.
+  @visibleForTesting
+  img.Image convertBGRA8888(CameraImage image) {
+    return img.Image.fromBytes(
+      width: image.width,
+      height: image.height,
+      bytes: image.planes[0].bytes.buffer,
+      bytesOffset: image.planes[0].bytes.offsetInBytes,
+      rowStride: image.planes[0].bytesPerRow,
+      order: img.ChannelOrder.bgra,
+    );
   }
 
   img.Image _convertYUV420(CameraImage image) {
