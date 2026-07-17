@@ -40,7 +40,6 @@ Full rationale table: `docs/Architecture.md` section 2.
 | Path | Contents |
 |---|---|
 | `crosswalk_app/` | The real Flutter app (shipped artifact) |
-| `crosswalk_app_scaffold/` | Unused default Flutter counter-app boilerplate — not part of the product, do not treat as source of truth (`docs/PRD.md` "Out of Scope") |
 | `train/` | Offline model training pipeline (PyTorch, MobileNetV3-Small, ONNX export) — developer-run, not shipped in the app |
 | `model/` | Trained model artifacts (`.pt`, `.onnx`, confusion matrix) |
 | `image/` | Raw training images (front/left/right classes) |
