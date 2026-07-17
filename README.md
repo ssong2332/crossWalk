@@ -65,7 +65,7 @@ flutter build apk --release    # matches CI build step, .github/workflows/build_
 
 Notes:
 - CI only builds an Android APK; iOS is not built/signed in CI. Whether iOS is an intended target is unresolved — see `docs/PRD.md` Open Question #1.
-- Minimum Android SDK (minSdk) version is not documented anywhere in this repo — unresolved, see `docs/PRD.md` Open Question #2.
+- Minimum Android SDK (minSdk) is 26 (Android 8.0), set in `crosswalk_app/android/app/build.gradle.kts:27`; decided per `docs/PRD.md` Open Question #2 (ANSWERED 2026-07-17).
 - The bundled ONNX model's integrity hash is a placeholder in this repo; a real model/hash is written only in CI or must be provided locally (`.github/workflows/build_apk.yml:36-50`).
 - APK signing requires the `KEYSTORE_BASE64`/`KEY_ALIAS`/`KEY_PASSWORD`/`STORE_PASSWORD` secrets; without them CI produces an unsigned APK (`.github/workflows/build_apk.yml:60-91`).
 - **Local `flutter build apk --release` and `flutter run --release` both fail by design without an opt-in.** `crosswalk_app/android/app/build.gradle.kts`'s `release` build type (lines 33-55) only debug-signs when `GITHUB_ACTIONS=true` (CI) or `project.hasProperty("allowDebugSigningForRelease")` is true; otherwise it throws a `GradleException` refusing to build, so a bare local release build/run is never silently debug-signed.
