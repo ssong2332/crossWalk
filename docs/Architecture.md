@@ -82,11 +82,10 @@ crossWalk/
 │   └── data_prepared/             # split dataset (train/val/test)
 ├── model/                         # training artifacts (.pt/.onnx/confusion_matrix.png)
 ├── image/                         # raw training images (front/left/right)
-├── crosswalk_app_scaffold/        # UNUSED default Flutter boilerplate (ignore) — PRD "Out of Scope"
 ├── .github/workflows/build_apk.yml
 └── ARCHITECTURE.md                # STALE root doc — do not trust (PRD drift list)
 ```
-Evidence: file layout confirmed by glob of `crosswalk_app/lib/**`, `train/**`; `crosswalk_app_scaffold` flagged unused in `docs/PRD.md:62`.
+Evidence: file layout confirmed by glob of `crosswalk_app/lib/**`, `train/**`. The previously-noted unused `crosswalk_app_scaffold/` directory (default Flutter counter-app boilerplate, never tracked by git per `.gitignore`) was deleted from the filesystem (T20, no git diff — it was never committed).
 
 ---
 

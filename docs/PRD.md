@@ -59,7 +59,7 @@ Evidence: `pubspec.yaml:2` (description), `ARCHITECTURE.md:3`, `crosswalk_app/li
 ## Out of Scope (current build)
 - iOS build/signing (CI produces APK only). NOTE: iOS is now an in-scope target platform (Open Q #1 ANSWERED 2026-07-17), but no iOS build/signing pipeline exists yet — building it is tracked as T33, not part of the current build.
 - GPS/location, traffic-signal detection, obstacle detection.
-- `crosswalk_app_scaffold/` — default Flutter counter-app boilerplate, unused (`crosswalk_app_scaffold/lib/main.dart:1-15`).
+- `crosswalk_app_scaffold/` — was default Flutter counter-app boilerplate, unused; DELETED from the filesystem (T20, 2026-07-17). It was never tracked by git (`.gitignore:18`), so there is no commit/diff for the removal — pure local cleanup. The directory no longer exists.
 
 ## Assumptions (推定 — verify before building on them)
 - v1 runs offline on-device; online components may be added later (Open Q #4, ANSWERED 2026-07-17 — no longer a fixed fully-offline assumption).
