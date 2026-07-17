@@ -8,6 +8,8 @@
 // to distinguish "blocked by throttle" from "passed throttle but preprocessing
 // failed" — both of which return null from `processFrame` and are otherwise
 // indistinguishable from the outside.
+import 'dart:typed_data';
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:crosswalk_app/services/classifier.dart';
 
@@ -128,6 +130,47 @@ void main() {
       }
 
       expect(passedCount, totalCalls ~/ throttleFrames);
+    });
+  });
+
+  group('Classifier.hashMatches', () {
+    test('returns true when the expected hash matches the actual SHA-256', () {
+      final classifier = Classifier();
+      final bytes = Uint8List.fromList([1, 2, 3, 4, 5]);
+      final expectedHash = sha256.convert(bytes).toString();
+
+      expect(classifier.hashMatches(bytes, expectedHash), isTrue);
+    });
+
+    test('returns false when the expected hash does not match the actual SHA-256', () {
+      final classifier = Classifier();
+      final bytes = Uint8List.fromList([1, 2, 3, 4, 5]);
+      final differentHash = sha256.convert(Uint8List.fromList([9, 9, 9, 9, 9])).toString();
+
+      expect(classifier.hashMatches(bytes, differentHash), isFalse);
+    });
+
+    test('skips verification (returns true) for the placeholder_hash value', () {
+      final classifier = Classifier();
+      final bytes = Uint8List.fromList([1, 2, 3, 4, 5]);
+
+      expect(classifier.hashMatches(bytes, 'placeholder_hash'), isTrue);
+    });
+
+    test('skips verification (returns true) for a non-64-char hash string', () {
+      final classifier = Classifier();
+      final bytes = Uint8List.fromList([1, 2, 3, 4, 5]);
+
+      expect(classifier.hashMatches(bytes, 'short_hash'), isTrue);
+      expect(classifier.hashMatches(bytes, ''), isTrue);
+    });
+
+    test('trims surrounding whitespace/CRLF before comparing (T7 hash file format)', () {
+      final classifier = Classifier();
+      final bytes = Uint8List.fromList([1, 2, 3, 4, 5]);
+      final expectedHash = sha256.convert(bytes).toString();
+
+      expect(classifier.hashMatches(bytes, '$expectedHash\r\n'), isTrue);
     });
   });
 }
