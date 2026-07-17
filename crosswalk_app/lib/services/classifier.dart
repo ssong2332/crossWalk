@@ -68,13 +68,7 @@ class Classifier {
       final hashFile = await rootBundle.loadString(
         'assets/model/crosswalk_model.onnx.sha256',
       );
-      final expectedHash = hashFile.trim();
-
-      // placeholder 해시이거나 형식이 다르면 검증 건너뜀 (더미 빌드 / 개발 환경)
-      if (expectedHash.length != 64 || expectedHash == 'placeholder_hash') return;
-
-      final actualHash = sha256.convert(modelBytes).toString();
-      if (actualHash != expectedHash) {
+      if (!hashMatches(modelBytes, hashFile)) {
         throw ModelIntegrityException(
           '모델 파일이 손상되었거나 변조되었습니다. 앱을 다시 설치해주세요.',
         );
@@ -83,6 +77,20 @@ class Classifier {
       if (e is ModelIntegrityException) rethrow;
       // 해시 파일 없음 → 개발 환경, 건너뜀
     }
+  }
+
+  /// `expectedHashRaw`(해시 파일 원문)와 `modelBytes`의 실제 SHA-256을 비교한다.
+  /// `_verifyModelIntegrity`에서 분리되어 있어 asset 로딩 없이도 단위 테스트가 가능하다.
+  /// true = 검증 통과 또는 건너뜀(placeholder/형식 불일치), false = 해시 불일치(변조 의심).
+  @visibleForTesting
+  bool hashMatches(Uint8List modelBytes, String expectedHashRaw) {
+    final expectedHash = expectedHashRaw.trim();
+
+    // placeholder 해시이거나 형식이 다르면 검증 건너뜀 (더미 빌드 / 개발 환경)
+    if (expectedHash.length != 64 || expectedHash == 'placeholder_hash') return true;
+
+    final actualHash = sha256.convert(modelBytes).toString();
+    return actualHash == expectedHash;
   }
 
   ClassificationResult? processFrame(CameraImage cameraImage) {
