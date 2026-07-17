@@ -46,7 +46,7 @@ Evidence: `pubspec.yaml:2` (description), `ARCHITECTURE.md:3`, `crosswalk_app/li
 | Offline operation | No network calls in `lib/` (fully on-device today). | v1 offline; online components may be added later (Open Q #4, ANSWERED 2026-07-17 — not a permanent fully-offline constraint). |
 | Performance | Throttle=5 → ~6fps@30fps (`classifier.dart:30`); YUV→RGB is per-pixel Dart loop on UI isolate (`classifier.dart:132-148` runs in `_onFrame`, no isolate) | Still undefined; to be decided after real-device testing (Open Q #11). |
 | Accessibility | Custom Korean TTS + vibration; no native Semantics; high-contrast dark UI | Standard to meet still undecided (Open Q #5). |
-| Safety (false-negative risk) | Training weights left=10/right=20 vs front=1 (`ARCHITECTURE.md:77`); deviation threshold lowered to 0.55 | Deviation recall ≥ 90% / miss rate ≤ 10% (Open Q #3, ANSWERED 2026-07-17). Front false-positive tolerance not yet defined. |
+| Safety (false-negative risk) | Training weights left=10/right=20 vs front=1 (`ARCHITECTURE.md:77`); deviation threshold lowered to 0.55. **MEASURED 2026-07-17 (T1, `train/eval_model.py` on shipped `model/crosswalk_model.onnx`): TARGET NOT MET. left recall = 83.3% (5/6, 1 miss) — below the ≥90% target. right recall = 100% (3/3) but n=3 is statistically meaningless. front recall = 70.0% (35/50). Additional false-alarm finding: 14% (7/50) of truly-straight frames misclassified as a deviation (→left 4, →right 3), producing spurious "off-course" warnings. Deviation sample is tiny (left n=6, right n=3) so all figures have wide confidence intervals — but left is measured below target regardless.** | Deviation recall ≥ 90% / miss rate ≤ 10% (Open Q #3, ANSWERED 2026-07-17). NOT MET by current model (see current-state cell) — retrain on more data and re-measure against the final checkpoint (T1 / Open Q #10). Front false-positive tolerance not yet defined (the 14% false-alarm finding is new reason to define one). |
 | Model provenance | App-bundled `crosswalk_model.onnx` present; integrity hash is placeholder → verification effectively off | Confirm real vs dummy model → Open Q #10 |
 
 ## Known Documentation Drift (evidence-based, not requirements)
@@ -69,7 +69,8 @@ Evidence: `pubspec.yaml:2` (description), `ARCHITECTURE.md:3`, `crosswalk_app/li
 ## Risks
 | Risk | Impact | Mitigation |
 |---|---|---|
-| False negative (miss a deviation) | High (user safety) | Recall target ≥ 90% / miss ≤ 10% set (Open Q #3, ANSWERED 2026-07-17) — now measure against it (T1); confirm real model deployed (Open Q #10, done) |
+| False negative (miss a deviation) | High (user safety) | Recall target ≥ 90% / miss ≤ 10% set (Open Q #3, ANSWERED 2026-07-17). MEASURED 2026-07-17 (T1): current shipped model FAILS — left recall 83.3% (1 miss), right n=3 (unreliable). Mitigation NOT yet achieved: retrain on more data → re-measure against final checkpoint (T1 / Open Q #10). |
+| False alarm (spurious deviation warning while walking straight) | Med–High (user trust / safety — may cause the user to correct off a straight path, and erodes trust in the alert) | MEASURED 2026-07-17 (T1): 14% (7/50) of straight/front frames misclassified as left/right. No mitigation yet; front false-positive tolerance is still undefined (Open Q #3 covered only deviation recall). Reduce via retraining and/or defining + tuning a front false-positive target. |
 | Per-pixel YUV→RGB on UI thread may drop frames on low-end devices | Med (latency) | Define perf target + device tier (Open Q #11); consider isolate/native conversion |
 | Integrity check disabled (placeholder hash) | Med (tampered model shipped silently) | Populate real SHA-256 in build (T-prefixed task) |
 | No tests | Med (regressions) | Add unit tests for classifier/feedback logic |
