@@ -1,6 +1,7 @@
 import os
 import random
 import shutil
+from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
@@ -16,10 +17,13 @@ random.seed(SEED)
 np.random.seed(SEED)
 torch.manual_seed(SEED)
 
-DATA_DIR = r"C:\crossWalk\image"
-PREPARED_DIR = r"C:\crossWalk\train\data_prepared"
-MODEL_OUT = r"C:\crossWalk\model\crosswalk_model.pt"
-ONNX_OUT = r"C:\crossWalk\model\crosswalk_model.onnx"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DATA_DIR = REPO_ROOT / "image"
+PREPARED_DIR = REPO_ROOT / "train" / "data_prepared"
+MODEL_OUT = REPO_ROOT / "model" / "crosswalk_model.pt"
+ONNX_OUT = REPO_ROOT / "model" / "crosswalk_model.onnx"
+CONFUSION_MATRIX_OUT = REPO_ROOT / "model" / "confusion_matrix.png"
+TFLITE_OUT_DIR = REPO_ROOT / "model" / "tflite_out"
 FRONT_SAMPLE = 500
 IMG_SIZE = 224
 BATCH_SIZE = 32
@@ -210,8 +214,8 @@ def evaluate(model, test_loader, device, class_to_idx):
     ax.set_ylabel("True")
     plt.colorbar(im)
     plt.tight_layout()
-    plt.savefig(r"C:\crossWalk\model\confusion_matrix.png")
-    print("혼동행렬 저장: C:\\crossWalk\\model\\confusion_matrix.png")
+    plt.savefig(CONFUSION_MATRIX_OUT)
+    print(f"혼동행렬 저장: {CONFUSION_MATRIX_OUT}")
 
 
 # ── 6. ONNX 변환 ────────────────────────────────────────────────────
@@ -228,7 +232,7 @@ def export_onnx(model, device):
     print(f"ONNX 모델 저장: {ONNX_OUT}")
     print("\n다음 명령으로 TFLite 변환:")
     print(f"  pip install onnx2tf")
-    print(f"  onnx2tf -i {ONNX_OUT} -o C:\\crossWalk\\model\\tflite_out")
+    print(f"  onnx2tf -i {ONNX_OUT} -o {TFLITE_OUT_DIR}")
     print("  -> crosswalk_model.tflite 생성됨")
 
 
