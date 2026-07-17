@@ -1,9 +1,11 @@
+from pathlib import Path
 import torch
 import torch.nn as nn
 from torchvision.models import mobilenet_v3_small, MobileNet_V3_Small_Weights
 
-MODEL_PT   = r"C:\crossWalk\model\crosswalk_model.pt"
-ONNX_OUT   = r"C:\crossWalk\model\crosswalk_model.onnx"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+MODEL_PT   = REPO_ROOT / "model" / "crosswalk_model.pt"
+ONNX_OUT   = REPO_ROOT / "model" / "crosswalk_model.onnx"
 IMG_SIZE   = 224
 
 model = mobilenet_v3_small(weights=MobileNet_V3_Small_Weights.DEFAULT)
