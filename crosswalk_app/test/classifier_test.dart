@@ -165,12 +165,25 @@ void main() {
       expect(classifier.hashMatches(bytes, ''), isTrue);
     });
 
-    test('trims surrounding whitespace/CRLF before comparing (T7 hash file format)', () {
+    test('trims trailing CRLF from the hash file before comparing (regression guard for .trim())', () {
       final classifier = Classifier();
       final bytes = Uint8List.fromList([1, 2, 3, 4, 5]);
-      final expectedHash = sha256.convert(bytes).toString();
+      // A syntactically-valid-looking but WRONG 64-char hash (not the real
+      // hash of `bytes`), with a trailing CRLF as the real hash file on disk
+      // has (see T7).
+      //
+      // If `.trim()` is present (correct): the CRLF is stripped, so length
+      // becomes 64 -> falls through to the real comparison -> mismatch ->
+      // `false`.
+      // If `.trim()` were removed (regression): length stays 66 -> hits the
+      // length-skip branch -> `true` (wrongly skips verification).
+      //
+      // Asserting `isFalse` means this test flips from pass to fail if
+      // `.trim()` is ever deleted, unlike a matching-hash test which would
+      // return `true` either way.
+      final wrongHash = sha256.convert(Uint8List.fromList([9, 9, 9, 9, 9])).toString();
 
-      expect(classifier.hashMatches(bytes, '$expectedHash\r\n'), isTrue);
+      expect(classifier.hashMatches(bytes, '$wrongHash\r\n'), isFalse);
     });
   });
 }
