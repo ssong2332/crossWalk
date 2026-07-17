@@ -11,7 +11,7 @@ Evidence: `pubspec.yaml:2` (description), `ARCHITECTURE.md:3`, `crosswalk_app/li
 
 ## Target Users
 - Primary: visually impaired pedestrians crossing at crosswalks. Evidence: `pubspec.yaml:2`, `feedback_service.dart` (ko-KR voice guidance).
-- Deployment target platform(s): Android + iOS (Open Q #1, ANSWERED 2026-07-17). Min OS: Android minSdk 26; iOS minimum still undecided (Open Q #2). Distribution channel: undecided (Open Q #7).
+- Deployment target platform(s): Android + iOS (Open Q #1, ANSWERED 2026-07-17). Min OS: Android minSdk 26; iOS minimum iOS 15 (Open Q #2, ANSWERED 2026-07-17). Distribution channel: undecided (Open Q #7).
 
 ## Core Features — Status Table
 
@@ -79,7 +79,7 @@ Evidence: `pubspec.yaml:2` (description), `ARCHITECTURE.md:3`, `crosswalk_app/li
 | # | Question | Status |
 |---|---|---|
 | 1 | Target platform(s): Android only, or iOS too? (CI=APK only; BGRA path hints iOS) | ANSWERED (user, 2026-07-17): BOTH Android and iOS. NOTE: no iOS build/signing pipeline exists yet (CI is Android/APK-only) — see Out of Scope; new task candidate T33 (iOS build/signing pipeline). |
-| 2 | Minimum supported OS versions (Android minSdk / iOS target)? | ANSWERED (user, 2026-07-17): Android minSdk 26 (Android 8.0). iOS minimum version STILL UNDECIDED — user did not state an iOS target; must not be guessed (remains a sub-item to resolve now that #1 = iOS in scope). |
+| 2 | Minimum supported OS versions (Android minSdk / iOS target)? | ANSWERED (user, 2026-07-17): Android minSdk 26 (Android 8.0); iOS minimum = iOS 15. Both parts now decided. NOTE: reflecting these values in the actual project config (Android Gradle minSdk, iOS deployment target in the Xcode/Runner project) is separate implementer work — Android config under T2; iOS config work is coupled to the iOS build/signing pipeline (T33), which is currently PAUSED (see T33). |
 | 3 | Required accuracy — acceptable false-negative (missed-deviation) rate / recall target for left/right? | ANSWERED (user, 2026-07-17): deviation (left/right) detection target recall ≥ 90%, i.e. false-negative (missed-deviation) rate ≤ 10%. NOTE: acceptable front (normal) false-positive rate was NOT stated by the user — left undecided, not guessed. |
 | 4 | Confirm fully offline; any online component ever intended? | ANSWERED (user, 2026-07-17): NOT confirmed as permanently fully offline. v1 is offline, but "추후 온라인 요소 추가 가능성 있음" (online components such as server communication / remote logging may be added in the future). So "fully offline" is not a fixed constraint. |
 | 5 | Accessibility standard to meet (WCAG level? native TalkBack/VoiceOver compatibility required)? | open (user re-confirmed, 2026-07-17: 아직 미정 / still undecided). |
