@@ -72,6 +72,21 @@ class AppStrings {
   final String leftDeviationMessage;
   final String rightDeviationMessage;
 
+  // T38: accessibility labels for the voice/vibration status pills and the
+  // settings-entry gear button added to CameraScreen's top-right corner.
+  // Reviewer fix: these are neutral ("voice guidance" / "vibration
+  // feedback"), not state-specific text, because the actual on/off state is
+  // read from statusActiveValue/statusInactiveValue via Semantics' `value`
+  // — a screen reader announces "<label>, <value>", e.g. "음성 안내, 켜짐".
+  // Previously the label itself said "음성 재생 중" ("voice playing") even
+  // while idle, so a screen reader could not distinguish active from idle.
+  final String voiceIndicatorLabel;
+  final String vibrationIndicatorLabel;
+  final String settingsButtonLabel;
+
+  final String statusActiveValue;
+  final String statusInactiveValue;
+
   const AppStrings._({
     required this.initializing,
     required this.loadingModel,
@@ -95,6 +110,11 @@ class AppStrings {
     required this.confidenceLabel,
     required this.leftDeviationMessage,
     required this.rightDeviationMessage,
+    required this.voiceIndicatorLabel,
+    required this.vibrationIndicatorLabel,
+    required this.settingsButtonLabel,
+    required this.statusActiveValue,
+    required this.statusInactiveValue,
   });
 
   static const AppStrings _ko = AppStrings._(
@@ -121,6 +141,11 @@ class AppStrings {
     confidenceLabel: '신뢰도',
     leftDeviationMessage: '왼쪽으로 이탈했습니다. 오른쪽으로 이동하세요',
     rightDeviationMessage: '오른쪽으로 이탈했습니다. 왼쪽으로 이동하세요',
+    voiceIndicatorLabel: '음성 안내',
+    vibrationIndicatorLabel: '진동 알림',
+    settingsButtonLabel: '설정',
+    statusActiveValue: '켜짐',
+    statusInactiveValue: '꺼짐',
   );
 
   static const AppStrings _en = AppStrings._(
@@ -151,6 +176,11 @@ class AppStrings {
     confidenceLabel: 'Confidence',
     leftDeviationMessage: 'You have drifted left. Move to the right',
     rightDeviationMessage: 'You have drifted right. Move to the left',
+    voiceIndicatorLabel: 'Voice guidance',
+    vibrationIndicatorLabel: 'Vibration alert',
+    settingsButtonLabel: 'Settings',
+    statusActiveValue: 'On',
+    statusInactiveValue: 'Off',
   );
 
   factory AppStrings.of(AppLanguage language) =>
