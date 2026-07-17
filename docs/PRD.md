@@ -64,7 +64,7 @@ Evidence: `pubspec.yaml:2` (description), `ARCHITECTURE.md:3`, `crosswalk_app/li
 ## Assumptions (推定 — verify before building on them)
 - v1 runs offline on-device; online components may be added later (Open Q #4, ANSWERED 2026-07-17 — no longer a fixed fully-offline assumption).
 - Rear camera only (Open Q #14, ANSWERED 2026-07-17), chest-mounted (lanyard/chest-mount) facing the crosswalk ahead (Open Q #8, ANSWERED 2026-07-17). Frame-interpretation/preprocessing may need re-review against this posture — see T35.
-- Multilingual support required (Open Q #6, ANSWERED 2026-07-17) — the prior "Korean-only for v1" assumption is retired; current code hardcodes ko-KR (see T34).
+- Multilingual support required (Open Q #6, ANSWERED 2026-07-17) — the prior "Korean-only for v1" assumption is retired. Supported languages fixed (user, 2026-07-17) = 한국어 (Korean) + 영어 (English), two languages only. Concrete locale codes and translated strings are implementation-stage decisions (see T17/T34). Current code hardcodes ko-KR (see T34).
 
 ## Risks
 | Risk | Impact | Mitigation |
@@ -83,7 +83,7 @@ Evidence: `pubspec.yaml:2` (description), `ARCHITECTURE.md:3`, `crosswalk_app/li
 | 3 | Required accuracy — acceptable false-negative (missed-deviation) rate / recall target for left/right? | ANSWERED (user, 2026-07-17): deviation (left/right) detection target recall ≥ 90%, i.e. false-negative (missed-deviation) rate ≤ 10%. NOTE: acceptable front (normal) false-positive rate was NOT stated by the user — left undecided, not guessed. |
 | 4 | Confirm fully offline; any online component ever intended? | ANSWERED (user, 2026-07-17): NOT confirmed as permanently fully offline. v1 is offline, but "추후 온라인 요소 추가 가능성 있음" (online components such as server communication / remote logging may be added in the future). So "fully offline" is not a fixed constraint. |
 | 5 | Accessibility standard to meet (WCAG level? native TalkBack/VoiceOver compatibility required)? | open (user re-confirmed, 2026-07-17: 아직 미정 / still undecided). |
-| 6 | Supported languages — Korean only or multilingual? | ANSWERED (user, 2026-07-17): multilingual required (not Korean-only). NOTE: `feedback_service.dart` currently hardcodes ko-KR — see new task candidate T34 (multi-language support). |
+| 6 | Supported languages — Korean only or multilingual? | ANSWERED (user, 2026-07-17): multilingual required (not Korean-only). Supported language list fixed (user, 2026-07-17) = 한국어 (Korean) + 영어 (English) — exactly two languages. Concrete locale codes / translated strings are decided at implementation time (T17/T34), not here. NOTE: `feedback_service.dart` currently hardcodes ko-KR — see T34 (multi-language support). |
 | 7 | Distribution & monetization (Play Store? free? app branding/identity)? | open (user re-confirmed, 2026-07-17: 아직 미정 / still undecided). |
 | 8 | Intended phone posture/mounting (handheld, chest-mount, lanyard)? Needs user guidance? | ANSWERED (user, 2026-07-17): chest-mount (목걸이/가슴대, lanyard/chest-mount) assumed. NOTE: this camera angle differs from the prior "handheld facing ahead" assumption; frame-interpretation/preprocessing may need re-review for this posture — see new task candidate T35. |
 | 9 | Legal safety disclaimer / scope-of-use statement required in-app? | ANSWERED (user, 2026-07-17): required — a disclaimer must be shown at onboarding / first launch. NOTE: no onboarding screen exists yet — see new task candidate T36 (onboarding + disclaimer). |
