@@ -5,6 +5,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../services/classifier.dart';
 import '../services/feedback_service.dart';
+import '../localization/app_strings.dart';
 
 class CameraScreen extends StatefulWidget {
   const CameraScreen({super.key});
@@ -18,7 +19,13 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   final Classifier _classifier = Classifier();
   final FeedbackService _feedback = FeedbackService();
 
-  String _statusLabel = '초기화 중...';
+  // Detected once at startup from the system locale (T34); no in-app
+  // language switcher is in scope. Falls back to Korean when detection
+  // fails or the locale isn't one of the two supported languages.
+  late final AppLanguage _language;
+  late final AppStrings _strings;
+
+  late String _statusLabel;
   double _confidence = 0.0;
   bool _isProcessing = false;
   bool _hasError = false;
@@ -31,10 +38,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     'right': Colors.orange,
   };
 
-  static const _labelText = {
-    'front': '정상 진행',
-    'left':  '왼쪽 이탈',
-    'right': '오른쪽 이탈',
+  Map<String, String> get _labelText => {
+    'front': _strings.labelFront,
+    'left':  _strings.labelLeft,
+    'right': _strings.labelRight,
   };
 
   static const _labelIcons = {
@@ -46,6 +53,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   @override
   void initState() {
     super.initState();
+    _language = resolveAppLanguage(WidgetsBinding.instance.platformDispatcher.locale);
+    _strings = AppStrings.of(_language);
+    _statusLabel = _strings.initializing;
     WidgetsBinding.instance.addObserver(this);
     WakelockPlus.enable();
     _initCamera();
@@ -59,49 +69,49 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       setState(() {
         _hasError = false;
         _permissionPermanentlyDenied = false;
-        _statusLabel = '초기화 중...';
+        _statusLabel = _strings.initializing;
       });
 
       try {
         // TTS를 먼저 초기화해야 이후 오류 발생 시 음성 안내 가능
-        await _feedback.init();
+        await _feedback.init(language: _language);
 
         final status = await Permission.camera.request();
         if (!status.isGranted) {
           if (status.isPermanentlyDenied) {
             await _feedback.announceError(
-              '카메라 권한이 영구적으로 거부되었습니다. 설정 화면에서 권한을 허용해주세요.',
+              _strings.cameraPermissionPermanentlyDeniedAnnouncement,
             );
             if (mounted) {
               setState(() {
                 _hasError = true;
                 _permissionPermanentlyDenied = true;
-                _statusLabel = '카메라 권한 필요 (설정 이동)';
+                _statusLabel = _strings.cameraPermissionRequiredSettingsLabel;
               });
             }
           } else {
-            await _feedback.announceError('카메라 권한이 필요합니다. 설정에서 허용해주세요.');
+            await _feedback.announceError(_strings.cameraPermissionRequiredAnnouncement);
             if (mounted) {
               setState(() {
                 _hasError = true;
-                _statusLabel = '카메라 권한 필요';
+                _statusLabel = _strings.cameraPermissionRequiredLabel;
               });
             }
           }
           return;
         }
 
-        setState(() => _statusLabel = '모델 로딩 중...');
+        setState(() => _statusLabel = _strings.loadingModel);
         await _classifier.init();
 
-        setState(() => _statusLabel = '카메라 연결 중...');
+        setState(() => _statusLabel = _strings.connectingCamera);
         final cameras = await availableCameras();
         if (cameras.isEmpty) {
-          await _feedback.announceError('카메라를 찾을 수 없습니다.');
+          await _feedback.announceError(_strings.cameraNotFoundAnnouncement);
           if (mounted) {
             setState(() {
               _hasError = true;
-              _statusLabel = '카메라 없음';
+              _statusLabel = _strings.cameraNotFoundLabel;
             });
           }
           return;
@@ -125,25 +135,21 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         if (!mounted) return;
 
         _controller!.startImageStream(_onFrame);
-        setState(() => _statusLabel = '감지 중...');
+        setState(() => _statusLabel = _strings.detecting);
       } on ModelIntegrityException {
-        await _feedback.announceError(
-          '모델 파일이 손상되었습니다. 앱을 다시 설치해주세요.',
-        );
+        await _feedback.announceError(_strings.modelCorruptedAnnouncement);
         if (mounted) {
           setState(() {
             _hasError = true;
-            _statusLabel = '오류: 모델 손상';
+            _statusLabel = _strings.modelCorruptedLabel;
           });
         }
       } catch (e) {
-        await _feedback.announceError(
-          '앱 오류로 감지를 시작할 수 없습니다. 앱을 다시 시작해주세요.',
-        );
+        await _feedback.announceError(_strings.detectionErrorAnnouncement);
         if (mounted) {
           setState(() {
             _hasError = true;
-            _statusLabel = '오류: 감지 불가';
+            _statusLabel = _strings.detectionErrorLabel;
           });
         }
       }
@@ -193,17 +199,17 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   Color get _statusColor {
     if (_hasError) return Colors.red;
-    if (_statusLabel == '정상 진행') return Colors.green;
-    if (_statusLabel == '왼쪽 이탈') return Colors.red;
-    if (_statusLabel == '오른쪽 이탈') return Colors.orange;
+    if (_statusLabel == _strings.labelFront) return Colors.green;
+    if (_statusLabel == _strings.labelLeft) return Colors.red;
+    if (_statusLabel == _strings.labelRight) return Colors.orange;
     return Colors.grey;
   }
 
   IconData? get _statusIcon {
     if (_hasError) return Icons.error_outline;
-    if (_statusLabel == '정상 진행') return _labelIcons['front'];
-    if (_statusLabel == '왼쪽 이탈') return _labelIcons['left'];
-    if (_statusLabel == '오른쪽 이탈') return _labelIcons['right'];
+    if (_statusLabel == _strings.labelFront) return _labelIcons['front'];
+    if (_statusLabel == _strings.labelLeft) return _labelIcons['left'];
+    if (_statusLabel == _strings.labelRight) return _labelIcons['right'];
     return null;
   }
 
@@ -276,7 +282,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                       Padding(
                         padding: const EdgeInsets.only(top: 6),
                         child: Text(
-                          '신뢰도: ${(_confidence * 100).toStringAsFixed(1)}%',
+                          '${_strings.confidenceLabel}: ${(_confidence * 100).toStringAsFixed(1)}%',
                           style: const TextStyle(color: Colors.white70, fontSize: 14),
                         ),
                       ),
@@ -297,7 +303,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                                   : Icons.refresh,
                             ),
                             label: Text(
-                              _permissionPermanentlyDenied ? '설정 열기' : '다시 시도',
+                              _permissionPermanentlyDenied
+                                  ? _strings.openSettingsButton
+                                  : _strings.retryButton,
                               style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,

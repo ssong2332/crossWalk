@@ -100,6 +100,15 @@ void main() {
   setUp(() {
     mockFlutterTts();
     mockWakelockPlus();
+    // T34: CameraScreen now derives its display/TTS language from
+    // WidgetsBinding.instance.platformDispatcher.locale. That value
+    // otherwise reflects whatever locale the host machine/CI runner
+    // happens to report (not necessarily the same between this dev
+    // machine and CI), which would make the Korean text assertions below
+    // non-deterministic. Pin it explicitly so this test's language is
+    // fixed regardless of environment.
+    TestWidgetsFlutterBinding.instance.platformDispatcher.localeTestValue =
+        const Locale('ko', 'KR');
   });
 
   tearDown(() {
@@ -109,6 +118,7 @@ void main() {
         .setMockMethodCallHandler(ttsChannel, null);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMessageHandler(wakelockToggleChannel.name, null);
+    TestWidgetsFlutterBinding.instance.platformDispatcher.clearLocaleTestValue();
   });
 
   Finder errorOverlayFinder() => find.byWidgetPredicate(
