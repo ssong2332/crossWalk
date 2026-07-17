@@ -103,4 +103,103 @@ void main() {
       expect(message, '오른쪽으로 이탈했습니다. 왼쪽으로 이동하세요');
     });
   });
+
+  // Reviewer fix (Major): isSpeaking/isVibrating race-condition regression
+  // tests. alert() itself entangles real flutter_tts/vibration platform
+  // channels (see file header), and `Vibration.hasVibrator()` short-circuits
+  // to `false` in the flutter_tester host environment regardless of any
+  // mocking (it gates on `Platform.isAndroid`/`Platform.isIOS`, both false
+  // on a desktop test host), so the vibration branch of alert() never runs
+  // under `flutter test`. These tests instead exercise the exact guarded
+  // state-transition helpers (`beginSpeechGeneration`/`finishSpeechGeneration`,
+  // `activateVibrationIndicator`) that alert() calls internally to fix the
+  // race — same code path, called directly instead of through the plugin
+  // gate.
+  group('FeedbackService — isVibrating race guard', () {
+    test('a single activation resets isVibrating to false after the '
+        'vibration duration', () async {
+      final service = FeedbackService();
+
+      service.activateVibrationIndicator();
+      expect(service.isVibrating.value, isTrue);
+
+      // _vibrationDurationMs is 500ms; wait comfortably past it.
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      expect(service.isVibrating.value, isFalse);
+    });
+
+    test(
+      'an earlier timer does not prematurely clear a later activation '
+      '(rapid class-change scenario)',
+      () async {
+        final service = FeedbackService();
+
+        // Simulates alert('left') immediately followed by alert('right')
+        // within the 500ms vibration window (decideMessage bypasses the
+        // cooldown on a class change, so this can happen in production).
+        service.activateVibrationIndicator();
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        service.activateVibrationIndicator();
+
+        // 350ms after the second activation (550ms after the first): the
+        // first call's timer would have fired at 500ms if it had not been
+        // cancelled, incorrectly clearing the second activation's state.
+        await Future<void>.delayed(const Duration(milliseconds: 350));
+        expect(
+          service.isVibrating.value,
+          isTrue,
+          reason:
+              'the first activation\'s timer must have been cancelled by '
+              'the second activateVibrationIndicator() call',
+        );
+
+        // The second activation's own timer still fires ~150ms later.
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        expect(service.isVibrating.value, isFalse);
+      },
+    );
+  });
+
+  group('FeedbackService — isSpeaking race guard', () {
+    test('finishSpeechGeneration resets isSpeaking when it is the current '
+        'generation', () {
+      final service = FeedbackService();
+
+      final generation = service.beginSpeechGeneration();
+      expect(service.isSpeaking.value, isTrue);
+
+      service.finishSpeechGeneration(generation);
+      expect(service.isSpeaking.value, isFalse);
+    });
+
+    test(
+      'a stale completion from an earlier call does not clear a newer '
+      'call\'s isSpeaking (rapid class-change scenario)',
+      () {
+        final service = FeedbackService();
+
+        // Simulates alert('left') starting speech, then alert('right')
+        // starting a new utterance before the first one's completion
+        // handler has fired.
+        final firstGeneration = service.beginSpeechGeneration();
+        final secondGeneration = service.beginSpeechGeneration();
+        expect(service.isSpeaking.value, isTrue);
+
+        // The first utterance's stale completion handler fires late — it
+        // must not clear the second (current) utterance's isSpeaking.
+        service.finishSpeechGeneration(firstGeneration);
+        expect(
+          service.isSpeaking.value,
+          isTrue,
+          reason:
+              'a stale handler for an older generation must not reset a '
+              'newer, still-active speech',
+        );
+
+        // The second utterance's own completion handler correctly clears it.
+        service.finishSpeechGeneration(secondGeneration);
+        expect(service.isSpeaking.value, isFalse);
+      },
+    );
+  });
 }

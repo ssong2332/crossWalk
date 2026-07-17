@@ -32,10 +32,18 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   bool _isInitializing = false;
   bool _permissionPermanentlyDenied = false;
 
+  // T38: signal palette matching real pedestrian-crossing signal colors
+  // (approved design), replacing the previous arbitrary Material defaults.
+  static const _colorFront = Color(0xFF35C46A);
+  static const _colorLeft = Color(0xFFFF5A5F);
+  static const _colorRight = Color(0xFFFF9F40);
+  // Non-status interactive elements (buttons, progress indicators, etc.).
+  static const _colorAccent = Color(0xFF3AA0FF);
+
   static const _labelColors = {
-    'front': Colors.green,
-    'left':  Colors.red,
-    'right': Colors.orange,
+    'front': _colorFront,
+    'left':  _colorLeft,
+    'right': _colorRight,
   };
 
   Map<String, String> get _labelText => {
@@ -199,9 +207,9 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   Color get _statusColor {
     if (_hasError) return Colors.red;
-    if (_statusLabel == _strings.labelFront) return Colors.green;
-    if (_statusLabel == _strings.labelLeft) return Colors.red;
-    if (_statusLabel == _strings.labelRight) return Colors.orange;
+    if (_statusLabel == _strings.labelFront) return _colorFront;
+    if (_statusLabel == _strings.labelLeft) return _colorLeft;
+    if (_statusLabel == _strings.labelRight) return _colorRight;
     return Colors.grey;
   }
 
@@ -215,6 +223,68 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   bool get _isLoading =>
       !_hasError && (_controller == null || !_controller!.value.isInitialized);
+
+  // T38: 음성/진동 활성 상태를 나타내는 아이콘 pill. 활성 시 강조색(#3aa0ff)
+  // 배경 + 흰 아이콘, 비활성 시 흐린 테두리만 있는 투명 배경으로 구분.
+  Widget _buildStatusPill({
+    required IconData icon,
+    required bool active,
+    required String semanticLabel,
+  }) {
+    return Semantics(
+      label: semanticLabel,
+      // Reviewer fix: announce the actual on/off state as the Semantics
+      // `value` (read after the label, e.g. "음성 안내, 켜짐"), so a screen
+      // reader user can tell an active indicator from an idle one — the
+      // label text alone no longer implies state.
+      value: active ? _strings.statusActiveValue : _strings.statusInactiveValue,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: active ? _colorAccent : Colors.black.withValues(alpha: 0.35),
+          border: Border.all(
+            color: active ? _colorAccent : Colors.white38,
+            width: 1.5,
+          ),
+        ),
+        child: Icon(
+          icon,
+          size: 20,
+          color: active ? Colors.white : Colors.white38,
+        ),
+      ),
+    );
+  }
+
+  // T38: 설정 화면 진입 버튼. SettingsScreen 자체는 T39 범위이므로 라우팅은
+  // 아직 연결하지 않는다 (no-op).
+  Widget _buildSettingsButton() {
+    return Semantics(
+      label: _strings.settingsButtonLabel,
+      button: true,
+      child: Material(
+        color: Colors.black.withValues(alpha: 0.35),
+        shape: const CircleBorder(
+          side: BorderSide(color: Colors.white38, width: 1.5),
+        ),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: () {
+            // TODO(T39): SettingsScreen이 구현되면 여기서 라우팅 연결.
+          },
+          child: const Padding(
+            // Reviewer fix: 8 -> 14 so the tappable circle (icon 20 + 2x
+            // padding) grows from 36dp to ~48dp, meeting the recommended
+            // minimum touch-target size for an accessibility-focused app.
+            padding: EdgeInsets.all(14),
+            child: Icon(Icons.settings_outlined, size: 20, color: Colors.white70),
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -233,6 +303,42 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
             Positioned.fill(
               child: ColoredBox(color: Colors.red.withOpacity(0.25)),
             ),
+
+          // T38: top-right status pills (voice/vibration active) + settings
+          // entry button (gear icon).
+          Positioned(
+            top: 0,
+            right: 0,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ValueListenableBuilder<bool>(
+                      valueListenable: _feedback.isSpeaking,
+                      builder: (context, active, _) => _buildStatusPill(
+                        icon: Icons.volume_up,
+                        active: active,
+                        semanticLabel: _strings.voiceIndicatorLabel,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ValueListenableBuilder<bool>(
+                      valueListenable: _feedback.isVibrating,
+                      builder: (context, active, _) => _buildStatusPill(
+                        icon: Icons.vibration,
+                        active: active,
+                        semanticLabel: _strings.vibrationIndicatorLabel,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _buildSettingsButton(),
+                  ],
+                ),
+              ),
+            ),
+          ),
 
           Positioned(
             bottom: 0,
@@ -313,8 +419,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                             ),
                             style: ElevatedButton.styleFrom(
                               minimumSize: const Size.fromHeight(52),
-                              backgroundColor: Colors.white,
-                              foregroundColor: Colors.black,
+                              backgroundColor: _colorAccent,
+                              foregroundColor: Colors.white,
                             ),
                           ),
                         ),
