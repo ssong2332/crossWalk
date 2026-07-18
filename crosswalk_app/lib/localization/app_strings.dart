@@ -102,6 +102,16 @@ class AppStrings {
   final String settingsScreenReaderOptimizationLabel;
   final String settingsScreenReaderOptimizationNote;
 
+  // T37: manual, off-by-default flashlight/torch toggle — the one code-level
+  // low-light aid judged safe to ship for v1 (see docs/Tasks.md T37 and
+  // docs/Tasks.md T37). Deliberately NOT automatic/always-on: the
+  // user must opt in each session, so there is no unexpected battery drain
+  // and no silent, unvalidated change to the camera frames the model sees
+  // in normal (non-torch) use.
+  final String settingsLowLightSectionHeader;
+  final String settingsTorchLabel;
+  final String settingsTorchNote;
+
   // T40: OnboardingScreen — integrates T19 (chest-mount posture guidance)
   // + T36 (first-launch legal safety disclaimer) into one first-run
   // screen. The disclaimer copy is a design draft, not legally reviewed —
@@ -153,6 +163,9 @@ class AppStrings {
     required this.settingsAccessibilitySectionHeader,
     required this.settingsScreenReaderOptimizationLabel,
     required this.settingsScreenReaderOptimizationNote,
+    required this.settingsLowLightSectionHeader,
+    required this.settingsTorchLabel,
+    required this.settingsTorchNote,
     required this.onboardingTitle,
     required this.onboardingPostureHeading,
     required this.onboardingPostureBody,
@@ -200,6 +213,10 @@ class AppStrings {
     settingsAccessibilitySectionHeader: '접근성',
     settingsScreenReaderOptimizationLabel: '화면 읽기 프로그램 최적화',
     settingsScreenReaderOptimizationNote: '아직 결정되지 않았습니다 (추후 지원 예정)',
+    settingsLowLightSectionHeader: '저조도 보조',
+    settingsTorchLabel: '손전등 켜기',
+    settingsTorchNote: '어두운 곳에서 인식을 돕습니다. 배터리 소모가 늘어날 수 있으며, '
+        '기기에 따라 지원되지 않을 수 있습니다.',
     onboardingTitle: '시작하기 전에',
     onboardingPostureHeading: '착용 방법',
     onboardingPostureBody: '목걸이형 스트랩으로 가슴 중앙에, 렌즈는 정면을 향하게 착용하세요.',
@@ -255,6 +272,10 @@ class AppStrings {
     settingsAccessibilitySectionHeader: 'Accessibility',
     settingsScreenReaderOptimizationLabel: 'Screen Reader Optimization',
     settingsScreenReaderOptimizationNote: 'Not yet decided (coming later)',
+    settingsLowLightSectionHeader: 'Low-Light Assist',
+    settingsTorchLabel: 'Turn on flashlight',
+    settingsTorchNote: 'Helps detection in dark areas. May increase battery '
+        'use, and may not be supported on all devices.',
     onboardingTitle: 'Before You Start',
     onboardingPostureHeading: 'How to Wear',
     onboardingPostureBody:
