@@ -25,6 +25,18 @@ class FeedbackService {
   // never call init() (matches this app's pre-localization fallback).
   AppLanguage _language = AppLanguage.ko;
 
+  // T39: previously hardcoded (`setSpeechRate(0.5)` / `_vibrationDurationMs`
+  // was a `static const 500`). Now mutable instance fields with the same
+  // defaults, so SettingsScreen can read the current value to initialize
+  // its sliders and change it at runtime via updateSpeechRate()/
+  // updateVibrationDuration() below. Session-only — no persistence.
+  double _speechRate = 0.5;
+  int _vibrationDurationMs = 500;
+
+  AppLanguage get language => _language;
+  double get speechRate => _speechRate;
+  int get vibrationDurationMs => _vibrationDurationMs;
+
   static const _cooldownSeconds = 3;
 
   // T38: exposes whether TTS speech / vibration are currently active, so
@@ -38,7 +50,7 @@ class FeedbackService {
   Future<void> init({AppLanguage language = AppLanguage.ko}) async {
     _language = language;
     await _tts.setLanguage(ttsLocaleCode(_language));
-    await _tts.setSpeechRate(0.5);
+    await _tts.setSpeechRate(_speechRate);
     await _tts.setVolume(1.0);
 
     // T38 redesign: `isSpeaking` is now driven purely by awaiting
@@ -102,7 +114,33 @@ class FeedbackService {
         : strings.rightDeviationMessage;
   }
 
-  static const _vibrationDurationMs = 500;
+  // T39: runtime setters used by SettingsScreen. Each applies immediately
+  // for the remainder of the session (no persistence — restarting the app
+  // resets to the defaults above). SettingsScreen calls these without
+  // awaiting (fire-and-forget, matching alert()'s unawaited(_speak(...))
+  // pattern), so any platform-channel exception must be caught here rather
+  // than left to become an unhandled async error in the root zone.
+  Future<void> updateLanguage(AppLanguage language) async {
+    _language = language;
+    try {
+      await _tts.setLanguage(ttsLocaleCode(language));
+    } catch (e) {
+      debugPrint('FeedbackService.updateLanguage: TTS error: $e');
+    }
+  }
+
+  Future<void> updateSpeechRate(double rate) async {
+    _speechRate = rate;
+    try {
+      await _tts.setSpeechRate(rate);
+    } catch (e) {
+      debugPrint('FeedbackService.updateSpeechRate: TTS error: $e');
+    }
+  }
+
+  void updateVibrationDuration(int milliseconds) {
+    _vibrationDurationMs = milliseconds;
+  }
 
   // Bumps the speech generation and marks speech as active. Returns the
   // generation token this call owns, so its own finishSpeechGeneration()
@@ -177,7 +215,7 @@ class FeedbackService {
     isVibrating.value = true;
     _vibrationTimer?.cancel();
     _vibrationTimer = Timer(
-      const Duration(milliseconds: _vibrationDurationMs),
+      Duration(milliseconds: _vibrationDurationMs),
       () => isVibrating.value = false,
     );
   }

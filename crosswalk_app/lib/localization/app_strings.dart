@@ -87,6 +87,21 @@ class AppStrings {
   final String statusActiveValue;
   final String statusInactiveValue;
 
+  // T39: SettingsScreen — language selection + TTS-rate/vibration-strength
+  // sliders + disabled "screen reader optimization" placeholder (T3
+  // accessibility standard is still undecided, see docs/Tasks.md ⛔Open Q
+  // #5, so this toggle is a disabled placeholder only).
+  final String settingsTitle;
+  final String settingsLanguageSectionHeader;
+  final String settingsLanguageKorean;
+  final String settingsLanguageEnglish;
+  final String settingsVoiceVibrationSectionHeader;
+  final String settingsTtsRateLabel;
+  final String settingsVibrationStrengthLabel;
+  final String settingsAccessibilitySectionHeader;
+  final String settingsScreenReaderOptimizationLabel;
+  final String settingsScreenReaderOptimizationNote;
+
   const AppStrings._({
     required this.initializing,
     required this.loadingModel,
@@ -115,6 +130,16 @@ class AppStrings {
     required this.settingsButtonLabel,
     required this.statusActiveValue,
     required this.statusInactiveValue,
+    required this.settingsTitle,
+    required this.settingsLanguageSectionHeader,
+    required this.settingsLanguageKorean,
+    required this.settingsLanguageEnglish,
+    required this.settingsVoiceVibrationSectionHeader,
+    required this.settingsTtsRateLabel,
+    required this.settingsVibrationStrengthLabel,
+    required this.settingsAccessibilitySectionHeader,
+    required this.settingsScreenReaderOptimizationLabel,
+    required this.settingsScreenReaderOptimizationNote,
   });
 
   static const AppStrings _ko = AppStrings._(
@@ -146,6 +171,16 @@ class AppStrings {
     settingsButtonLabel: '설정',
     statusActiveValue: '켜짐',
     statusInactiveValue: '꺼짐',
+    settingsTitle: '설정',
+    settingsLanguageSectionHeader: '언어',
+    settingsLanguageKorean: '한국어',
+    settingsLanguageEnglish: '영어',
+    settingsVoiceVibrationSectionHeader: '음성 및 진동',
+    settingsTtsRateLabel: 'TTS 속도',
+    settingsVibrationStrengthLabel: '진동 세기',
+    settingsAccessibilitySectionHeader: '접근성',
+    settingsScreenReaderOptimizationLabel: '화면 읽기 프로그램 최적화',
+    settingsScreenReaderOptimizationNote: '아직 결정되지 않았습니다 (추후 지원 예정)',
   );
 
   static const AppStrings _en = AppStrings._(
@@ -181,6 +216,16 @@ class AppStrings {
     settingsButtonLabel: 'Settings',
     statusActiveValue: 'On',
     statusInactiveValue: 'Off',
+    settingsTitle: 'Settings',
+    settingsLanguageSectionHeader: 'Language',
+    settingsLanguageKorean: 'Korean',
+    settingsLanguageEnglish: 'English',
+    settingsVoiceVibrationSectionHeader: 'Voice & Vibration',
+    settingsTtsRateLabel: 'TTS Speed',
+    settingsVibrationStrengthLabel: 'Vibration Strength',
+    settingsAccessibilitySectionHeader: 'Accessibility',
+    settingsScreenReaderOptimizationLabel: 'Screen Reader Optimization',
+    settingsScreenReaderOptimizationNote: 'Not yet decided (coming later)',
   );
 
   factory AppStrings.of(AppLanguage language) =>
