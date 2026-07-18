@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
@@ -34,7 +36,8 @@ class CameraScreen extends StatefulWidget {
   State<CameraScreen> createState() => _CameraScreenState();
 }
 
-class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver {
+class _CameraScreenState extends State<CameraScreen>
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   CameraController? _controller;
   final Classifier _classifier = Classifier();
 
@@ -79,21 +82,39 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
 
   static const _labelColors = {
     'front': _colorFront,
-    'left':  _colorLeft,
+    'left': _colorLeft,
     'right': _colorRight,
   };
 
   Map<String, String> get _labelText => {
-    'front': _strings.labelFront,
-    'left':  _strings.labelLeft,
-    'right': _strings.labelRight,
-  };
+        'front': _strings.labelFront,
+        'left': _strings.labelLeft,
+        'right': _strings.labelRight,
+      };
 
   static const _labelIcons = {
     'front': Icons.check_circle,
-    'left':  Icons.chevron_left,
+    'left': Icons.chevron_left,
     'right': Icons.chevron_right,
   };
+
+  // T41: direction-guidance corridor overlay animation state.
+  //
+  // HONESTY CONSTRAINT (docs/Tasks.md T41): `Classifier` is a 3-class
+  // classifier (front/left/right + confidence) with NO coordinate/geometry
+  // output — it never detects an actual crosswalk's real-world position.
+  // Everything below converts the classification result into a purely
+  // symbolic directional guide (a "guidance corridor"), NOT a rendering of a
+  // detected object. All names in this section intentionally use
+  // "guidance", never "detection"/"detected"/"recognized".
+  //
+  // `_guidanceLabel` tracks the last classification label this animation
+  // was driven from (front/left/right), so [_updateGuidanceTarget] can tell
+  // whether the label actually changed before re-triggering the animation.
+  String _guidanceLabel = 'front';
+  late final AnimationController _guidanceAnimController;
+  late Tween<double> _guidanceCurveTween;
+  late ColorTween _guidanceColorTween;
 
   @override
   void initState() {
@@ -106,8 +127,57 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     _statusLabel = _strings.initializing;
     WidgetsBinding.instance.addObserver(this);
     WakelockPlus.enable();
+    _guidanceAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 350),
+    );
+    _guidanceCurveTween = Tween<double>(begin: 0.0, end: 0.0);
+    _guidanceColorTween = ColorTween(begin: _colorFront, end: _colorFront);
     _initCamera();
   }
+
+  // T41: -1.0 (guidance curves left) .. 0.0 (straight) .. 1.0 (guidance
+  // curves right). Derived purely from the classifier's front/left/right
+  // label — NOT a measured real-world angle of any physical feature.
+  double _guidanceCurveForLabel(String label) {
+    switch (label) {
+      case 'left':
+        return -1.0;
+      case 'right':
+        return 1.0;
+      default:
+        return 0.0;
+    }
+  }
+
+  // T41: called whenever a new classification label arrives (_onFrame).
+  // Restarts the guidance animation from the corridor's current on-screen
+  // position/color toward the new label's target, so state changes read as
+  // a smooth transition instead of a jump cut.
+  void _updateGuidanceTarget(String label) {
+    if (label == _guidanceLabel) return;
+    final currentCurve = _guidanceCurveTween.evaluate(_guidanceAnimController);
+    final currentColor =
+        _guidanceColorTween.evaluate(_guidanceAnimController) ?? _colorFront;
+    _guidanceLabel = label;
+    _guidanceCurveTween = Tween<double>(
+      begin: currentCurve,
+      end: _guidanceCurveForLabel(label),
+    );
+    _guidanceColorTween = ColorTween(
+      begin: currentColor,
+      end: _labelColors[label] ?? _colorFront,
+    );
+    _guidanceAnimController
+      ..stop()
+      ..value = 0
+      ..forward();
+  }
+
+  // T41: the guidance corridor/vignette are only meaningful once the
+  // classifier is actively producing labels — hidden during loading/error
+  // so they never imply guidance where none exists yet.
+  bool get _showGuidance => !_hasError && !_isLoading;
 
   Future<void> _initCamera() async {
     if (_isInitializing) return;
@@ -139,7 +209,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
               });
             }
           } else {
-            await _feedback.announceError(_strings.cameraPermissionRequiredAnnouncement);
+            await _feedback
+                .announceError(_strings.cameraPermissionRequiredAnnouncement);
             if (mounted) {
               setState(() {
                 _hasError = true;
@@ -242,7 +313,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   Future<void> _setTorch(bool enabled) async {
     if (_controller == null || !_controller!.value.isInitialized) return;
     try {
-      await _controller!.setFlashMode(enabled ? FlashMode.torch : FlashMode.off);
+      await _controller!
+          .setFlashMode(enabled ? FlashMode.torch : FlashMode.off);
       if (mounted) setState(() => _torchEnabled = enabled);
     } catch (_) {
       // 기기가 손전등 제어를 지원하지 않을 수 있음 — 상태 변경 없이 무시
@@ -261,6 +333,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           _statusLabel = _labelText[result.label] ?? result.label;
           _confidence = result.confidence;
         });
+        // T41: drive the guidance corridor overlay from the same
+        // classification result — see _updateGuidanceTarget's doc comment
+        // for the honesty constraint this must respect.
+        _updateGuidanceTarget(result.label);
       }
     }
 
@@ -282,6 +358,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     WakelockPlus.disable();
+    _guidanceAnimController.dispose();
     _controller?.dispose();
     _classifier.dispose();
     // Reviewer fix (T40 follow-up): only dispose the instance this screen
@@ -390,7 +467,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
             // padding) grows from 36dp to ~48dp, meeting the recommended
             // minimum touch-target size for an accessibility-focused app.
             padding: EdgeInsets.all(14),
-            child: Icon(Icons.settings_outlined, size: 20, color: Colors.white70),
+            child:
+                Icon(Icons.settings_outlined, size: 20, color: Colors.white70),
           ),
         ),
       ),
@@ -413,6 +491,55 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
           if (_hasError)
             Positioned.fill(
               child: ColoredBox(color: Colors.red.withOpacity(0.25)),
+            ),
+
+          // T41: status-colored peripheral vignette (edge glow). Purely
+          // decorative ambient feedback — it does not draw or imply any
+          // detected object, only tints the screen edges with the current
+          // classification result's color.
+          if (!_hasError)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: RadialGradient(
+                      center: Alignment.center,
+                      radius: 1.0,
+                      stops: const [0.55, 1.0],
+                      colors: [
+                        Colors.transparent,
+                        _statusColor.withValues(alpha: 0.35),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+          // T41: direction-guidance corridor overlay.
+          //
+          // HONESTY CONSTRAINT: this is NOT a rendering of an actually
+          // detected crosswalk. `Classifier` outputs only a 3-class label
+          // (front/left/right) + confidence, with no coordinate/geometry
+          // data. `GuidanceCorridorPainter` converts that classification
+          // result into a directional guidance symbol (5 chained chevrons)
+          // — a guidance graphic, not object detection.
+          if (_showGuidance)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: AnimatedBuilder(
+                  animation: _guidanceAnimController,
+                  builder: (context, _) => CustomPaint(
+                    painter: GuidanceCorridorPainter(
+                      curveAmount:
+                          _guidanceCurveTween.evaluate(_guidanceAnimController),
+                      color: _guidanceColorTween
+                              .evaluate(_guidanceAnimController) ??
+                          _colorFront,
+                    ),
+                  ),
+                ),
+              ),
             ),
 
           // T38: top-right status pills (voice/vibration active) + settings
@@ -455,94 +582,216 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
             bottom: 0,
             left: 0,
             right: 0,
+            // T41: glass-HUD refresh of the bottom status tray — same
+            // loading/status/retry logic as before, only the visuals
+            // changed (flat black tray -> blurred translucent "glass"
+            // panel, per approved design v2 §00).
             child: SafeArea(
               top: false,
-              child: Container(
-                color: Colors.black.withOpacity(0.65),
-                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (_isLoading)
-                      const Padding(
-                        padding: EdgeInsets.only(bottom: 12),
-                        child: SizedBox(
-                          width: 28,
-                          height: 28,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 3,
-                            color: Colors.white70,
-                          ),
+              child: RepaintBoundary(
+                child: ClipRect(
+                  child: BackdropFilter(
+                  filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.38),
+                      border: Border(
+                        top: BorderSide(
+                          color: Colors.white.withValues(alpha: 0.14),
+                          width: 1,
                         ),
                       ),
-                    Row(
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 24, horizontal: 20),
+                    child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (!_isLoading && statusIcon != null) ...[
-                          Icon(statusIcon, color: _statusColor, size: 32),
-                          const SizedBox(width: 8),
-                        ],
-                        Flexible(
-                          child: Text(
-                            _statusLabel,
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: _statusColor,
-                              fontSize: 26,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    if (_confidence > 0 && !_hasError)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6),
-                        child: Text(
-                          '${_strings.confidenceLabel}: ${(_confidence * 100).toStringAsFixed(1)}%',
-                          style: const TextStyle(color: Colors.white70, fontSize: 14),
-                        ),
-                      ),
-                    if (_hasError)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 16),
-                        child: SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: _isInitializing
-                                ? null
-                                : (_permissionPermanentlyDenied
-                                    ? openAppSettings
-                                    : _initCamera),
-                            icon: Icon(
-                              _permissionPermanentlyDenied
-                                  ? Icons.settings
-                                  : Icons.refresh,
-                            ),
-                            label: Text(
-                              _permissionPermanentlyDenied
-                                  ? _strings.openSettingsButton
-                                  : _strings.retryButton,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
+                        if (_isLoading)
+                          const Padding(
+                            padding: EdgeInsets.only(bottom: 12),
+                            child: SizedBox(
+                              width: 28,
+                              height: 28,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 3,
+                                color: Colors.white70,
                               ),
                             ),
-                            style: ElevatedButton.styleFrom(
-                              minimumSize: const Size.fromHeight(52),
-                              backgroundColor: _colorAccent,
-                              foregroundColor: Colors.white,
+                          ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (!_isLoading && statusIcon != null) ...[
+                              Icon(statusIcon, color: _statusColor, size: 32),
+                              const SizedBox(width: 8),
+                            ],
+                            Flexible(
+                              child: Text(
+                                _statusLabel,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: _statusColor,
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (_confidence > 0 && !_hasError)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Text(
+                              '${_strings.confidenceLabel}: ${(_confidence * 100).toStringAsFixed(1)}%',
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 14),
                             ),
                           ),
-                        ),
-                      ),
-                  ],
+                        // T41: thin status-colored confidence line, in addition
+                        // to the existing text label above — a lightweight
+                        // visual read of the same confidence value.
+                        if (_confidence > 0 && !_hasError)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: LayoutBuilder(
+                              builder: (context, constraints) => Stack(
+                                children: [
+                                  Container(
+                                    height: 3,
+                                    width: constraints.maxWidth,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white24,
+                                      borderRadius: BorderRadius.circular(2),
+                                    ),
+                                  ),
+                                  Container(
+                                    height: 3,
+                                    width: constraints.maxWidth *
+                                        _confidence.clamp(0.0, 1.0),
+                                    decoration: BoxDecoration(
+                                      color: _statusColor,
+                                      borderRadius: BorderRadius.circular(2),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        if (_hasError)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 16),
+                            child: SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: _isInitializing
+                                    ? null
+                                    : (_permissionPermanentlyDenied
+                                        ? openAppSettings
+                                        : _initCamera),
+                                icon: Icon(
+                                  _permissionPermanentlyDenied
+                                      ? Icons.settings
+                                      : Icons.refresh,
+                                ),
+                                label: Text(
+                                  _permissionPermanentlyDenied
+                                      ? _strings.openSettingsButton
+                                      : _strings.retryButton,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  minimumSize: const Size.fromHeight(52),
+                                  backgroundColor: _colorAccent,
+                                  foregroundColor: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
+        ),
         ],
       ),
     );
+  }
+}
+
+/// Paints a "direction-guidance corridor" — 5 chained chevrons converted
+/// from the classifier's front/left/right label into a directional guide
+/// line (T41, docs/Tasks.md).
+///
+/// HONESTY CONSTRAINT: `Classifier` is a 3-class classifier
+/// (front/left/right + confidence) with NO coordinate or geometry output —
+/// it never detects an actual crosswalk's real-world position. This
+/// painter does NOT render a detected object; it converts a classification
+/// result into a directional guidance symbol only. 이 오버레이는 분류 결과
+/// 기반 안내 기호이며 실제 객체 감지가 아니다. All naming here intentionally
+/// uses "guidance", never "detection"/"detected"/"recognized".
+class GuidanceCorridorPainter extends CustomPainter {
+  const GuidanceCorridorPainter({
+    required this.curveAmount,
+    required this.color,
+  });
+
+  /// -1.0 (guidance curves left) .. 0.0 (straight) .. 1.0 (guidance curves
+  /// right). Derived purely from the classifier's label — NOT a measured
+  /// real-world angle of any physical feature.
+  final double curveAmount;
+
+  /// Current guidance color (interpolated between the T38 palette
+  /// constants as the classification label changes).
+  final Color color;
+
+  static const _chevronCount = 5;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 6
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    final baseX = size.width / 2;
+    final bottomY = size.height * 0.82;
+    final topY = size.height * 0.38;
+    final chevronWidth = size.width * 0.16;
+    const chevronHeight = 22.0;
+
+    for (var i = 0; i < _chevronCount; i++) {
+      // t=0 is the chevron nearest the viewer (bottom), t=1 is the
+      // furthest (top) — purely a layout parameter, not a depth estimate.
+      final t = i / (_chevronCount - 1);
+      final y = bottomY - (bottomY - topY) * t;
+      final lateralOffset = curveAmount * (size.width * 0.28) * t;
+      final rotation = curveAmount * 0.5 * t;
+      final cx = baseX + lateralOffset;
+
+      final chevronPath = Path()
+        ..moveTo(-chevronWidth / 2, chevronHeight / 2)
+        ..lineTo(0, -chevronHeight / 2)
+        ..lineTo(chevronWidth / 2, chevronHeight / 2);
+
+      canvas.save();
+      canvas.translate(cx, y);
+      canvas.rotate(rotation);
+      paint.color = color.withValues(alpha: 0.9 - t * 0.5);
+      canvas.drawPath(chevronPath, paint);
+      canvas.restore();
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant GuidanceCorridorPainter oldDelegate) {
+    return oldDelegate.curveAmount != curveAmount || oldDelegate.color != color;
   }
 }
