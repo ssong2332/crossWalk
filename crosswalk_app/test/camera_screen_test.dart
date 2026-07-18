@@ -118,7 +118,8 @@ void main() {
         .setMockMethodCallHandler(ttsChannel, null);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMessageHandler(wakelockToggleChannel.name, null);
-    TestWidgetsFlutterBinding.instance.platformDispatcher.clearLocaleTestValue();
+    TestWidgetsFlutterBinding.instance.platformDispatcher
+        .clearLocaleTestValue();
   });
 
   Finder errorOverlayFinder() => find.byWidgetPredicate(
@@ -205,5 +206,82 @@ void main() {
         expect(openAppSettingsCalled, isTrue);
       },
     );
+  });
+
+  // T41: direction-guidance corridor overlay + peripheral vignette + glass
+  // HUD. `Classifier.processFrame()` never runs in these widget tests (no
+  // camera image stream is fed in), so front/left/right guidance-color
+  // transitions themselves are covered by the plain-Dart
+  // GuidanceCorridorPainter unit tests below instead. What IS verifiable at
+  // the widget level from the existing error-path setup is: (a) the
+  // guidance overlay/vignette are correctly hidden while `_hasError` is
+  // true (per `_showGuidance`'s doc comment in camera_screen.dart), and (b)
+  // the bottom status tray was actually swapped for a glass/blur HUD
+  // (`BackdropFilter`), not merely restyled.
+  group('CameraScreen — T41 guidance overlay / glass HUD', () {
+    Finder guidancePainterFinder() => find.byWidgetPredicate(
+          (widget) =>
+              widget is CustomPaint &&
+              widget.painter is GuidanceCorridorPainter,
+        );
+
+    testWidgets(
+      'hides the guidance corridor overlay while _hasError is true',
+      (tester) async {
+        mockPermissionHandler(deniedStatusValue);
+
+        await tester.pumpWidget(const MaterialApp(home: CameraScreen()));
+        await tester.pumpAndSettle();
+
+        expect(guidancePainterFinder(), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'replaces the bottom status tray with a blurred glass HUD '
+      '(BackdropFilter) even in the error state',
+      (tester) async {
+        mockPermissionHandler(deniedStatusValue);
+
+        await tester.pumpWidget(const MaterialApp(home: CameraScreen()));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(BackdropFilter), findsOneWidget);
+      },
+    );
+  });
+
+  // T41: GuidanceCorridorPainter is a plain CustomPainter with no
+  // widget-tree dependency, so its `shouldRepaint` contract (the thing that
+  // actually drives the animated per-frame chevron redraw) can be tested
+  // directly without pumping a widget tree or mocking the classifier/camera
+  // pipeline.
+  group('GuidanceCorridorPainter — shouldRepaint', () {
+    test('repaints when curveAmount changes (e.g. front -> left)', () {
+      const oldPainter =
+          GuidanceCorridorPainter(curveAmount: 0.0, color: Colors.green);
+      const newPainter =
+          GuidanceCorridorPainter(curveAmount: -1.0, color: Colors.green);
+
+      expect(newPainter.shouldRepaint(oldPainter), isTrue);
+    });
+
+    test('repaints when color changes (e.g. front-green -> right-orange)', () {
+      const oldPainter =
+          GuidanceCorridorPainter(curveAmount: 0.0, color: Colors.green);
+      const newPainter =
+          GuidanceCorridorPainter(curveAmount: 0.0, color: Colors.orange);
+
+      expect(newPainter.shouldRepaint(oldPainter), isTrue);
+    });
+
+    test('does not repaint when curveAmount and color are unchanged', () {
+      const oldPainter =
+          GuidanceCorridorPainter(curveAmount: 1.0, color: Colors.orange);
+      const newPainter =
+          GuidanceCorridorPainter(curveAmount: 1.0, color: Colors.orange);
+
+      expect(newPainter.shouldRepaint(oldPainter), isFalse);
+    });
   });
 }
