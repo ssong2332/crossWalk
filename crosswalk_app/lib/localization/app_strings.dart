@@ -102,6 +102,19 @@ class AppStrings {
   final String settingsScreenReaderOptimizationLabel;
   final String settingsScreenReaderOptimizationNote;
 
+  // T40: OnboardingScreen — integrates T19 (chest-mount posture guidance)
+  // + T36 (first-launch legal safety disclaimer) into one first-run
+  // screen. The disclaimer copy is a design draft, not legally reviewed —
+  // see the "디자인 초안 문구 — 법률 검토 필요" comment on the Korean value
+  // below (and its English translation), per docs/Tasks.md T40 acceptance
+  // criterion (3).
+  final String onboardingTitle;
+  final String onboardingPostureHeading;
+  final String onboardingPostureBody;
+  final String onboardingDisclaimerHeading;
+  final String onboardingDisclaimerBody;
+  final String onboardingConfirmButton;
+
   const AppStrings._({
     required this.initializing,
     required this.loadingModel,
@@ -140,6 +153,12 @@ class AppStrings {
     required this.settingsAccessibilitySectionHeader,
     required this.settingsScreenReaderOptimizationLabel,
     required this.settingsScreenReaderOptimizationNote,
+    required this.onboardingTitle,
+    required this.onboardingPostureHeading,
+    required this.onboardingPostureBody,
+    required this.onboardingDisclaimerHeading,
+    required this.onboardingDisclaimerBody,
+    required this.onboardingConfirmButton,
   });
 
   static const AppStrings _ko = AppStrings._(
@@ -181,6 +200,16 @@ class AppStrings {
     settingsAccessibilitySectionHeader: '접근성',
     settingsScreenReaderOptimizationLabel: '화면 읽기 프로그램 최적화',
     settingsScreenReaderOptimizationNote: '아직 결정되지 않았습니다 (추후 지원 예정)',
+    onboardingTitle: '시작하기 전에',
+    onboardingPostureHeading: '착용 방법',
+    onboardingPostureBody: '목걸이형 스트랩으로 가슴 중앙에, 렌즈는 정면을 향하게 착용하세요.',
+    onboardingDisclaimerHeading: '안전 안내',
+    // 디자인 초안 문구 — 법률 검토 필요. 사용자가 승인한 원문 그대로 사용 (docs/Tasks.md T40).
+    onboardingDisclaimerBody:
+        '이 앱은 횡단보도 이탈을 감지해 음성·진동으로 알려주는 보조 도구입니다. '
+        '흰지팡이·안내견·동행인의 판단을 대신하지 않으며, '
+        '최종 판단과 주의는 항상 보행자 본인에게 있습니다.',
+    onboardingConfirmButton: '확인했습니다',
   );
 
   static const AppStrings _en = AppStrings._(
@@ -226,6 +255,21 @@ class AppStrings {
     settingsAccessibilitySectionHeader: 'Accessibility',
     settingsScreenReaderOptimizationLabel: 'Screen Reader Optimization',
     settingsScreenReaderOptimizationNote: 'Not yet decided (coming later)',
+    onboardingTitle: 'Before You Start',
+    onboardingPostureHeading: 'How to Wear',
+    onboardingPostureBody:
+        'Wear the phone on a neck lanyard at the center of your chest, '
+        'with the camera lens facing straight ahead.',
+    onboardingDisclaimerHeading: 'Safety Notice',
+    // Design-draft copy — pending legal review. Naturally-written English
+    // translation of the user-approved Korean original above
+    // (docs/Tasks.md T40); not itself a separately user-approved legal text.
+    onboardingDisclaimerBody:
+        'This app is an assistive tool that detects when you drift off '
+        'the crosswalk and alerts you by voice and vibration. It does not '
+        'replace the judgment of a white cane, guide dog, or companion — '
+        'final judgment and caution always rest with the pedestrian.',
+    onboardingConfirmButton: 'I Understand',
   );
 
   factory AppStrings.of(AppLanguage language) =>

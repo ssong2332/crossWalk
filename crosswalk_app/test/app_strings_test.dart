@@ -56,5 +56,25 @@ void main() {
       expect(strings.leftDeviationMessage, 'You have drifted left. Move to the right');
       expect(strings.rightDeviationMessage, 'You have drifted right. Move to the left');
     });
+
+    // T40: the disclaimer copy must match the user-approved original
+    // verbatim (docs/Tasks.md T40 acceptance criterion (2)) — regression
+    // guard against accidental edits to app_strings.dart.
+    test('Korean onboarding disclaimer matches the user-approved copy '
+        'verbatim', () {
+      final strings = AppStrings.of(AppLanguage.ko);
+      expect(
+        strings.onboardingDisclaimerBody,
+        '이 앱은 횡단보도 이탈을 감지해 음성·진동으로 알려주는 보조 도구입니다. '
+        '흰지팡이·안내견·동행인의 판단을 대신하지 않으며, '
+        '최종 판단과 주의는 항상 보행자 본인에게 있습니다.',
+      );
+    });
+
+    test('English onboarding disclaimer is a non-empty translation', () {
+      final strings = AppStrings.of(AppLanguage.en);
+      expect(strings.onboardingDisclaimerBody, isNotEmpty);
+      expect(strings.onboardingDisclaimerBody, contains('white cane'));
+    });
   });
 }

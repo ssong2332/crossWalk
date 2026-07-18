@@ -244,6 +244,15 @@ class FeedbackService {
     await _speak(message);
   }
 
+  // T40: general-purpose TTS read-aloud, used by OnboardingScreen to speak
+  // the posture guidance + legal disclaimer on entry. Reuses the same
+  // _speak() plumbing as alert()/announceError() (stop-before-speak,
+  // generation guard, 10s timeout), so it participates in the same
+  // isSpeaking state and race protections without duplicating that logic.
+  Future<void> speak(String message) async {
+    await _speak(message);
+  }
+
   Future<void> dispose() async {
     await _tts.stop();
     _vibrationTimer?.cancel();
