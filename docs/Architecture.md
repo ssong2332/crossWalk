@@ -1,7 +1,7 @@
 # Architecture — crosswalk_app (횡단보도 이탈 감지)
 
 Owner: architect (see AGENTS.md). Others read-only.
-Last updated: 2026-07-16 (synced against T9/T10/T21/T23/T24/T25 fixes and T22 ONNX export-path trace, see `docs/Tasks.md`). Basis: direct inspection of `crosswalk_app/lib/**`, `crosswalk_app/test/**`, `crosswalk_app/pubspec.yaml`, `.github/workflows/build_apk.yml`, `train/train_model.py`, `train/export_onnx.py`, git history (commits `30a799e`, `3153d50`), and Python `onnx.load()` inspection of the shipped model. Every claim is cited to `file:line`, commit hash, or command output.
+Last updated: 2026-07-18 (added §16 — T35 chest-mount posture vs. preprocessing/model review). Prior: 2026-07-16 (synced against T9/T10/T21/T23/T24/T25 fixes and T22 ONNX export-path trace, see `docs/Tasks.md`). Basis: direct inspection of `crosswalk_app/lib/**`, `crosswalk_app/test/**`, `crosswalk_app/pubspec.yaml`, `.github/workflows/build_apk.yml`, `train/train_model.py`, `train/export_onnx.py`, git history (commits `30a799e`, `3153d50`), and Python `onnx.load()` inspection of the shipped model. Every claim is cited to `file:line`, commit hash, or command output.
 Requirements source: `docs/PRD.md`. Unresolved product decisions are NOT re-decided here — they are cross-referenced to `docs/PRD.md` Open Questions (Q#…).
 
 > This document describes the system **as-built**. Where the root `ARCHITECTURE.md` disagrees with code, code wins (drift list in `docs/PRD.md` §"Known Documentation Drift"). Do not treat root `ARCHITECTURE.md` as authoritative.
@@ -307,3 +307,87 @@ These are NOT decided here. They extend `docs/PRD.md` Open Questions.
 | C | **RESOLVED (T29)**: Was dead code on Android-only builds (camera forced to `ImageFormatGroup.yuv420` in `camera_screen.dart:119`, so the BGRA branch in `classifier.dart` never executed). Now that Open Q#1 confirmed Android + iOS as target platforms, the buffer-offset/row-padding bug in the BGRA path was fixed (not just documented) ahead of T33 (iOS build pipeline): `classifier.dart`'s BGRA branch previously passed `image.planes[0].bytes.buffer` (the whole underlying native `ByteBuffer`) straight to `img.Image.fromBytes` with no offset/stride, which would misalign pixels whenever the plane's `Uint8List` view had a non-zero `offsetInBytes` or `bytesPerRow != width*4` (row padding) — verified against `image` package 4.8.0 source (`image.dart:200-283`), which exposes `bytesOffset`/`rowStride` params for exactly this case. Fix now passes `bytesOffset: image.planes[0].bytes.offsetInBytes` and `rowStride: image.planes[0].bytesPerRow` explicitly. Still remains genuinely untested (Android-only CI, no iOS device available this session) — correctness rests on the `image`-package source trace, not on execution evidence; field verification once iOS actually builds (T33) is still needed. | Scope of platform support | Q#1 |
 
 See `docs/PRD.md` §"Open Questions" for the full unresolved-decisions list; not duplicated here.
+
+---
+
+## 16. Chest-mount posture vs. preprocessing/model — T35 review
+
+Task: `docs/Tasks.md` T35 (P2) — re-review frame interpretation/preprocessing after Open Q#8
+(`docs/PRD.md:89`) confirmed the deployment posture as **chest-mount (목걸이/가슴대, lanyard),
+lens facing forward (정면)**, replacing the prior "handheld facing ahead" assumption. This section
+is a **pure evaluation** (no code changed). Method: read the preprocessing code, the camera config,
+the training pipeline, and **directly opened sample training images** to judge capture framing.
+
+### 16.1 What the code assumes (verified)
+
+| Layer | Region/angle assumption baked in? | Evidence |
+|---|---|---|
+| App preprocessing | **None.** Decodes the *whole* frame (YUV420→RGB or BGRA→RGB) and squashes it to 224×224 with `img.copyResize`; no crop, no ROI, no center-crop, no angle logic. | `classifier.dart:158-190` (`copyResize(decoded, 224, 224)` on the full decoded frame; no `copyCrop`) |
+| Camera config | Rear camera, `ResolutionPreset.medium`, `yuv420`, portrait orientation lock. No tilt/pitch handling; the app cannot know the physical camera angle. | `camera_screen.dart:160-173` |
+| Training preprocessing | `Resize((224,224))` — same full-frame squash, no crop. Matches the app. | `train_model.py:78,86` |
+
+**Conclusion (code):** the preprocessing pipeline is **posture-agnostic at the code level** — it embeds
+no spatial/region/angle assumption. Any posture dependence lives **in the trained model's learned
+input distribution**, not in `classifier.dart`. So "re-review preprocessing" resolves to a *model /
+training-data* question, not a code-change question.
+
+### 16.2 What the training data implies about capture posture (visual inspection)
+
+Directly opened samples: `image/front/20251119_130610.jpg`, `image/front/20251119_162002.jpg`,
+`image/left/left (1).jpg`, `image/left/left (2).jpg`, `image/left/left (718).jpg`.
+
+Observed framing (consistent across samples): the camera looks **steeply downward at the ground
+immediately in front of the feet** — frames are dominated by crosswalk stripes, tactile paving,
+curb line, road texture, a manhole cover, etc., viewed from close range at a high downward angle.
+`image/left/left (2).jpg` shows the **walker's own legs and shoes at the bottom of the frame** standing
+on the stripes, confirming a near-ground, downward-and-slightly-forward viewpoint.
+
+Estimate (marked as estimate per CLAUDE.md): the training set was captured **pointing the lens
+down at the pavement ~1-2 m ahead of the feet**, i.e. a "look-down-at-the-ground" framing — **not**
+an eye-level/horizontal-forward view.
+
+Honesty caveats (do not overstate):
+- The **exact original capture device, height, and tilt angle (in degrees) are 확인 불가** — no
+  code or doc records the training capture posture (grep across `*.md`/`*.py`/`*.txt` found nothing;
+  Open Q#8 is the only posture note and it describes *deployment*, not the *training* capture). The
+  downward-ground framing is inferred **from the image content only**.
+- Images are stored 4000×3000 landscape but their scene content runs rotated relative to the stored
+  frame (crosswalk stripes not axis-aligned). Whether train-time EXIF orientation handling matches the
+  app's portrait-locked YUV420 stream is a **separate, unverified** concern — flagged, not asserted.
+
+### 16.3 Compatibility assessment: chest-mount (lens 정면) vs. training framing
+
+| Question | Assessment | Basis |
+|---|---|---|
+| Does the app *preprocessing* need changes for chest-mount? | **No** — it is region/angle-agnostic (§16.1). | `classifier.dart:158-190` |
+| Does the *model* match a chest-mount forward view? | **Likely NOT**, and this is the real risk. The model learned a steep downward ground-view distribution (§16.2). A chest-mounted lens pointing **horizontally forward (정면)** captures the scene *ahead* (receding crosswalk, horizon, other pedestrians) — a very different input distribution → high risk of misclassification at inference. | §16.1 (model holds the assumption) + §16.2 (training framing) + Open Q#8 (`docs/PRD.md:89`) |
+| How big is the mismatch? | **Depends on the exact chest-mount tilt angle, which Open Q#8 does not specify.** A lanyard phone often hangs tilted down; a strong downward tilt could partially reproduce the ground view, a horizontal "정면" lens would not. This tilt angle is the pivotal unknown. | Open Q#8 gives posture but no angle |
+
+### 16.4 Required adjustments identified (NOT implemented here)
+
+1. **Spec the exact chest-mount camera tilt/pitch** (and approximate mount height). This is the
+   deciding input and is currently unspecified in Open Q#8 → **new Open-Question follow-up for the
+   planner/PRD** (route to `docs/PRD.md`).
+2. **Re-capture (or augment) the training dataset in the actual chest-mount posture** — same height
+   and tilt the device will really have — because the model's learned framing is downward-ground and
+   will not transfer to a forward chest view. This is a **data** change, not an app-code change.
+3. **No `classifier.dart` change is warranted by this review.** If a fixed crop or a tilt-compensation
+   transform is ever wanted (e.g. to reuse existing data by cropping to the ground region), that would
+   be a **new, separate task** — proposed here, deliberately not implemented (T35 is evaluation-only).
+
+### 16.5 Relationship to T1 (model retrain / Open Q#10)
+
+Retraining is **already required independently**: T1 measured the shipped model as failing the recall
+target (`docs/PRD.md:72` — left recall 83.3%, right n=3; 14% front false-positives at `docs/PRD.md:73`).
+Because a retrain must happen anyway, **the chest-mount posture fix should be folded into T1's data
+collection**: capture the new/expanded dataset in the confirmed chest-mount posture (after adjustment #1
+fixes the tilt spec), so one retrain resolves both the accuracy gap and the posture mismatch. Doing T1
+on the *old* downward-ground data without addressing posture would produce a model still mismatched to
+the real deployment view. This coupling is the key actionable output of T35.
+
+### 16.6 New Open Question raised (route to planner/PRD)
+
+| ID | Question | Why it matters | Related |
+|---|---|---|---|
+| D | Exact chest-mount **camera tilt/pitch angle and mount height** are unspecified. Training data was captured with a steep **downward ground-view** framing (§16.2, visual estimate); a chest-mount lens facing horizontally forward (정면, Open Q#8) would not match it. Need the concrete mount geometry to decide retrain-data capture posture. | Determines whether the retrained model matches the real deployment view — directly affects detection correctness/safety | Open Q#8, Q#10; Tasks T1, T35 |
+
