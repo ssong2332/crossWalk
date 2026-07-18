@@ -61,6 +61,14 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   bool _isInitializing = false;
   bool _permissionPermanentlyDenied = false;
 
+  // T37: manual, off-by-default low-light assist (flashlight/torch).
+  // Reset to false on every _initCamera() call because a freshly created
+  // CameraController always starts with flash off regardless of the
+  // previous controller's state (e.g. after app resume) — this field must
+  // track the real hardware state, not persist a stale "on" value across a
+  // controller that no longer exists.
+  bool _torchEnabled = false;
+
   // T38: signal palette matching real pedestrian-crossing signal colors
   // (approved design), replacing the previous arbitrary Material defaults.
   static const _colorFront = Color(0xFF35C46A);
@@ -109,6 +117,7 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       setState(() {
         _hasError = false;
         _permissionPermanentlyDenied = false;
+        _torchEnabled = false;
         _statusLabel = _strings.initializing;
       });
 
@@ -172,6 +181,29 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         await _controller!.initialize();
         await _controller!.lockCaptureOrientation();
 
+        // T37 (low-light v1, investigation result): explicitly request auto
+        // exposure. NOTE this is a documented no-op on the currently locked
+        // Android implementation (camera_android_camerax 0.6.19+1 hardcodes
+        // `ExposureMode.auto` at init — verified directly from that
+        // package's source, `android_camera_camerax.dart:485`), so it
+        // changes no runtime behavior today. Kept explicit rather than
+        // relying on the implicit platform default, and as a defensive
+        // no-op ahead of a future iOS build (T33, currently paused). A
+        // real brightness-boosting change (e.g. a fixed positive
+        // `setExposureOffset`) was investigated and deliberately NOT added:
+        // it would apply to every frame (day and night alike, since this
+        // package exposes no ambient-light reading to scope it to
+        // low-light only), and the shipped model has not been validated
+        // against any exposure shift — the same train/inference-mismatch
+        // risk already found for other unvalidated preprocessing changes
+        // (see docs/Tasks.md T1/T35). See docs/Tasks.md T37 for the full
+        // investigation.
+        try {
+          await _controller!.setExposureMode(ExposureMode.auto);
+        } catch (_) {
+          // 일부 기기/플랫폼에서 노출 모드 변경이 지원되지 않을 수 있음 — 무시하고 계속 진행
+        }
+
         if (!mounted) return;
 
         _controller!.startImageStream(_onFrame);
@@ -195,6 +227,25 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
       }
     } finally {
       _isInitializing = false;
+    }
+  }
+
+  // T37: manual, off-by-default flashlight/torch toggle — see docs/Tasks.md
+  // T37 for why this (and not an automatic/always-on
+  // torch or a preprocessing brightness correction) was chosen as the
+  // safe, v1 low-light aid. Fire-and-forget from SettingsScreen, matching
+  // this app's existing pattern for other in-session-only settings
+  // (updateSpeechRate/updateVibrationDuration in feedback_service.dart):
+  // on failure (e.g. device/camera has no torch), the state is silently
+  // left unchanged rather than surfaced as an error, since this is a
+  // best-effort convenience feature, not a safety-critical path.
+  Future<void> _setTorch(bool enabled) async {
+    if (_controller == null || !_controller!.value.isInitialized) return;
+    try {
+      await _controller!.setFlashMode(enabled ? FlashMode.torch : FlashMode.off);
+      if (mounted) setState(() => _torchEnabled = enabled);
+    } catch (_) {
+      // 기기가 손전등 제어를 지원하지 않을 수 있음 — 상태 변경 없이 무시
     }
   }
 
@@ -328,6 +379,8 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
                   feedback: _feedback,
                   language: _language,
                   onLanguageChanged: _onLanguageChanged,
+                  torchEnabled: _torchEnabled,
+                  onTorchChanged: _setTorch,
                 ),
               ),
             );
