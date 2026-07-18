@@ -53,6 +53,7 @@ class AppStrings {
   final String labelFront;
   final String labelLeft;
   final String labelRight;
+  final String labelNone;
 
   final String cameraPermissionRequiredLabel;
   final String cameraPermissionRequiredSettingsLabel;
@@ -133,6 +134,7 @@ class AppStrings {
     required this.labelFront,
     required this.labelLeft,
     required this.labelRight,
+    required this.labelNone,
     required this.cameraPermissionRequiredLabel,
     required this.cameraPermissionRequiredSettingsLabel,
     required this.cameraPermissionRequiredAnnouncement,
@@ -182,6 +184,7 @@ class AppStrings {
     labelFront: '정상 진행',
     labelLeft: '왼쪽 이탈',
     labelRight: '오른쪽 이탈',
+    labelNone: '횡단보도 없음',
     cameraPermissionRequiredLabel: '카메라 권한 필요',
     cameraPermissionRequiredSettingsLabel: '카메라 권한 필요 (설정 이동)',
     cameraPermissionRequiredAnnouncement: '카메라 권한이 필요합니다. 설정에서 허용해주세요.',
@@ -237,6 +240,7 @@ class AppStrings {
     labelFront: 'On track',
     labelLeft: 'Drifted left',
     labelRight: 'Drifted right',
+    labelNone: 'No crosswalk detected',
     cameraPermissionRequiredLabel: 'Camera permission required',
     cameraPermissionRequiredSettingsLabel:
         'Camera permission required (open settings)',

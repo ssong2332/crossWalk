@@ -1,5 +1,5 @@
 """
-T1: 배포된 모델(model/crosswalk_model.onnx)의 실측 정확도 평가.
+T1/T42: 배포된 모델(model/crosswalk_model.onnx)의 실측 정확도 평가.
 
 앱의 실제 추론 경로(crosswalk_app/lib/services/classifier.dart)를 최대한 그대로 재현한다:
 - ONNX Runtime으로 추론 (PyTorch 아님)
@@ -7,8 +7,15 @@ T1: 배포된 모델(model/crosswalk_model.onnx)의 실측 정확도 평가.
 - ImageNet 정규화 (mean=[0.485,0.456,0.406], std=[0.229,0.224,0.225])
 - NCHW 입력 텐서
 - softmax(logits) -> 확률
-- 클래스별 임계값 판정: front=0.85, left/right=0.55
+- 클래스별 임계값 판정: front=0.65, left/right=0.55, none=0.50
+  (T42 통합 완료 시점 기준 `crosswalk_app/lib/services/classifier.dart`의 실제 값과
+  동일 — front가 0.85→0.65로 내려간 이유: 4-클래스로 늘면서 softmax 확률이 분산되어
+  3-클래스 때의 임계값이 지나치게 엄격해졌음을 이 스크립트로 직접 진단한 뒤 반영한 값.
+  아래 EVAL_*_THRESHOLD 환경변수로 다른 값을 일회성으로 시험해볼 수 있다.)
 - 스무딩(최근 5프레임 평균)은 미적용 (단일 이미지 프레임별 단발 추론이므로 해당 없음)
+
+T42 참고: classifier.dart는 이제 4-class(front/left/none/right)를 알고 있으며
+(docs/Tasks.md T42), 이 평가 스크립트의 기본 임계값도 그 실제 값과 동기화되어 있다.
 
 순수 평가 스크립트. 모델을 재학습하거나 수정하지 않는다.
 """
@@ -25,13 +32,33 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 MODEL_PATH = REPO_ROOT / "model" / "crosswalk_model.onnx"
 TEST_DIR = REPO_ROOT / "train" / "data_prepared" / "test"
 
-LABELS = ["front", "left", "right"]  # ImageFolder 알파벳 순서 = classifier.dart _labels 순서와 동일
+# T42: "none"(횡단보도 없음) 클래스 추가.
+# 주의(정확성 필수): torchvision ImageFolder는 하위 폴더명을 알파벳순으로 정렬해
+# class_to_idx를 부여하므로(train_model.py get_loaders()), 실제 모델 출력(logits)의
+# 인덱스 순서는 front(0), left(1), none(2), right(3)이다. 이 리스트는 반드시 그
+# 순서와 정확히 일치해야 한다 — front/left/right/none처럼 "보기 편한" 순서로 바꾸면
+# 로짓을 잘못된 라벨에 매핑하는 조용한 버그가 된다.
+LABELS = ["front", "left", "none", "right"]
 IMG_SIZE = 224
 MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 
-FRONT_THRESHOLD = 0.85
+# T42 완료: 아래 세 값은 더 이상 잠정값이 아니라 `classifier.dart`에 실제로
+# 반영되어 있는 값과 동일하다(이 스크립트의 진단 결과를 근거로 확정됨). 값을 바꾸려면
+# classifier.dart도 함께 갱신해야 한다 — 이 파일만 고치면 평가 결과가 앱의 실제
+# 동작과 다시 어긋난다(reviewer가 지적한 문제, docs/Tasks.md T42 참고).
+FRONT_THRESHOLD = 0.65
 DEVIATION_THRESHOLD = 0.55  # left/right
+NONE_THRESHOLD_PLACEHOLDER = 0.50
+
+# 일회성 진단용 환경변수 오버라이드. 기본값(위 세 상수, 곧 앱의 실제 임계값)은 그대로
+# 유지되고, 아래처럼 환경변수를 지정했을 때만 이번 실행 한정으로 다른 값을 시험할 수
+# 있다 — 예: 향후 재학습 후 임계값을 다시 진단하고 싶을 때.
+FRONT_THRESHOLD = float(os.environ.get("EVAL_FRONT_THRESHOLD", FRONT_THRESHOLD))
+DEVIATION_THRESHOLD = float(os.environ.get("EVAL_DEVIATION_THRESHOLD", DEVIATION_THRESHOLD))
+NONE_THRESHOLD_PLACEHOLDER = float(
+    os.environ.get("EVAL_NONE_THRESHOLD", NONE_THRESHOLD_PLACEHOLDER)
+)
 
 
 def preprocess(image_path: Path) -> np.ndarray:
@@ -59,7 +86,12 @@ def decide(probs: np.ndarray) -> str | None:
     best_idx = int(np.argmax(probs))
     label = LABELS[best_idx]
     conf = probs[best_idx]
-    threshold = FRONT_THRESHOLD if label == "front" else DEVIATION_THRESHOLD
+    if label == "front":
+        threshold = FRONT_THRESHOLD
+    elif label == "none":
+        threshold = NONE_THRESHOLD_PLACEHOLDER
+    else:
+        threshold = DEVIATION_THRESHOLD
     if conf < threshold:
         return None  # 임계값 미달 -> 판정 없음 (앱에서는 경고 없음)
     return label
@@ -83,7 +115,7 @@ def main():
         for f in files:
             input_tensor = preprocess(f)
             outputs = session.run(None, {input_name: input_tensor})
-            logits = outputs[0][0]  # [1,3] -> [3]
+            logits = outputs[0][0]  # [1,4] -> [4] (T42: front/left/right/none)
             probs = softmax(logits)
             pred = decide(probs)
             results[true_label].append(pred)
@@ -91,9 +123,10 @@ def main():
     # confusion matrix: rows = true label, cols = predicted label (+ "None"/미판정)
     pred_cols = LABELS + [None]
     print("=" * 70)
-    print("T1 모델 정확도 실측 결과 (배포 모델: model/crosswalk_model.onnx)")
+    print("T1/T42 모델 정확도 실측 결과 (4-class: front/left/right/none, model/crosswalk_model.onnx)")
     print("=" * 70)
-    print(f"\n표본 크기: front={file_counts['front']}, left={file_counts['left']}, right={file_counts['right']}\n")
+    print(f"\n표본 크기: front={file_counts['front']}, left={file_counts['left']}, "
+          f"right={file_counts['right']}, none={file_counts['none']}\n")
 
     print("Confusion Matrix (행=실제 라벨, 열=예측 라벨, None=임계값 미달/무판정)")
     header = "true\\pred".ljust(12) + "".join(str(c).ljust(10) for c in pred_cols)

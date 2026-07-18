@@ -79,23 +79,28 @@ class _CameraScreenState extends State<CameraScreen>
   static const _colorRight = Color(0xFFFF9F40);
   // Non-status interactive elements (buttons, progress indicators, etc.).
   static const _colorAccent = Color(0xFF3AA0FF);
+  // T42: 중성 회청색 — "이탈도 정상도 아닌, 횡단보도 자체가 없음"을 나타내는 색.
+  static const _colorNone = Color(0xFF8A94A6);
 
   static const _labelColors = {
     'front': _colorFront,
     'left': _colorLeft,
     'right': _colorRight,
+    'none': _colorNone,
   };
 
   Map<String, String> get _labelText => {
         'front': _strings.labelFront,
         'left': _strings.labelLeft,
         'right': _strings.labelRight,
+        'none': _strings.labelNone,
       };
 
   static const _labelIcons = {
     'front': Icons.check_circle,
     'left': Icons.chevron_left,
     'right': Icons.chevron_right,
+    'none': Icons.search_off,
   };
 
   // T41: direction-guidance corridor overlay animation state.
@@ -177,7 +182,8 @@ class _CameraScreenState extends State<CameraScreen>
   // T41: the guidance corridor/vignette are only meaningful once the
   // classifier is actively producing labels — hidden during loading/error
   // so they never imply guidance where none exists yet.
-  bool get _showGuidance => !_hasError && !_isLoading;
+  bool get _showGuidance =>
+      !_hasError && !_isLoading && _guidanceLabel != 'none';
 
   Future<void> _initCamera() async {
     if (_isInitializing) return;
@@ -377,6 +383,7 @@ class _CameraScreenState extends State<CameraScreen>
     if (_statusLabel == _strings.labelFront) return _colorFront;
     if (_statusLabel == _strings.labelLeft) return _colorLeft;
     if (_statusLabel == _strings.labelRight) return _colorRight;
+    if (_statusLabel == _strings.labelNone) return _colorNone;
     return Colors.grey;
   }
 
@@ -385,6 +392,7 @@ class _CameraScreenState extends State<CameraScreen>
     if (_statusLabel == _strings.labelFront) return _labelIcons['front'];
     if (_statusLabel == _strings.labelLeft) return _labelIcons['left'];
     if (_statusLabel == _strings.labelRight) return _labelIcons['right'];
+    if (_statusLabel == _strings.labelNone) return _labelIcons['none'];
     return null;
   }
 
@@ -497,7 +505,7 @@ class _CameraScreenState extends State<CameraScreen>
           // decorative ambient feedback — it does not draw or imply any
           // detected object, only tints the screen edges with the current
           // classification result's color.
-          if (!_hasError)
+          if (!_hasError && _guidanceLabel != 'none')
             Positioned.fill(
               child: IgnorePointer(
                 child: DecoratedBox(

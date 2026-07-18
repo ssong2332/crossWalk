@@ -103,28 +103,31 @@ void main() {
       expect(sum, closeTo(1.0, 1e-6));
     });
 
-    test('thresholds 0.55/0.85 are reachable given a sufficiently skewed logit vector', () {
+    test('thresholds 0.65/0.55/0.50 are reachable given a sufficiently skewed logit vector', () {
       final classifier = Classifier();
 
-      // Strongly skewed toward "front" (index 0) — should clear the 0.85
+      // Strongly skewed toward "front" (index 0) — should clear the 0.65
       // front threshold.
-      final frontProbs = classifier.softmax([10.0, 0.0, 0.0]);
-      expect(frontProbs[0], greaterThanOrEqualTo(0.85));
+      final frontProbs = classifier.softmax([10.0, 0.0, 0.0, 0.0]);
+      expect(frontProbs[0], greaterThanOrEqualTo(0.65));
 
       // Moderately skewed toward "left" (index 1) — should clear the 0.55
-      // deviation threshold but not necessarily the stricter 0.85 one.
-      final leftProbs = classifier.softmax([0.0, 1.0, 0.0]);
+      // deviation threshold.
+      final leftProbs = classifier.softmax([0.0, 1.0, 0.0, 0.0]);
       expect(leftProbs[1], greaterThanOrEqualTo(0.55));
     });
   });
 
+  // 4-클래스 라벨 순서: ['front', 'left', 'none', 'right'] (front=idx0,
+  // left=idx1, none=idx2, right=idx3) — torchvision ImageFolder의 알파벳순
+  // 폴더 정렬과 일치해야 함 (classifier.dart 참고).
   group('Classifier.decideFromLogits — smoothing window', () {
     test('averages only the most recent 5 pushes (sliding window)', () {
       final classifier = Classifier();
 
       // Push 5 frames strongly favoring "left" (index 1).
       for (int i = 0; i < 5; i++) {
-        final result = classifier.decideFromLogits([0.0, 10.0, 0.0]);
+        final result = classifier.decideFromLogits([0.0, 10.0, 0.0, 0.0]);
         expect(result, isNotNull);
         expect(result!.label, 'left');
       }
@@ -134,7 +137,7 @@ void main() {
       // result should transition to "front".
       ClassificationResult? lastResult;
       for (int i = 0; i < 5; i++) {
-        lastResult = classifier.decideFromLogits([10.0, 0.0, 0.0]);
+        lastResult = classifier.decideFromLogits([10.0, 0.0, 0.0, 0.0]);
       }
 
       // After 5 more "front"-favoring pushes, the window contains only
@@ -148,13 +151,13 @@ void main() {
 
       // Fill window with 5 "left"-favoring frames.
       for (int i = 0; i < 5; i++) {
-        classifier.decideFromLogits([0.0, 10.0, 0.0]);
+        classifier.decideFromLogits([0.0, 10.0, 0.0, 0.0]);
       }
 
       // Push a single "front"-favoring frame — with a 5-frame window this
       // should be averaged with 4 remaining "left" frames, not fully
       // overwrite them (unbounded running average would behave differently).
-      final blended = classifier.decideFromLogits([10.0, 0.0, 0.0]);
+      final blended = classifier.decideFromLogits([10.0, 0.0, 0.0, 0.0]);
 
       // Still dominated by "left" since only 1 of 5 window slots changed.
       expect(blended, isNotNull);
@@ -168,9 +171,22 @@ void main() {
 
       // Near-uniform/ambiguous logits -> near-uniform probabilities -> no
       // class clears its threshold.
-      final result = classifier.decideFromLogits([0.01, 0.0, -0.01]);
+      final result = classifier.decideFromLogits([0.01, 0.0, -0.01, 0.0]);
 
       expect(result, isNull);
+    });
+
+    test('returns "none" when its confidence clears the 0.50 none threshold', () {
+      final classifier = Classifier();
+
+      // Strongly skewed toward "none" (index 2).
+      ClassificationResult? result;
+      for (int i = 0; i < 5; i++) {
+        result = classifier.decideFromLogits([0.0, 0.0, 10.0, 0.0]);
+      }
+
+      expect(result, isNotNull);
+      expect(result!.label, 'none');
     });
   });
 

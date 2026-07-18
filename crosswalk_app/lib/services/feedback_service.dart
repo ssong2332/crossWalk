@@ -97,7 +97,7 @@ class FeedbackService {
   // 실제 시각을 인자로 받아 결정론적으로 테스트 가능하도록 함.
   @visibleForTesting
   String? decideMessage(String detectedClass, DateTime now) {
-    if (detectedClass == 'front') return null;
+    if (detectedClass == 'front' || detectedClass == 'none') return null;
 
     if (_lastAlertTime != null &&
         _lastAlertClass == detectedClass &&

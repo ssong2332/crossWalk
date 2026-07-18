@@ -31,7 +31,8 @@ EPOCHS_FROZEN = 10
 EPOCHS_FINETUNE = 10
 LR_FROZEN = 1e-3
 LR_FINETUNE = 1e-4
-CLASSES = ["front", "left", "right"]
+# T42: "none"(횡단보도 없음) 클래스 추가 — image/none/ 신규 데이터(2026-07-18) 반영.
+CLASSES = ["front", "left", "right", "none"]
 
 
 # ── 1. 데이터 준비 ──────────────────────────────────────────────────
@@ -145,9 +146,20 @@ def eval_epoch(model, loader, criterion, device):
 
 
 def run_training(model, train_loader, val_loader, device, class_to_idx):
-    # 클래스 가중치: left/right에 더 높은 가중치
+    # 클래스 가중치: front(다수 클래스) 대비 역빈도 가중치.
+    # T42 이전에는 {"front":1.0,"left":10.0,"right":20.0}로 하드코딩되어 있었으나,
+    # 이는 당시 train split 개수(front~400,left~37,right~19)의 front/count 비율과
+    # 거의 일치한다 (400/37≈10.8, 400/19≈21). "none" 클래스 추가로 개수가 매번
+    # 바뀌므로, 매직 넘버 대신 실제 train split 개수로부터 그 비율을 그대로
+    # 재계산한다 (front 가중치는 항상 1.0으로 고정, 나머지는 front_count/count).
     idx_to_cls = {v: k for k, v in class_to_idx.items()}
-    weights_map = {"front": 1.0, "left": 10.0, "right": 20.0}
+    train_counts = {
+        cls: len(os.listdir(os.path.join(PREPARED_DIR, "train", cls))) for cls in CLASSES
+    }
+    front_count = train_counts["front"]
+    weights_map = {cls: front_count / train_counts[cls] for cls in CLASSES}
+    print("클래스별 train 개수:", train_counts)
+    print("클래스 가중치 (front_count/count):", weights_map)
     class_weights = torch.tensor(
         [weights_map[idx_to_cls[i]] for i in range(len(CLASSES))],
         dtype=torch.float
