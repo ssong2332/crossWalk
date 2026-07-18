@@ -1,7 +1,7 @@
 # PRD — crosswalk_app (횡단보도 이탈 감지)
 
 Owner: planner (see AGENTS.md). Others read-only.
-Last updated: 2026-07-16. Basis: code inspection of `crosswalk_app/lib/`, `crosswalk_app/pubspec.yaml`, `.github/workflows/build_apk.yml`, `train/`, `model/`, and git history (`develop`).
+Last updated: 2026-07-18 (added Open Q #15 — chest-mount camera tilt/height, from Architecture §16.6 Open Question D). Prior: 2026-07-16. Basis: code inspection of `crosswalk_app/lib/`, `crosswalk_app/pubspec.yaml`, `.github/workflows/build_apk.yml`, `train/`, `model/`, and git history (`develop`).
 
 > Status legend: 구현됨 = implemented (evidence in code), 부분구현 = partial, 미구현 = not implemented, 추정 = inferred (not confirmable from code — see Open Questions).
 
@@ -93,3 +93,4 @@ Evidence: `pubspec.yaml:2` (description), `ARCHITECTURE.md:3`, `crosswalk_app/li
 | 12 | Behavior under low-light/night/rain/occlusion — in scope for v1? | ANSWERED (user, 2026-07-17): low-light/night IS in scope for v1, with improvement needed later. No low-light handling exists in code today — see new task candidate T37. (rain/occlusion not separately addressed by the user.) |
 | 13 | Provide periodic positive "on-track" reassurance, or stay silent on front? | ANSWERED (user, 2026-07-17): stay silent on front (keep current behavior). No code change needed. |
 | 14 | Camera choice — rear assumed; any front-camera or dual use case? | ANSWERED (user, 2026-07-17): rear camera only (keep current behavior). No code change needed. |
+| 15 | 가슴착용 카메라의 정확한 틸트 각도/장착 높이는? (Exact chest-mount camera tilt/pitch angle and mount height) — raised by architect in T35, `docs/Architecture.md` §16.6 Open Question D, because training data was captured with a steep downward ground-view framing (§16.2) that does not match the confirmed chest-mount forward posture (Open Q #8); the size of that mismatch depends on this unstated tilt angle. | ANSWERED — DIRECTION ONLY, NOT A PRECISE SPEC (user, 2026-07-18): 사용자는 "정면에 가깝게, 약간 아래로 기울어질 것 같아"라고 답함 — 즉 가슴착용 시 카메라가 수평(정면)에 가깝되 약간 아래를 향할 것으로 **예상/추정**한다는 정성적 방향성만 제시. 사용자 스스로 "~것 같아"라는 추정성 어투로 답했으므로 이는 실측값이 아님. **정확한 각도(도° 단위)와 장착 높이는 여전히 미정** — 정밀 재현이 필요하면 실측 또는 사용자의 추가 확정이 필요. Related: Open Q #8, #10; Tasks T1, T35. |
