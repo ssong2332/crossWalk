@@ -22,11 +22,19 @@ class SettingsScreen extends StatefulWidget {
     required this.feedback,
     required this.language,
     required this.onLanguageChanged,
+    required this.torchEnabled,
+    required this.onTorchChanged,
   });
 
   final FeedbackService feedback;
   final AppLanguage language;
   final ValueChanged<AppLanguage> onLanguageChanged;
+
+  // T37: current torch/flashlight state (owned by CameraScreen, which owns
+  // the live CameraController) and a callback to toggle it. See
+  // docs/Tasks.md T37.
+  final bool torchEnabled;
+  final Future<void> Function(bool enabled) onTorchChanged;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -41,6 +49,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late AppStrings _strings;
   late double _speechRate;
   late int _vibrationDurationMs;
+  late bool _torchEnabled;
 
   @override
   void initState() {
@@ -49,6 +58,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _strings = AppStrings.of(_language);
     _speechRate = widget.feedback.speechRate;
     _vibrationDurationMs = widget.feedback.vibrationDurationMs;
+    _torchEnabled = widget.torchEnabled;
   }
 
   void _selectLanguage(AppLanguage language) {
@@ -70,6 +80,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final rounded = milliseconds.round();
     setState(() => _vibrationDurationMs = rounded);
     widget.feedback.updateVibrationDuration(rounded);
+  }
+
+  // T37: optimistic update, same convention as the other settings above —
+  // if the underlying `setFlashMode` call fails (e.g. unsupported device),
+  // this local toggle can end up out of sync with the real hardware state
+  // until the screen is reopened; acceptable for a best-effort convenience
+  // feature, not a safety-critical path.
+  void _toggleTorch(bool value) {
+    setState(() => _torchEnabled = value);
+    unawaited(widget.onTorchChanged(value));
   }
 
   Widget _buildSectionHeader(String title) {
@@ -182,6 +202,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               subtitle: Text(
                 _strings.settingsScreenReaderOptimizationNote,
+                style: const TextStyle(color: Colors.white38, fontSize: 12),
+              ),
+            ),
+          ),
+
+          _buildSectionHeader(_strings.settingsLowLightSectionHeader),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: SwitchListTile(
+              value: _torchEnabled,
+              onChanged: _toggleTorch,
+              activeColor: _colorAccent,
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                _strings.settingsTorchLabel,
+                style: const TextStyle(color: Colors.white70),
+              ),
+              subtitle: Text(
+                _strings.settingsTorchNote,
                 style: const TextStyle(color: Colors.white38, fontSize: 12),
               ),
             ),
