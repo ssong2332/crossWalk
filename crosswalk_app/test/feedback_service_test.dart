@@ -10,7 +10,9 @@
 // time as an explicit parameter. Tests drive this method directly on a
 // fresh FeedbackService() instance and never call init() or touch
 // _tts/Vibration.
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:crosswalk_app/localization/app_strings.dart';
 import 'package:crosswalk_app/services/feedback_service.dart';
 
 void main() {
@@ -18,6 +20,24 @@ void main() {
 
   const leftMessage = '왼쪽으로 이탈했습니다. 오른쪽으로 이동하세요';
   const rightMessage = '오른쪽으로 이탈했습니다. 왼쪽으로 이동하세요';
+
+  // flutter_tts 4.2.5 (lib/flutter_tts.dart:330):
+  // static const MethodChannel _channel = MethodChannel('flutter_tts');
+  // T39's updateLanguage()/updateSpeechRate() await _tts.setLanguage()/
+  // setSpeechRate(), which would otherwise throw MissingPluginException
+  // with no handler registered on this channel (same pattern as
+  // camera_screen_test.dart's mockFlutterTts()).
+  const ttsChannel = MethodChannel('flutter_tts');
+
+  setUp(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(ttsChannel, (call) async => 1);
+  });
+
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(ttsChannel, null);
+  });
 
   group('FeedbackService.decideMessage — front silence', () {
     test('returns null for "front" regardless of prior state', () {
@@ -199,6 +219,61 @@ void main() {
         // The second utterance's own completion handler correctly clears it.
         service.finishSpeechGeneration(secondGeneration);
         expect(service.isSpeaking.value, isFalse);
+      },
+    );
+  });
+
+  // T39: runtime setters used by SettingsScreen (language / TTS speed /
+  // vibration duration), applied for the remainder of the session.
+  group('FeedbackService — T39 runtime setters', () {
+    test('defaults match the pre-T39 hardcoded values', () {
+      final service = FeedbackService();
+
+      expect(service.language, AppLanguage.ko);
+      expect(service.speechRate, 0.5);
+      expect(service.vibrationDurationMs, 500);
+    });
+
+    test('updateVibrationDuration changes vibrationDurationMs immediately '
+        'without touching any platform channel', () {
+      final service = FeedbackService();
+
+      service.updateVibrationDuration(800);
+
+      expect(service.vibrationDurationMs, 800);
+    });
+
+    test('updateSpeechRate changes speechRate', () async {
+      final service = FeedbackService();
+
+      await service.updateSpeechRate(0.8);
+
+      expect(service.speechRate, 0.8);
+    });
+
+    test(
+      'updateLanguage changes language, and subsequent decideMessage() '
+      'calls use the new language\'s deviation messages',
+      () async {
+        final service = FeedbackService();
+        final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+
+        // Before switching: Korean (default).
+        expect(service.decideMessage('left', t0), leftMessage);
+
+        await service.updateLanguage(AppLanguage.en);
+        expect(service.language, AppLanguage.en);
+
+        // A class change ('left' -> 'right') bypasses cooldown, so this
+        // is reachable immediately after the prior Korean alert above.
+        final englishMessage = service.decideMessage(
+          'right',
+          t0.add(const Duration(milliseconds: 1)),
+        );
+        expect(
+          englishMessage,
+          AppStrings.of(AppLanguage.en).rightDeviationMessage,
+        );
       },
     );
   });

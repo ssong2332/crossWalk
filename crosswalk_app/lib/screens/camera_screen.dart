@@ -6,6 +6,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../services/classifier.dart';
 import '../services/feedback_service.dart';
 import '../localization/app_strings.dart';
+import 'settings_screen.dart';
 
 class CameraScreen extends StatefulWidget {
   const CameraScreen({super.key});
@@ -19,11 +20,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   final Classifier _classifier = Classifier();
   final FeedbackService _feedback = FeedbackService();
 
-  // Detected once at startup from the system locale (T34); no in-app
-  // language switcher is in scope. Falls back to Korean when detection
-  // fails or the locale isn't one of the two supported languages.
-  late final AppLanguage _language;
-  late final AppStrings _strings;
+  // Detected at startup from the system locale (T34), and changeable
+  // in-session from SettingsScreen (T39) via _onLanguageChanged below.
+  late AppLanguage _language;
+  late AppStrings _strings;
 
   late String _statusLabel;
   double _confidence = 0.0;
@@ -258,8 +258,19 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     );
   }
 
-  // T38: 설정 화면 진입 버튼. SettingsScreen 자체는 T39 범위이므로 라우팅은
-  // 아직 연결하지 않는다 (no-op).
+  // T39: 언어가 SettingsScreen에서 바뀌면 CameraScreen의 표시 언어(_language/
+  // _strings)와 FeedbackService 양쪽에 반영한다. FeedbackService 자체 업데이트는
+  // SettingsScreen이 직접 호출하므로(feedback.updateLanguage), 여기서는 이
+  // 화면의 표시 상태만 갱신하면 된다.
+  void _onLanguageChanged(AppLanguage language) {
+    if (!mounted) return;
+    setState(() {
+      _language = language;
+      _strings = AppStrings.of(language);
+    });
+  }
+
+  // T38/T39: 설정 화면 진입 버튼. SettingsScreen으로 라우팅한다.
   Widget _buildSettingsButton() {
     return Semantics(
       label: _strings.settingsButtonLabel,
@@ -272,7 +283,15 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
         child: InkWell(
           customBorder: const CircleBorder(),
           onTap: () {
-            // TODO(T39): SettingsScreen이 구현되면 여기서 라우팅 연결.
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => SettingsScreen(
+                  feedback: _feedback,
+                  language: _language,
+                  onLanguageChanged: _onLanguageChanged,
+                ),
+              ),
+            );
           },
           child: const Padding(
             // Reviewer fix: 8 -> 14 so the tappable circle (icon 20 + 2x
