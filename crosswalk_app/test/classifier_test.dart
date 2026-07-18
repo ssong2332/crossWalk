@@ -112,8 +112,13 @@ void main() {
       expect(frontProbs[0], greaterThanOrEqualTo(0.65));
 
       // Moderately skewed toward "left" (index 1) — should clear the 0.55
-      // deviation threshold.
-      final leftProbs = classifier.softmax([0.0, 1.0, 0.0, 0.0]);
+      // deviation threshold. With 4 classes now (T42), a logit of only 1.0
+      // dilutes to ~0.475 (3 other classes each get exp(0)=1, so
+      // prob = e^1 / (3 + e^1) ≈ 0.475 < 0.55) — this used to clear 0.55
+      // under the old 3-class softmax (e^1 / (2 + e^1) ≈ 0.576) but no
+      // longer does with a 4th class added, so the skew must be a bit
+      // stronger here (2.0 -> e^2 / (3 + e^2) ≈ 0.711).
+      final leftProbs = classifier.softmax([0.0, 2.0, 0.0, 0.0]);
       expect(leftProbs[1], greaterThanOrEqualTo(0.55));
     });
   });
