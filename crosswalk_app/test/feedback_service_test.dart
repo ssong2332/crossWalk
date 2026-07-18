@@ -277,4 +277,19 @@ void main() {
       },
     );
   });
+
+  // T40: OnboardingScreen's general-purpose read-aloud, reusing _speak().
+  group('FeedbackService — speak (T40)', () {
+    test('drives the same isSpeaking generation guard as alert()', () async {
+      final service = FeedbackService();
+
+      final future = service.speak('테스트 안내 문구');
+      // beginSpeechGeneration() runs synchronously before any await, so
+      // isSpeaking must already be true right after speak() is called.
+      expect(service.isSpeaking.value, isTrue);
+
+      await future;
+      expect(service.isSpeaking.value, isFalse);
+    });
+  });
 }
