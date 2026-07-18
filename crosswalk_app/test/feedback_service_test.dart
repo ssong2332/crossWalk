@@ -53,6 +53,22 @@ void main() {
     });
   });
 
+  // T42: "none"(횡단보도 없음)도 "front"와 동일하게 무음 처리되어야 한다 —
+  // 횡단보도가 안 보이는 상태에서 좌/우 이탈 경보를 울리는 것은 의미가 없다.
+  group('FeedbackService.decideMessage — none silence', () {
+    test('returns null for "none" regardless of prior state', () {
+      final service = FeedbackService();
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+
+      expect(service.decideMessage('none', t0), isNull);
+
+      // Even after a prior alert has fired for another class, "none"
+      // must still stay silent.
+      service.decideMessage('left', t0);
+      expect(service.decideMessage('none', t0.add(const Duration(seconds: 10))), isNull);
+    });
+  });
+
   group('FeedbackService.decideMessage — first alert', () {
     test('fires immediately on a fresh instance for "left"', () {
       final service = FeedbackService();

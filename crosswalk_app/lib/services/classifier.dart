@@ -21,13 +21,18 @@ class ModelIntegrityException implements Exception {
 }
 
 class Classifier {
-  static const _labels = ['front', 'left', 'right'];
+  // 4-클래스 모델(front/left/none/right). 이 순서는 torchvision ImageFolder가
+  // 하위 폴더명을 알파벳순으로 정렬해 만든 실제 모델 출력(logits) 인덱스 순서와
+  // 정확히 일치해야 한다(front=idx0, left=idx1, none=idx2, right=idx3).
+  // train/eval_model.py에서 검증됨.
+  static const _labels = ['front', 'left', 'none', 'right'];
   static const _inputSize = 224;
   static const _smoothingWindow = 5;
 
   // 이탈(left/right)은 민감하게, 정상(front) 확인은 엄격하게
   static const _deviationThreshold = 0.55;
-  static const _frontThreshold = 0.85;
+  static const _frontThreshold = 0.65;
+  static const _noneThreshold = 0.50;
 
   // 10 → 5: 약 6fps@30fps, 이탈 감지 지연 단축
   static const _throttleFrames = 5;
@@ -149,7 +154,11 @@ class Classifier {
 
     final label = _labels[bestIdx];
     final conf = avgProbs[bestIdx];
-    final threshold = label == 'front' ? _frontThreshold : _deviationThreshold;
+    final threshold = switch (label) {
+      'front' => _frontThreshold,
+      'none' => _noneThreshold,
+      _ => _deviationThreshold,
+    };
     if (conf < threshold) return null;
 
     return ClassificationResult(label, conf);
