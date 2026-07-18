@@ -9,7 +9,26 @@ import '../localization/app_strings.dart';
 import 'settings_screen.dart';
 
 class CameraScreen extends StatefulWidget {
-  const CameraScreen({super.key});
+  // T40: language is now detected once in OnboardingScreen (which runs
+  // before this screen) and passed forward via [initialLanguage], so the
+  // user only sees one locale-detection point. Kept optional/nullable so
+  // existing direct-construction call sites (e.g. widget tests that build
+  // `CameraScreen()` on its own, without going through OnboardingScreen)
+  // keep working unchanged — this screen still falls back to detecting the
+  // system locale itself when no language is supplied.
+  //
+  // Reviewer fix (T40 follow-up): [feedback] lets OnboardingScreen (via
+  // main.dart's CrosswalkApp) share its single FeedbackService instance
+  // with this screen instead of each screen constructing its own
+  // FlutterTts() — see the ownership comment on [_feedback] below for why.
+  // Kept nullable for the same backward-compatibility reason as
+  // [initialLanguage]: existing direct-construction call sites (e.g.
+  // camera_screen_test.dart's `CameraScreen()`) keep working, falling back
+  // to an owned instance.
+  const CameraScreen({super.key, this.initialLanguage, this.feedback});
+
+  final AppLanguage? initialLanguage;
+  final FeedbackService? feedback;
 
   @override
   State<CameraScreen> createState() => _CameraScreenState();
@@ -18,7 +37,17 @@ class CameraScreen extends StatefulWidget {
 class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver {
   CameraController? _controller;
   final Classifier _classifier = Classifier();
-  final FeedbackService _feedback = FeedbackService();
+
+  // Reviewer fix (T40 follow-up): uses widget.feedback (normally the single
+  // FeedbackService instance owned by CrosswalkApp and shared via
+  // OnboardingScreen) instead of always constructing a new one — see
+  // main.dart's ownership comment for why sharing matters. `_ownsFeedback`
+  // tracks whether this screen created its own fallback instance (true only
+  // when no [FeedbackService] was supplied, e.g. camera_screen_test.dart's
+  // direct `CameraScreen()` construction); only an owned instance is
+  // disposed by this screen (see dispose() below).
+  late final FeedbackService _feedback;
+  late final bool _ownsFeedback;
 
   // Detected at startup from the system locale (T34), and changeable
   // in-session from SettingsScreen (T39) via _onLanguageChanged below.
@@ -61,7 +90,10 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
   @override
   void initState() {
     super.initState();
-    _language = resolveAppLanguage(WidgetsBinding.instance.platformDispatcher.locale);
+    _feedback = widget.feedback ?? FeedbackService();
+    _ownsFeedback = widget.feedback == null;
+    _language = widget.initialLanguage ??
+        resolveAppLanguage(WidgetsBinding.instance.platformDispatcher.locale);
     _strings = AppStrings.of(_language);
     _statusLabel = _strings.initializing;
     WidgetsBinding.instance.addObserver(this);
@@ -201,7 +233,14 @@ class _CameraScreenState extends State<CameraScreen> with WidgetsBindingObserver
     WakelockPlus.disable();
     _controller?.dispose();
     _classifier.dispose();
-    _feedback.dispose();
+    // Reviewer fix (T40 follow-up): only dispose the instance this screen
+    // created itself. A shared instance is owned by CrosswalkApp (see
+    // main.dart) and must outlive this screen — e.g. across
+    // didChangeAppLifecycleState's resumed -> _initCamera() re-entry, which
+    // does not recreate this screen.
+    if (_ownsFeedback) {
+      _feedback.dispose();
+    }
     super.dispose();
   }
 
