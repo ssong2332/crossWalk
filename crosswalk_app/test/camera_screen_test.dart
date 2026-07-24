@@ -122,16 +122,15 @@ void main() {
         .clearLocaleTestValue();
   });
 
-  Finder errorOverlayFinder() => find.byWidgetPredicate(
-        (widget) =>
-            widget is ColoredBox &&
-            // ignore: deprecated_member_use
-            widget.color == Colors.red.withOpacity(0.25),
-      );
+  // Claude Design import: the red-tint overlay + bottom-tray retry button
+  // were replaced by a dedicated full-screen error card (scrim +
+  // icon-in-circle + title + single CTA) — see _buildErrorCard() in
+  // camera_screen.dart. This finder locates that card's icon circle.
+  Finder errorCardFinder() => find.byIcon(Icons.priority_high);
 
-  group('CameraScreen — _hasError overlay + retry (ordinary denial)', () {
+  group('CameraScreen — _hasError card + retry (ordinary denial)', () {
     testWidgets(
-      'shows red overlay, 카메라 권한 필요, and a 다시 시도 retry button',
+      'shows the full-screen error card, 카메라 권한 필요, and a 다시 시도 retry button',
       (tester) async {
         mockPermissionHandler(deniedStatusValue);
 
@@ -139,7 +138,7 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.text('카메라 권한 필요'), findsOneWidget);
-        expect(errorOverlayFinder(), findsOneWidget);
+        expect(errorCardFinder(), findsOneWidget);
         expect(find.text('다시 시도'), findsOneWidget);
         expect(find.text('설정 열기'), findsNothing);
         expect(find.byIcon(Icons.refresh), findsOneWidget);
@@ -167,14 +166,14 @@ void main() {
         // Still denied (mock keeps returning `denied`) -> still in the
         // same ordinary-denial error state.
         expect(find.text('카메라 권한 필요'), findsOneWidget);
-        expect(errorOverlayFinder(), findsOneWidget);
+        expect(errorCardFinder(), findsOneWidget);
       },
     );
   });
 
-  group('CameraScreen — _hasError overlay + retry (permanent denial)', () {
+  group('CameraScreen — _hasError card + retry (permanent denial)', () {
     testWidgets(
-      'shows red overlay, 카메라 권한 필요 (설정 이동), and a 설정 열기 button',
+      'shows the full-screen error card, 카메라 권한 필요 (설정 이동), and a 설정 열기 button',
       (tester) async {
         mockPermissionHandler(permanentlyDeniedStatusValue);
 
@@ -182,7 +181,7 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(find.text('카메라 권한 필요 (설정 이동)'), findsOneWidget);
-        expect(errorOverlayFinder(), findsOneWidget);
+        expect(errorCardFinder(), findsOneWidget);
         expect(find.text('설정 열기'), findsOneWidget);
         expect(find.text('다시 시도'), findsNothing);
         expect(find.byIcon(Icons.settings), findsOneWidget);
@@ -216,8 +215,10 @@ void main() {
   // the widget level from the existing error-path setup is: (a) the
   // guidance overlay/vignette are correctly hidden while `_hasError` is
   // true (per `_showGuidance`'s doc comment in camera_screen.dart), and (b)
-  // the bottom status tray was actually swapped for a glass/blur HUD
-  // (`BackdropFilter`), not merely restyled.
+  // — updated for the Claude Design import — the bottom glass-HUD tray is
+  // now hidden entirely during `_hasError` (replaced by the dedicated
+  // full-screen error card), so `BackdropFilter` should be ABSENT in that
+  // state; it is still present in the normal (non-error) loading state.
   group('CameraScreen — T41 guidance overlay / glass HUD', () {
     Finder guidancePainterFinder() => find.byWidgetPredicate(
           (widget) =>
@@ -238,13 +239,28 @@ void main() {
     );
 
     testWidgets(
-      'replaces the bottom status tray with a blurred glass HUD '
-      '(BackdropFilter) even in the error state',
+      'hides the blurred glass HUD (BackdropFilter) in the error state, '
+      'showing the dedicated error card instead',
       (tester) async {
         mockPermissionHandler(deniedStatusValue);
 
         await tester.pumpWidget(const MaterialApp(home: CameraScreen()));
         await tester.pumpAndSettle();
+
+        expect(find.byType(BackdropFilter), findsNothing);
+        expect(errorCardFinder(), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'shows the blurred glass HUD (BackdropFilter) while loading '
+      '(non-error state)',
+      (tester) async {
+        // No permission mock response configured -> the permission request
+        // future never resolves within this test, so CameraScreen stays in
+        // its initial (_isLoading == true, _hasError == false) state.
+        await tester.pumpWidget(const MaterialApp(home: CameraScreen()));
+        await tester.pump();
 
         expect(find.byType(BackdropFilter), findsOneWidget);
       },

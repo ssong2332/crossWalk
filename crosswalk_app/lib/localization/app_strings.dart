@@ -119,12 +119,44 @@ class AppStrings {
   // see the "디자인 초안 문구 — 법률 검토 필요" comment on the Korean value
   // below (and its English translation), per docs/Tasks.md T40 acceptance
   // criterion (3).
+  final String onboardingEyebrow;
   final String onboardingTitle;
   final String onboardingPostureHeading;
   final String onboardingPostureBody;
+  final String onboardingPosturePlaceholder;
   final String onboardingDisclaimerHeading;
+  final String onboardingDisclaimerDraftBadge;
   final String onboardingDisclaimerBody;
+  final String onboardingTtsNotice;
   final String onboardingConfirmButton;
+
+  // Claude Design import (claude.ai/design project 453fb831…, "Crosswalk
+  // App"/PhoneScreen.dc.html): secondary description line shown under the
+  // main state label on the camera HUD, and the HUD's fixed disclaimer
+  // reminding the viewer the direction cue is symbolic, not a drawn
+  // boundary — extends T41's honesty constraint into on-screen copy, not
+  // just code comments/naming.
+  final Map<String, String> cameraStateDescriptions;
+  final String cameraGuidanceDisclaimer;
+
+  // Warning banners for low ambient light / mount-angle drift. UI ONLY —
+  // deliberately not wired to any sensor trigger yet. T37 already
+  // investigated automatic low-light detection and rejected it for lack of
+  // a reliable ambient-light-sensing API; a tilt/angle sensor was never
+  // investigated at all. Shipping a banner with a fabricated trigger
+  // condition would violate this project's "no guesses stated as facts"
+  // rule, so these strings exist for the widget/visual language only,
+  // pending a real decision on how (or whether) to detect either
+  // condition.
+  final String warnLowLightTitle;
+  final String warnLowLightBody;
+  final String warnTiltTitle;
+  final String warnTiltBody;
+
+  final String settingsTtsRateSlowLabel;
+  final String settingsTtsRateFastLabel;
+  final String settingsVibrationWeakLabel;
+  final String settingsVibrationStrongLabel;
 
   const AppStrings._({
     required this.initializing,
@@ -168,12 +200,26 @@ class AppStrings {
     required this.settingsLowLightSectionHeader,
     required this.settingsTorchLabel,
     required this.settingsTorchNote,
+    required this.onboardingEyebrow,
     required this.onboardingTitle,
     required this.onboardingPostureHeading,
     required this.onboardingPostureBody,
+    required this.onboardingPosturePlaceholder,
     required this.onboardingDisclaimerHeading,
+    required this.onboardingDisclaimerDraftBadge,
     required this.onboardingDisclaimerBody,
+    required this.onboardingTtsNotice,
     required this.onboardingConfirmButton,
+    required this.cameraStateDescriptions,
+    required this.cameraGuidanceDisclaimer,
+    required this.warnLowLightTitle,
+    required this.warnLowLightBody,
+    required this.warnTiltTitle,
+    required this.warnTiltBody,
+    required this.settingsTtsRateSlowLabel,
+    required this.settingsTtsRateFastLabel,
+    required this.settingsVibrationWeakLabel,
+    required this.settingsVibrationStrongLabel,
   });
 
   static const AppStrings _ko = AppStrings._(
@@ -220,16 +266,36 @@ class AppStrings {
     settingsTorchLabel: '손전등 켜기',
     settingsTorchNote: '어두운 곳에서 인식을 돕습니다. 배터리 소모가 늘어날 수 있으며, '
         '기기에 따라 지원되지 않을 수 있습니다.',
-    onboardingTitle: '시작하기 전에',
-    onboardingPostureHeading: '착용 방법',
-    onboardingPostureBody: '목걸이형 스트랩으로 가슴 중앙에, 렌즈는 정면을 향하게 착용하세요.',
-    onboardingDisclaimerHeading: '안전 안내',
+    onboardingEyebrow: '시작하기 전에',
+    onboardingTitle: '안전 이용 안내',
+    onboardingPostureHeading: '가슴거치 착용 방법',
+    onboardingPostureBody: '스마트폰을 목걸이형 거치대에 걸어 가슴 정면에 가깝게, 살짝 아래를 향하도록 착용하세요.',
+    onboardingPosturePlaceholder: '착용 각도 다이어그램',
+    onboardingDisclaimerHeading: '법적 고지',
+    onboardingDisclaimerDraftBadge: '법률 검토 전 초안',
     // 디자인 초안 문구 — 법률 검토 필요. 사용자가 승인한 원문 그대로 사용 (docs/Tasks.md T40).
     onboardingDisclaimerBody:
         '이 앱은 횡단보도 이탈을 감지해 음성·진동으로 알려주는 보조 도구입니다. '
         '흰지팡이·안내견·동행인의 판단을 대신하지 않으며, '
         '최종 판단과 주의는 항상 보행자 본인에게 있습니다.',
+    onboardingTtsNotice: '전체 내용을 음성으로 읽어드리고 있습니다',
     onboardingConfirmButton: '확인했습니다',
+    cameraStateDescriptions: {
+      'front': '이대로 직진하세요',
+      'left': '오른쪽으로 방향을 조정하세요',
+      'right': '왼쪽으로 방향을 조정하세요',
+      'none': '카메라가 횡단보도를 인식하지 못했습니다',
+    },
+    cameraGuidanceDisclaimer:
+        '방향 안내는 카메라 인식 결과를 기호로 표시한 것입니다. 실제 경계선이 아닙니다.',
+    warnLowLightTitle: '조도가 낮습니다',
+    warnLowLightBody: '인식 정확도가 낮아질 수 있어요',
+    warnTiltTitle: '거치 각도를 확인하세요',
+    warnTiltBody: '카메라가 정면에서 벗어났습니다',
+    settingsTtsRateSlowLabel: '느리게',
+    settingsTtsRateFastLabel: '빠르게',
+    settingsVibrationWeakLabel: '약하게',
+    settingsVibrationStrongLabel: '강하게',
   );
 
   static const AppStrings _en = AppStrings._(
@@ -280,12 +346,15 @@ class AppStrings {
     settingsTorchLabel: 'Turn on flashlight',
     settingsTorchNote: 'Helps detection in dark areas. May increase battery '
         'use, and may not be supported on all devices.',
-    onboardingTitle: 'Before You Start',
-    onboardingPostureHeading: 'How to Wear',
+    onboardingEyebrow: 'Before you start',
+    onboardingTitle: 'Safety Guide',
+    onboardingPostureHeading: 'How to Wear the Chest Mount',
     onboardingPostureBody:
-        'Wear the phone on a neck lanyard at the center of your chest, '
-        'with the camera lens facing straight ahead.',
-    onboardingDisclaimerHeading: 'Safety Notice',
+        'Clip your phone to the neck-worn chest mount, facing forward and '
+        'tilted slightly downward.',
+    onboardingPosturePlaceholder: 'Wear-angle diagram',
+    onboardingDisclaimerHeading: 'Legal Notice',
+    onboardingDisclaimerDraftBadge: 'Draft — pending legal review',
     // Design-draft copy — pending legal review. Naturally-written English
     // translation of the user-approved Korean original above
     // (docs/Tasks.md T40); not itself a separately user-approved legal text.
@@ -294,7 +363,25 @@ class AppStrings {
         'the crosswalk and alerts you by voice and vibration. It does not '
         'replace the judgment of a white cane, guide dog, or companion — '
         'final judgment and caution always rest with the pedestrian.',
+    onboardingTtsNotice: 'Reading the full notice aloud',
     onboardingConfirmButton: 'I Understand',
+    cameraStateDescriptions: {
+      'front': 'Continue straight',
+      'left': 'Adjust to your right',
+      'right': 'Adjust to your left',
+      'none': "Camera can't detect a crosswalk",
+    },
+    cameraGuidanceDisclaimer:
+        'Direction cues are symbolic, based on camera classification — '
+        'not a drawn crosswalk boundary.',
+    warnLowLightTitle: 'Low light detected',
+    warnLowLightBody: 'Detection accuracy may drop',
+    warnTiltTitle: 'Check mount angle',
+    warnTiltBody: 'Camera is no longer facing forward',
+    settingsTtsRateSlowLabel: 'Slower',
+    settingsTtsRateFastLabel: 'Faster',
+    settingsVibrationWeakLabel: 'Weaker',
+    settingsVibrationStrongLabel: 'Stronger',
   );
 
   factory AppStrings.of(AppLanguage language) =>

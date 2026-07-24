@@ -39,7 +39,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   // T38's interactive-element accent color, reused here per the approved
   // mockup guidance (docs/Tasks.md T40 design reference).
   static const _colorAccent = Color(0xFF3AA0FF);
-  static const _colorNormal = Color(0xFF35C46A);
 
   // T40: language is detected once here (before CameraScreen ever runs) and
   // passed forward via CameraScreen(initialLanguage:), per the task's
@@ -78,10 +77,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   Future<void> _initAndSpeak() async {
     await _feedback.init(language: _language);
     if (!mounted) return;
-    // Design intent: the posture guidance and legal disclaimer are both
-    // read aloud on entry, in the same order they appear on screen.
+    // Design intent: the legal disclaimer and posture guidance are both
+    // read aloud on entry, in the same order they appear on screen (legal
+    // notice card first, per the imported Claude Design layout).
     await _feedback.speak(
-      '${_strings.onboardingPostureBody} ${_strings.onboardingDisclaimerBody}',
+      '${_strings.onboardingDisclaimerBody} ${_strings.onboardingPostureBody}',
     );
   }
 
@@ -111,27 +111,32 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     super.dispose();
   }
 
-  Widget _buildSection({
-    required IconData icon,
-    required Color iconColor,
+  // Claude Design import (claude.ai/design project 453fb831…, "Crosswalk
+  // App"): plain content card — used for the legal-notice and wear-guide
+  // sections. Unlike the previous version, the heading is a bare title (no
+  // leading icon) with an optional trailing badge chip, matching the
+  // imported design's card structure.
+  Widget _buildCard({
     required String heading,
-    required String body,
+    Widget? badge,
+    required Widget child,
   }) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 20),
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.white24),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 6,
             children: [
-              Icon(icon, color: iconColor, size: 22),
-              const SizedBox(width: 8),
               Text(
                 heading,
                 style: const TextStyle(
@@ -140,15 +145,102 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   fontWeight: FontWeight.w700,
                 ),
               ),
+              if (badge != null) badge,
             ],
           ),
-          const SizedBox(height: 10),
-          Text(
-            body,
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 15,
-              height: 1.4,
+          const SizedBox(height: 12),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDraftBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFE9A8),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        _strings.onboardingDisclaimerDraftBadge,
+        style: const TextStyle(
+          color: Color(0xFF3A2C00),
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  // Simplified stand-in for the imported design's chest-mount wear-angle
+  // line drawing — an icon-based diagram rather than a pixel-accurate
+  // recreation of the original SVG-style sketch, judged sufficient to
+  // convey "phone worn on a chest lanyard, angled slightly down".
+  Widget _buildWearDiagram() {
+    return Column(
+      children: [
+        SizedBox(
+          height: 96,
+          child: Center(
+            child: Transform.rotate(
+              angle: 0.14,
+              child: Container(
+                width: 62,
+                height: 88,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.white70, width: 2),
+                ),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 8),
+                    Container(
+                      width: 22,
+                      height: 3,
+                      decoration: BoxDecoration(
+                        color: Colors.white38,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Icon(Icons.camera_alt_outlined,
+                        color: _colorAccent, size: 18),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          '[ ${_strings.onboardingPosturePlaceholder} ]',
+          style: const TextStyle(
+            color: Colors.white38,
+            fontSize: 11,
+            fontFamily: 'monospace',
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTtsNoticeChip() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: _colorAccent.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.campaign_outlined, color: _colorAccent, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _strings.onboardingTtsNotice,
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
             ),
           ),
         ],
@@ -170,32 +262,62 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
+                      _strings.onboardingEyebrow,
+                      style: const TextStyle(
+                        color: _colorAccent,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
                       _strings.onboardingTitle,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 24,
+                        fontSize: 26,
                         fontWeight: FontWeight.bold,
+                        height: 1.2,
                       ),
                     ),
                     const SizedBox(height: 20),
-                    _buildSection(
-                      icon: Icons.checkroom_outlined,
-                      iconColor: _colorNormal,
-                      heading: _strings.onboardingPostureHeading,
-                      body: _strings.onboardingPostureBody,
-                    ),
-                    _buildSection(
-                      icon: Icons.info_outline,
-                      iconColor: _colorAccent,
+                    _buildCard(
                       heading: _strings.onboardingDisclaimerHeading,
-                      body: _strings.onboardingDisclaimerBody,
+                      badge: _buildDraftBadge(),
+                      child: Text(
+                        _strings.onboardingDisclaimerBody,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 15,
+                          height: 1.5,
+                        ),
+                      ),
                     ),
+                    _buildCard(
+                      heading: _strings.onboardingPostureHeading,
+                      child: Column(
+                        children: [
+                          _buildWearDiagram(),
+                          const SizedBox(height: 12),
+                          Text(
+                            _strings.onboardingPostureBody,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 14,
+                              height: 1.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    _buildTtsNoticeChip(),
                   ],
                 ),
               ),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
               child: SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -203,7 +325,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   style: ElevatedButton.styleFrom(
                     minimumSize: const Size.fromHeight(56),
                     backgroundColor: _colorAccent,
-                    foregroundColor: Colors.white,
+                    // Contrast fix (Claude Design spec §1): #3AA0FF against
+                    // white text is under WCAG AA; dark navy text on this
+                    // accent color measures 6.49:1.
+                    foregroundColor: const Color(0xFF08182A),
                   ),
                   child: Text(
                     _strings.onboardingConfirmButton,
