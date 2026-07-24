@@ -109,6 +109,15 @@ void main() {
         final torchTile = switchTiles.firstWhere((t) => t.onChanged != null);
         expect(torchTile.value, isFalse);
 
+        // Claude Design import: the new slow/fast + weak/strong sub-labels
+        // under each slider push the torch tile below the default test
+        // viewport (800x600) — scroll it into view before tapping, since
+        // SettingsScreen's body is a ListView and the tile is genuinely
+        // reachable by a real user scrolling, just not on-screen at the
+        // initial scroll offset.
+        await tester.ensureVisible(find.byWidget(torchTile));
+        await tester.pumpAndSettle();
+
         await tester.tap(find.byWidget(torchTile));
         await tester.pumpAndSettle();
 
