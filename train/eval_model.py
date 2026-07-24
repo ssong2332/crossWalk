@@ -47,7 +47,7 @@ STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 # 반영되어 있는 값과 동일하다(이 스크립트의 진단 결과를 근거로 확정됨). 값을 바꾸려면
 # classifier.dart도 함께 갱신해야 한다 — 이 파일만 고치면 평가 결과가 앱의 실제
 # 동작과 다시 어긋난다(reviewer가 지적한 문제, docs/Tasks.md T42 참고).
-FRONT_THRESHOLD = 0.65
+FRONT_THRESHOLD = 0.5
 DEVIATION_THRESHOLD = 0.55  # left/right
 NONE_THRESHOLD_PLACEHOLDER = 0.50
 
