@@ -86,12 +86,14 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('시작하기 전에'), findsOneWidget);
-      expect(find.text('착용 방법'), findsOneWidget);
+      expect(find.text('안전 이용 안내'), findsOneWidget);
+      expect(find.text('가슴거치 착용 방법'), findsOneWidget);
       expect(
-        find.text('목걸이형 스트랩으로 가슴 중앙에, 렌즈는 정면을 향하게 착용하세요.'),
+        find.text('스마트폰을 목걸이형 거치대에 걸어 가슴 정면에 가깝게, 살짝 아래를 향하도록 착용하세요.'),
         findsOneWidget,
       );
-      expect(find.text('안전 안내'), findsOneWidget);
+      expect(find.text('법적 고지'), findsOneWidget);
+      expect(find.text('법률 검토 전 초안'), findsOneWidget);
       // Verbatim user-approved disclaimer copy (docs/Tasks.md T40
       // acceptance criterion (2)).
       expect(
@@ -113,7 +115,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(spokenMessages, hasLength(1));
-      expect(spokenMessages.single, contains('목걸이형 스트랩'));
+      expect(spokenMessages.single, contains('목걸이형 거치대'));
       expect(spokenMessages.single, contains('흰지팡이·안내견·동행인'));
     });
   });

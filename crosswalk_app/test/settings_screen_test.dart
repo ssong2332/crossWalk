@@ -61,8 +61,13 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('설정'), findsOneWidget);
-      expect(find.textContaining('TTS 속도: 0.5'), findsOneWidget);
-      expect(find.textContaining('진동 세기: 500ms'), findsOneWidget);
+      // Claude Design import: label and value are now separate Text
+      // widgets in a Row (label left, value right) rather than one combined
+      // "Label: value" string.
+      expect(find.text('TTS 속도'), findsOneWidget);
+      expect(find.text('0.5'), findsOneWidget);
+      expect(find.text('진동 세기'), findsOneWidget);
+      expect(find.text('500ms'), findsOneWidget);
       // Two SwitchListTiles now exist: the disabled screen-reader
       // placeholder (T39) and the T37 torch toggle (enabled, off by
       // default) — disambiguate by `onChanged`.
@@ -103,6 +108,15 @@ void main() {
         );
         final torchTile = switchTiles.firstWhere((t) => t.onChanged != null);
         expect(torchTile.value, isFalse);
+
+        // Claude Design import: the new slow/fast + weak/strong sub-labels
+        // under each slider push the torch tile below the default test
+        // viewport (800x600) — scroll it into view before tapping, since
+        // SettingsScreen's body is a ListView and the tile is genuinely
+        // reachable by a real user scrolling, just not on-screen at the
+        // initial scroll offset.
+        await tester.ensureVisible(find.byWidget(torchTile));
+        await tester.pumpAndSettle();
 
         await tester.tap(find.byWidget(torchTile));
         await tester.pumpAndSettle();
