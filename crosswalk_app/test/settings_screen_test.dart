@@ -61,8 +61,13 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('설정'), findsOneWidget);
-      expect(find.textContaining('TTS 속도: 0.5'), findsOneWidget);
-      expect(find.textContaining('진동 세기: 500ms'), findsOneWidget);
+      // Claude Design import: label and value are now separate Text
+      // widgets in a Row (label left, value right) rather than one combined
+      // "Label: value" string.
+      expect(find.text('TTS 속도'), findsOneWidget);
+      expect(find.text('0.5'), findsOneWidget);
+      expect(find.text('진동 세기'), findsOneWidget);
+      expect(find.text('500ms'), findsOneWidget);
       // Two SwitchListTiles now exist: the disabled screen-reader
       // placeholder (T39) and the T37 torch toggle (enabled, off by
       // default) — disambiguate by `onChanged`.

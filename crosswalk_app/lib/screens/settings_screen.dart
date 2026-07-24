@@ -150,10 +150,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  '${_strings.settingsTtsRateLabel}: '
-                  '${_speechRate.toStringAsFixed(1)}',
-                  style: const TextStyle(color: Colors.white),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(_strings.settingsTtsRateLabel,
+                        style: const TextStyle(color: Colors.white70)),
+                    Text(_speechRate.toStringAsFixed(1),
+                        style: const TextStyle(
+                            color: Colors.white, fontWeight: FontWeight.w800)),
+                  ],
                 ),
                 Slider(
                   value: _speechRate,
@@ -164,16 +169,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   label: _speechRate.toStringAsFixed(1),
                   onChanged: _changeSpeechRate,
                 ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(_strings.settingsTtsRateSlowLabel,
+                        style: const TextStyle(
+                            color: Colors.white38, fontSize: 12)),
+                    Text(_strings.settingsTtsRateFastLabel,
+                        style: const TextStyle(
+                            color: Colors.white38, fontSize: 12)),
+                  ],
+                ),
                 const SizedBox(height: 12),
-                // The slider adjusts the vibration's actual duration in
-                // milliseconds (FeedbackService's `_vibrationDurationMs`);
-                // the label surfaces the raw ms value directly rather than
-                // an arbitrary 약함/보통/강함 mapping, since duration is the
-                // literal, user-verifiable unit being changed.
-                Text(
-                  '${_strings.settingsVibrationStrengthLabel}: '
-                  '${_vibrationDurationMs}ms',
-                  style: const TextStyle(color: Colors.white),
+                // The slider still adjusts the vibration's actual duration
+                // in milliseconds under the hood (FeedbackService's
+                // `_vibrationDurationMs`) — Claude Design's imported UI
+                // labels this "strength" with 약하게/강하게 sub-labels
+                // rather than the raw ms unit, so the raw value is now
+                // shown as a supporting detail rather than the primary
+                // label (kept, not removed — still literally the unit
+                // being changed).
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(_strings.settingsVibrationStrengthLabel,
+                        style: const TextStyle(color: Colors.white70)),
+                    Text('${_vibrationDurationMs}ms',
+                        style: const TextStyle(
+                            color: Colors.white, fontWeight: FontWeight.w800)),
+                  ],
                 ),
                 Slider(
                   value: _vibrationDurationMs.toDouble(),
@@ -183,6 +207,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   activeColor: _colorAccent,
                   label: '${_vibrationDurationMs}ms',
                   onChanged: _changeVibrationDuration,
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(_strings.settingsVibrationWeakLabel,
+                        style: const TextStyle(
+                            color: Colors.white38, fontSize: 12)),
+                    Text(_strings.settingsVibrationStrongLabel,
+                        style: const TextStyle(
+                            color: Colors.white38, fontSize: 12)),
+                  ],
                 ),
               ],
             ),

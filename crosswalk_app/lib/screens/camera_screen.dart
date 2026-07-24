@@ -81,6 +81,25 @@ class _CameraScreenState extends State<CameraScreen>
   static const _colorAccent = Color(0xFF3AA0FF);
   // T42: 중성 회청색 — "이탈도 정상도 아닌, 횡단보도 자체가 없음"을 나타내는 색.
   static const _colorNone = Color(0xFF8A94A6);
+  // Claude Design import: dark navy for text on the accent-colored CTA
+  // (contrast spec §1 — white-on-accent measures well under WCAG AA;
+  // #08182A on #3AA0FF measures 6.49:1).
+  static const _colorAccentOnText = Color(0xFF08182A);
+  // Claude Design import: warning-banner color for low-light/tilt notices
+  // (design spec §1 amber/warning token, chosen not to overlap hue with the
+  // 4 state colors above).
+  static const _colorWarning = Color(0xFFFFD166);
+
+  // Claude Design import: low-light / mount-tilt warning banners are new UI
+  // components from the imported design. NEITHER is wired to a real sensor
+  // trigger — T37 already investigated and rejected automatic low-light
+  // detection (no reliable ambient-light API), and tilt/angle detection has
+  // never been investigated at all. These fields exist so the banner widget
+  // can be shown once a real trigger is decided; they are never set to true
+  // anywhere in this file today, so the banners are permanently hidden in
+  // the shipped app until that follow-up decision is made.
+  final bool _warnLowLight = false;
+  final bool _warnTilt = false;
 
   static const _labelColors = {
     'front': _colorFront,
@@ -445,6 +464,125 @@ class _CameraScreenState extends State<CameraScreen>
     });
   }
 
+  // Claude Design import: full-screen centered error card, replacing the
+  // previous red-tint overlay + error text crammed into the bottom glass
+  // tray. Same underlying error logic/state as before (ordinary vs
+  // permanently-denied permission, retry vs "open settings" CTA) — only the
+  // presentation changed, matching the imported design's dedicated error
+  // state (icon circle, title, body, single 52dp CTA on a scrim
+  // background).
+  Widget _buildErrorCard() {
+    return Positioned.fill(
+      child: ColoredBox(
+        color: Colors.black.withValues(alpha: 0.94),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.fromBorderSide(
+                      BorderSide(color: _colorLeft, width: 3),
+                    ),
+                  ),
+                  child: const Icon(Icons.priority_high,
+                      color: _colorLeft, size: 30),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  _statusLabel,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 19,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _isInitializing
+                        ? null
+                        : (_permissionPermanentlyDenied
+                            ? openAppSettings
+                            : _initCamera),
+                    icon: Icon(
+                      _permissionPermanentlyDenied
+                          ? Icons.settings
+                          : Icons.refresh,
+                    ),
+                    label: Text(
+                      _permissionPermanentlyDenied
+                          ? _strings.openSettingsButton
+                          : _strings.retryButton,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(52),
+                      backgroundColor: _colorAccent,
+                      foregroundColor: _colorAccentOnText,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Claude Design import: low-light / mount-tilt warning banner. See the
+  // "UI ONLY" comment on `_warnLowLight`/`_warnTilt` above — currently
+  // unreachable in the shipped app (both fields are always false), kept as
+  // a ready-to-use component for when a real trigger is decided.
+  Widget _buildWarningBanner({required String title, required String body}) {
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: _colorWarning,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Semantics(
+        liveRegion: true,
+        label: '$title. $body',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.warning_rounded, color: Color(0xFF3A2C00), size: 20),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(title,
+                      style: const TextStyle(
+                          color: Color(0xFF3A2C00),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700)),
+                  Text(body,
+                      style: const TextStyle(
+                          color: Color(0xFF5C4A1F), fontSize: 12)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // T38/T39: 설정 화면 진입 버튼. SettingsScreen으로 라우팅한다.
   Widget _buildSettingsButton() {
     return Semantics(
@@ -493,12 +631,6 @@ class _CameraScreenState extends State<CameraScreen>
           if (_controller != null && _controller!.value.isInitialized)
             Positioned.fill(
               child: CameraPreview(_controller!),
-            ),
-
-          // 오류 상태: 화면 전체를 반투명 빨간 오버레이로 덮어 시각적으로 명확히 표시
-          if (_hasError)
-            Positioned.fill(
-              child: ColoredBox(color: Colors.red.withOpacity(0.25)),
             ),
 
           // T41: status-colored peripheral vignette (edge glow). Purely
@@ -552,40 +684,58 @@ class _CameraScreenState extends State<CameraScreen>
 
           // T38: top-right status pills (voice/vibration active) + settings
           // entry button (gear icon).
-          Positioned(
-            top: 0,
-            right: 0,
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ValueListenableBuilder<bool>(
-                      valueListenable: _feedback.isSpeaking,
-                      builder: (context, active, _) => _buildStatusPill(
-                        icon: Icons.volume_up,
-                        active: active,
-                        semanticLabel: _strings.voiceIndicatorLabel,
+          if (!_hasError)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ValueListenableBuilder<bool>(
+                            valueListenable: _feedback.isSpeaking,
+                            builder: (context, active, _) => _buildStatusPill(
+                              icon: Icons.volume_up,
+                              active: active,
+                              semanticLabel: _strings.voiceIndicatorLabel,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          ValueListenableBuilder<bool>(
+                            valueListenable: _feedback.isVibrating,
+                            builder: (context, active, _) => _buildStatusPill(
+                              icon: Icons.vibration,
+                              active: active,
+                              semanticLabel: _strings.vibrationIndicatorLabel,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          _buildSettingsButton(),
+                        ],
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    ValueListenableBuilder<bool>(
-                      valueListenable: _feedback.isVibrating,
-                      builder: (context, active, _) => _buildStatusPill(
-                        icon: Icons.vibration,
-                        active: active,
-                        semanticLabel: _strings.vibrationIndicatorLabel,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    _buildSettingsButton(),
-                  ],
+                      if (_warnLowLight)
+                        _buildWarningBanner(
+                          title: _strings.warnLowLightTitle,
+                          body: _strings.warnLowLightBody,
+                        ),
+                      if (_warnTilt)
+                        _buildWarningBanner(
+                          title: _strings.warnTiltTitle,
+                          body: _strings.warnTiltBody,
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
 
+          if (!_hasError)
           Positioned(
             bottom: 0,
             left: 0,
@@ -627,26 +777,52 @@ class _CameraScreenState extends State<CameraScreen>
                               ),
                             ),
                           ),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (!_isLoading && statusIcon != null) ...[
-                              Icon(statusIcon, color: _statusColor, size: 32),
-                              const SizedBox(width: 8),
-                            ],
-                            Flexible(
-                              child: Text(
-                                _statusLabel,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: _statusColor,
-                                  fontSize: 26,
-                                  fontWeight: FontWeight.bold,
+                        // Claude Design import: live region so a screen
+                        // reader automatically announces state changes
+                        // ("정상 경로, 신뢰도 92%") without the user needing
+                        // to manually navigate to this element (spec §4,
+                        // "HUD 상태 영역").
+                        Semantics(
+                          liveRegion: true,
+                          label: _confidence > 0
+                              ? '$_statusLabel, ${_strings.confidenceLabel} '
+                                  '${(_confidence * 100).toStringAsFixed(0)}%'
+                              : _statusLabel,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (!_isLoading && statusIcon != null) ...[
+                                Icon(statusIcon, color: _statusColor, size: 32),
+                                const SizedBox(width: 8),
+                              ],
+                              Flexible(
+                                child: Text(
+                                  _statusLabel,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: _statusColor,
+                                    fontSize: 26,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
+                        // Claude Design import: secondary description line
+                        // under the state label (e.g. "이대로 직진하세요").
+                        if (!_isLoading &&
+                            _strings.cameraStateDescriptions
+                                .containsKey(_guidanceLabel))
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              _strings.cameraStateDescriptions[_guidanceLabel]!,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                  color: Colors.white70, fontSize: 13),
+                            ),
+                          ),
                         if (_confidence > 0 && !_hasError)
                           Padding(
                             padding: const EdgeInsets.only(top: 6),
@@ -686,37 +862,18 @@ class _CameraScreenState extends State<CameraScreen>
                               ),
                             ),
                           ),
-                        if (_hasError)
+                        // Claude Design import: fixed reminder that the
+                        // direction cue is symbolic, not a drawn boundary —
+                        // extends T41's honesty constraint into user-facing
+                        // copy (spec §6).
+                        if (!_isLoading)
                           Padding(
-                            padding: const EdgeInsets.only(top: 16),
-                            child: SizedBox(
-                              width: double.infinity,
-                              child: ElevatedButton.icon(
-                                onPressed: _isInitializing
-                                    ? null
-                                    : (_permissionPermanentlyDenied
-                                        ? openAppSettings
-                                        : _initCamera),
-                                icon: Icon(
-                                  _permissionPermanentlyDenied
-                                      ? Icons.settings
-                                      : Icons.refresh,
-                                ),
-                                label: Text(
-                                  _permissionPermanentlyDenied
-                                      ? _strings.openSettingsButton
-                                      : _strings.retryButton,
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                style: ElevatedButton.styleFrom(
-                                  minimumSize: const Size.fromHeight(52),
-                                  backgroundColor: _colorAccent,
-                                  foregroundColor: Colors.white,
-                                ),
-                              ),
+                            padding: const EdgeInsets.only(top: 10),
+                            child: Text(
+                              _strings.cameraGuidanceDisclaimer,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                  color: Colors.white38, fontSize: 11),
                             ),
                           ),
                       ],
@@ -726,7 +883,9 @@ class _CameraScreenState extends State<CameraScreen>
               ),
             ),
           ),
-        ),
+          ),
+
+          if (_hasError) _buildErrorCard(),
         ],
       ),
     );
