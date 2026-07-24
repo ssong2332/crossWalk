@@ -103,13 +103,14 @@ void main() {
       expect(sum, closeTo(1.0, 1e-6));
     });
 
-    test('thresholds 0.65/0.55/0.50 are reachable given a sufficiently skewed logit vector', () {
+    test('thresholds 0.5/0.55/0.50 are reachable given a sufficiently skewed logit vector', () {
       final classifier = Classifier();
 
-      // Strongly skewed toward "front" (index 0) — should clear the 0.65
-      // front threshold.
+      // Strongly skewed toward "front" (index 0) — should clear the 0.5
+      // front threshold (lowered from 0.65 after the T42 4-class retrain
+      // diluted softmax confidence; see classifier.dart comment).
       final frontProbs = classifier.softmax([10.0, 0.0, 0.0, 0.0]);
-      expect(frontProbs[0], greaterThanOrEqualTo(0.65));
+      expect(frontProbs[0], greaterThanOrEqualTo(0.5));
 
       // Moderately skewed toward "left" (index 1) — should clear the 0.55
       // deviation threshold. With 4 classes now (T42), a logit of only 1.0

@@ -31,7 +31,11 @@ class Classifier {
 
   // 이탈(left/right)은 민감하게, 정상(front) 확인은 엄격하게
   static const _deviationThreshold = 0.55;
-  static const _frontThreshold = 0.65;
+  // T42 재학습 후 none 데이터가 36→101장으로 늘며 softmax 확률이 더 분산돼
+  // 0.65는 front 판정을 과도하게 "무판정(None)" 처리함 (recall 78.6%→57.1% 하락,
+  // train/eval_model.py로 실측). 0.65→0.5로 낮춰 재측정 시 recall 89.3%,
+  // precision 96.2% 유지 확인 (0.3~0.5 구간 동일한 결과).
+  static const _frontThreshold = 0.5;
   static const _noneThreshold = 0.50;
 
   // 10 → 5: 약 6fps@30fps, 이탈 감지 지연 단축
