@@ -65,6 +65,7 @@ Always follow this sequence:
 - Never add features that are not defined in the PRD.
 - Explain major architectural decisions and trade-offs.
 - Keep documents practical and implementation-ready.
+- Match document length to what the task needs: cover the substance and required evidence, but do not pad with filler sections, redundant summaries, or boilerplate.
 
 ## Deliverables
 Generate when appropriate:
