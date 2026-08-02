@@ -16,6 +16,25 @@ import '../services/feedback_service.dart';
 /// current app session only. There is no persistence (e.g.
 /// shared_preferences) in this task's scope — restarting the app resets
 /// to the defaults in FeedbackService.
+/// T45: commit SHA of the build, injected at compile time by CI
+/// (`.github/workflows/build_apk.yml`: `flutter build apk --release
+/// --dart-define=BUILD_SHA=${{ github.sha }}`).
+///
+/// MUST stay in a `const` context: `String.fromEnvironment` only reads the
+/// `--dart-define` value when evaluated as a compile-time constant — called
+/// as a normal (non-const) expression it silently returns [defaultValue].
+///
+/// `dev` is the fallback for local builds, which pass no `--dart-define`, so
+/// the settings screen never shows a blank identifier.
+const String kBuildSha =
+    String.fromEnvironment('BUILD_SHA', defaultValue: 'dev');
+
+/// [kBuildSha] shortened to the first 7 characters, the conventional
+/// abbreviated-commit length. Shorter values (e.g. the `dev` fallback) are
+/// returned unchanged rather than being padded or truncated.
+String get buildShaShort =>
+    kBuildSha.length > 7 ? kBuildSha.substring(0, 7) : kBuildSha;
+
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
     super.key,
@@ -261,7 +280,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 24),
+          _buildBuildIdentifier(),
+          const SizedBox(height: 24),
         ],
+      ),
+    );
+  }
+
+  // T45: build identifier (short commit SHA) so a user can tell which build
+  // is installed on the device. Intentionally NOT hidden from screen
+  // readers: this app's primary users are blind, and reporting "which build
+  // am I on" is a prerequisite for support. The Semantics label carries the
+  // "빌드"/"Build" context word so the SHA is not announced as a bare string.
+  Widget _buildBuildIdentifier() {
+    final text = '${_strings.settingsBuildLabel} $buildShaShort';
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Semantics(
+        label: text,
+        excludeSemantics: true,
+        child: Text(
+          text,
+          style: const TextStyle(color: Colors.white38, fontSize: 12),
+        ),
       ),
     );
   }
