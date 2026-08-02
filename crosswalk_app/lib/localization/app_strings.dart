@@ -158,6 +158,12 @@ class AppStrings {
   final String settingsVibrationWeakLabel;
   final String settingsVibrationStrongLabel;
 
+  // T45: prefix for the build identifier (short commit SHA) shown at the
+  // bottom of SettingsScreen. Deliberately read aloud by screen readers
+  // rather than hidden — this app's primary users are blind, and being able
+  // to say which build is installed is what makes support possible.
+  final String settingsBuildLabel;
+
   const AppStrings._({
     required this.initializing,
     required this.loadingModel,
@@ -220,6 +226,7 @@ class AppStrings {
     required this.settingsTtsRateFastLabel,
     required this.settingsVibrationWeakLabel,
     required this.settingsVibrationStrongLabel,
+    required this.settingsBuildLabel,
   });
 
   static const AppStrings _ko = AppStrings._(
@@ -296,6 +303,7 @@ class AppStrings {
     settingsTtsRateFastLabel: '빠르게',
     settingsVibrationWeakLabel: '약하게',
     settingsVibrationStrongLabel: '강하게',
+    settingsBuildLabel: '빌드',
   );
 
   static const AppStrings _en = AppStrings._(
@@ -382,6 +390,7 @@ class AppStrings {
     settingsTtsRateFastLabel: 'Faster',
     settingsVibrationWeakLabel: 'Weaker',
     settingsVibrationStrongLabel: 'Stronger',
+    settingsBuildLabel: 'Build',
   );
 
   factory AppStrings.of(AppLanguage language) =>

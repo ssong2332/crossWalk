@@ -57,9 +57,12 @@ jobs:
         working-directory: crosswalk_app
         run: flutter test
 
+      # T45: 커밋 SHA를 컴파일 타임 상수로 주입 — 설치된 APK가 어느 빌드인지
+      # 기기(설정 화면)에서 확인할 수 있게 한다. Dart 쪽은
+      # settings_screen.dart의 `String.fromEnvironment('BUILD_SHA', ...)`.
       - name: APK 빌드
         working-directory: crosswalk_app
-        run: flutter build apk --release
+        run: flutter build apk --release --dart-define=BUILD_SHA=${{ github.sha }}
 
       - name: APK 서명
         env:
