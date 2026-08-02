@@ -171,6 +171,35 @@ void main() {
     );
   });
 
+  group('SettingsScreen — build identifier (T45)', () {
+    testWidgets('shows the default "dev" identifier when BUILD_SHA is not '
+        'injected', (tester) async {
+      final feedback = FeedbackService();
+
+      await tester.pumpWidget(buildSettingsScreen(
+        feedback: feedback,
+        language: AppLanguage.ko,
+        onLanguageChanged: (_) {},
+      ));
+      await tester.pumpAndSettle();
+
+      // `flutter test` passes no --dart-define, so kBuildSha falls back to
+      // 'dev' and is shown unchanged (shorter than the 7-char short SHA).
+      expect(buildShaShort, 'dev');
+
+      final label = find.text('빌드 dev');
+      // The identifier sits at the very bottom of the ListView, below the
+      // default 800x600 test viewport — same situation as the torch tile.
+      await tester.scrollUntilVisible(
+        label,
+        100,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      expect(label, findsOneWidget);
+    });
+  });
+
   group('SettingsScreen — sliders', () {
     testWidgets('dragging the TTS-rate slider updates FeedbackService.speechRate',
         (tester) async {
