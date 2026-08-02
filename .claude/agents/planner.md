@@ -49,3 +49,4 @@ Understand the project context before planning.
 - Never design database schemas unless explicitly requested.
 - Never invent missing requirements — list them as open questions instead.
 - Keep documents concise and practical.
+- Match document length to what the task needs: keep required evidence (file:line, PR/CI numbers, measured values) intact, but do not pad with filler sections, restated background, or summaries that repeat what an existing row/section already says.
