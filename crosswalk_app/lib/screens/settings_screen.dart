@@ -63,6 +63,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // T38's interactive-element accent color, reused here per the approved
   // mockup guidance (docs/Tasks.md T39).
   static const _colorAccent = Color(0xFF3AA0FF);
+  // T46: dark navy used for text/icons drawn on top of _colorAccent.
+  // White-on-accent measures ~2.74:1 (fails WCAG AA's 4.5:1 for normal
+  // text); this matches camera_screen.dart's _colorAccentOnText, which
+  // already carries that same fix for the analogous case there.
+  static const _colorAccentOnText = Color(0xFF08182A);
 
   late AppLanguage _language;
   late AppStrings _strings;
@@ -156,7 +161,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               style: SegmentedButton.styleFrom(
                 backgroundColor: Colors.black,
                 selectedBackgroundColor: _colorAccent,
-                selectedForegroundColor: Colors.white,
+                selectedForegroundColor: _colorAccentOnText,
                 foregroundColor: Colors.white70,
                 side: const BorderSide(color: Colors.white38),
               ),
