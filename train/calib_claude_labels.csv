@@ -1,0 +1,41 @@
+no,file,current_label,claude_label,confidence,note
+1,S56,right,right,high,줄무늬가 화면 아래에서 시작 - 횡단보도 위
+2,S24,front,approach,high,바닥에 황색 점자블록+연석+볼라드 - 인도 위
+3,S87,right,right,high,줄무늬가 화면을 가득 채움 - 횡단보도 위
+4,S5,front,approach,high,바닥에 점자블록+촬영자 그림자 - 인도 위
+5,S46,front,front,high,줄무늬가 아래에서 시작 정렬됨
+6,S146,front,approach,low,바닥이 도로면(인도 아님) - 기준 미비 구간
+7,S19,front,approach,low,바닥이 도로면+적색 자전거도로 - 기준 미비 구간
+8,S44,front,approach,high,바닥에 벽돌 인도+황색 점자블록+연석 - 인도 위
+9,S46,left,left,high,줄무늬가 아래에서 시작 사선
+10,S4,left,left,high,줄무늬가 아래에서 시작
+11,S99,right,approach,low,야간 광각 바닥이 도로면 - 기준 미비 구간
+12,S3,front,approach,low,바닥이 아스팔트+맨홀 줄무늬는 상단 - 기준 미비 구간
+13,S23,front,front,high,황색 줄무늬가 아래에서 시작
+14,S8,front,approach,high,바닥이 보도블록+촬영자 그림자 - 인도 위
+15,S63,left,approach,high,바닥에 황색 점자블록+볼라드 - 인도 위
+16,S26,front,front,high,황색 줄무늬가 아래에서 시작
+17,S80,right,right,high,줄무늬가 아래에서 시작
+18,S31,front,approach,low,바닥이 도로면+직진 화살표 - 기준 미비 구간
+19,S96,left,left,high,야간 줄무늬가 아래에서 시작
+20,S92,right,right,high,황색 줄무늬가 아래에서 시작
+21,S7,left,approach,low,바닥이 도로면 줄무늬는 전방 - 기준 미비 구간
+22,S93,right,right,high,줄무늬가 아래에서 시작
+23,S19,front,approach,low,바닥이 도로면 줄무늬는 전방 - 기준 미비 구간
+24,S18,front,approach,high,바닥 좌측에 인도+연석 - 인도 위
+25,S104,front,approach,low,야간 바닥이 도로면+화살표 - 기준 미비 구간
+26,S28,front,front,high,줄무늬가 아래에서 시작 가득
+27,S5,front,approach,low,바닥이 도로면 줄무늬는 상단 - 기준 미비 구간
+28,S126,front,approach,low,광각 바닥이 도로면 횡단보도는 원거리 - 기준 미비 구간
+29,S104,left,left,high,야간 줄무늬가 아래에서 시작 사선
+30,S3,front,front,high,줄무늬가 아래에서 시작
+31,S57,front,approach,high,야간 바닥에 황색 점자블록+연석 - 인도 위
+32,S123,left,left,high,줄무늬가 아래 우측에서 시작
+33,S99,right,right,high,야간 줄무늬가 아래에서 시작
+34,S118,right,right,high,보행자 있음 줄무늬가 아래에서 시작
+35,S97,left,approach,high,야간 바닥에 LED 보도 표시등 - 인도 위
+36,S20,front,front,high,줄무늬가 아래에서 시작
+37,S31,front,approach,high,바닥에 벽돌 인도+점자블록+볼라드 - 인도 위
+38,S116,right,right,high,줄무늬가 아래에서 시작
+39,S23,front,front,high,황색 줄무늬가 아래에서 시작
+40,S123,left,approach,low,바닥이 도로면 줄무늬는 전방 좌측 - 기준 미비 구간

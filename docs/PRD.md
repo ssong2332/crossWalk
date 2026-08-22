@@ -1,7 +1,7 @@
 # PRD — crosswalk_app (횡단보도 이탈 감지)
 
 Owner: planner (see AGENTS.md). Others read-only.
-Last updated: 2026-08-22 (data-leak discovery + leak-free GroupKFold re-measurement; corrected the prior "TARGET NOT MET" assertion to "판정 불가"). Prior: 2026-07-18 (added Open Q #15 — chest-mount camera tilt/height, from Architecture §16.6 Open Question D); 2026-07-16. Basis: code inspection of `crosswalk_app/lib/`, `crosswalk_app/pubspec.yaml`, `.github/workflows/build_apk.yml`, `train/`, `model/`, and git history (`develop`).
+Last updated: 2026-08-22 (5-class 클래스 정의 사용자 확정 — §클래스 정의 절 신설, Open Q #16 추가; 후속 태스크 T50/T51/T52 등록). Also 2026-08-22 (data-leak discovery + leak-free GroupKFold re-measurement; corrected the prior "TARGET NOT MET" assertion to "판정 불가"). Prior: 2026-07-18 (added Open Q #15 — chest-mount camera tilt/height, from Architecture §16.6 Open Question D); 2026-07-16. Basis: code inspection of `crosswalk_app/lib/`, `crosswalk_app/pubspec.yaml`, `.github/workflows/build_apk.yml`, `train/`, `model/`, and git history (`develop`).
 
 > **2026-08-22 정정 고지 (중요):** 2026-07-17 / 2026-08-02 / 2026-08-21 측정값은 모두 **데이터 누수 위에서 나온 값**으로 신뢰할 수 없습니다. 이력 보존을 위해 삭제하지 않고 남기되, 모두 "누수 있음"으로 표시했습니다. 현재 권위 있는 값은 2026-08-22 GroupKFold 측정(§Model Accuracy)뿐입니다.
 
@@ -96,6 +96,46 @@ Evidence: `pubspec.yaml:2` (description), `ARCHITECTURE.md:3`, `crosswalk_app/li
 - **147개 촬영 세션**, 촬영 기간 2025-11-19 ~ 2026-08-19 (**23일**).
 - 날짜 편중: 2025-11-19 **279장(33%)**, 2026-07-31 **178장(21%)**.
 
+## 클래스 정의 (2026-08-22 사용자 확정 — 현재 권위 값)
+
+> 이 절이 클래스 정의의 **현재 권위 값**입니다. 이 문서의 다른 곳(§Core Features 표 2번·14번 행의 "3-class", §Model Accuracy·§Dataset 현황의 front/left/right/none 4-class 서술 등)에 남아 있는 3-class·4-class 기술은 **2026-08-22 이전 이력**이며, 이력 보존을 위해 삭제하지 않고 그대로 둡니다. 앞으로의 라벨링·학습·앱 코드는 아래 5-class 정의를 따릅니다.
+
+### 확정 정의 (5-class)
+
+| 클래스 | 정의 |
+|---|---|
+| `front` | 횡단보도가 화면 아래에서 시작해 앞으로 뻗고, 진행 방향이 횡단보도 축과 정렬됨 |
+| `left` | 위 조건(횡단보도 위) + 축에서 왼쪽으로 벗어남 |
+| `right` | 위 조건(횡단보도 위) + 축에서 오른쪽으로 벗어남 |
+| `approach` | **신설.** 횡단보도가 앞쪽에 보이지만 아직 그 위가 아님 (인도·연석 위, 대기 중) |
+| `none` | 횡단보도가 없는 곳 |
+
+### 판정 기준 (사진만으로 판정 가능해야 함)
+- 횡단보도 줄무늬가 **화면 아래에서 시작하면** "위에 있음" → `front` / `left` / `right`.
+- 횡단보도가 **앞쪽에 떨어져 있고 그 사이에 인도·연석이 보이면** → `approach`.
+- 촬영 당시의 실제 위치가 아니라 **사진에서 판정 가능한 기준**을 쓴다. 이유: 다른 사람이 같은 사진을 봐도 같은 답이 나와야 하기 때문.
+
+### 결정 근거 (2026-08-22)
+기존 `front` 클래스가 **성격이 다른 두 상황을 섞고 있었음**이 통계적으로 확인됨.
+
+| 항목 | 값 |
+|---|---|
+| 오경보 27건 중 "인도 위에서 촬영" | 12건 (44.4%) |
+| 정상 판정 대조군 27건 중 "인도 위에서 촬영" | 1건 (3.7%) |
+| 오즈비 | 20.8 |
+| Fisher 정확검정 (양측) | p = 0.00088 |
+| 세션 군집 보수적 반영 시 (오경보군 6/13 가정) | p = 0.0026 — 결론 유지 |
+
+원인: 인도에서 본 횡단보도는 카메라 축과 횡단보도 축이 어긋나 **기하학적으로 실제 이탈과 구별되지 않음.** 즉 모델 결함이 아니라 **학습 데이터가 모순된 것을 가르치고 있었음.**
+
+### 앱 동작
+- `approach`는 현재로선 `none`과 **동일하게 침묵**한다. 따라서 이번 정의 변경으로 **사용자가 겪는 동작은 바뀌지 않는다.**
+- `approach`를 별도 클래스로 두는 이유는 나중에 "횡단보도 앞입니다" 같은 **진입 안내를 추가할 여지**를 남기기 위함이다.
+
+### 후속 작업
+- 재라벨링: `docs/Tasks.md` **T50** (P0)
+- 앱·학습 코드 5-class 대응: `docs/Tasks.md` **T51** (P0, T50 의존) — 라벨 인덱스 전면 이동 위험 포함
+
 ## Known Documentation Drift (evidence-based, not requirements)
 `ARCHITECTURE.md` is stale vs current code — flag for docs agent, not a code change:
 - Throttle: doc says 10 (`ARCHITECTURE.md:174,196`); code is 5 (`classifier.dart:31`).
@@ -142,3 +182,4 @@ Evidence: `pubspec.yaml:2` (description), `ARCHITECTURE.md:3`, `crosswalk_app/li
 | 13 | Provide periodic positive "on-track" reassurance, or stay silent on front? | ANSWERED (user, 2026-07-17): stay silent on front (keep current behavior). No code change needed. |
 | 14 | Camera choice — rear assumed; any front-camera or dual use case? | ANSWERED (user, 2026-07-17): rear camera only (keep current behavior). No code change needed. |
 | 15 | 가슴착용 카메라의 정확한 틸트 각도/장착 높이는? (Exact chest-mount camera tilt/pitch angle and mount height) — raised by architect in T35, `docs/Architecture.md` §16.6 Open Question D, because training data was captured with a steep downward ground-view framing (§16.2) that does not match the confirmed chest-mount forward posture (Open Q #8); the size of that mismatch depends on this unstated tilt angle. | ANSWERED — DIRECTION ONLY, NOT A PRECISE SPEC (user, 2026-07-18): 사용자는 "정면에 가깝게, 약간 아래로 기울어질 것 같아"라고 답함 — 즉 가슴착용 시 카메라가 수평(정면)에 가깝되 약간 아래를 향할 것으로 **예상/추정**한다는 정성적 방향성만 제시. 사용자 스스로 "~것 같아"라는 추정성 어투로 답했으므로 이는 실측값이 아님. **정확한 각도(도° 단위)와 장착 높이는 여전히 미정** — 정밀 재현이 필요하면 실측 또는 사용자의 추가 확정이 필요. Related: Open Q #8, #10; Tasks T1, T35. |
+| 16 | 클래스 체계 — 기존 `front`가 "횡단보도 위 직진"과 "인도에서 대기 중"을 섞고 있는데, 이를 어떻게 나눌 것인가? | **ANSWERED (user, 2026-08-22): 5-class 체계로 확정** — `front` / `left` / `right` / `approach`(신설) / `none`. 정의·판정 기준·결정 근거(Fisher 정확검정 p=0.00088, 오즈비 20.8)·앱 동작(`approach`는 `none`과 동일하게 침묵)은 위 **§클래스 정의 (2026-08-22 사용자 확정)** 에 기록됨. 판정 기준은 촬영 당시 실제 위치가 아니라 **사진만으로 판정 가능한 기준**을 쓰기로 확정. 남은 작업은 결정이 아니라 실행 — 재라벨링 T50, 코드 대응 T51. **주의: 이 답변은 Open Q #3a(front 오경보 허용치)를 해소하지 않음** — #3a는 여전히 OPEN. |
