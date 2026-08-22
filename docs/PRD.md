@@ -1,7 +1,9 @@
 # PRD — crosswalk_app (횡단보도 이탈 감지)
 
 Owner: planner (see AGENTS.md). Others read-only.
-Last updated: 2026-07-18 (added Open Q #15 — chest-mount camera tilt/height, from Architecture §16.6 Open Question D). Prior: 2026-07-16. Basis: code inspection of `crosswalk_app/lib/`, `crosswalk_app/pubspec.yaml`, `.github/workflows/build_apk.yml`, `train/`, `model/`, and git history (`develop`).
+Last updated: 2026-08-22 (data-leak discovery + leak-free GroupKFold re-measurement; corrected the prior "TARGET NOT MET" assertion to "판정 불가"). Prior: 2026-07-18 (added Open Q #15 — chest-mount camera tilt/height, from Architecture §16.6 Open Question D); 2026-07-16. Basis: code inspection of `crosswalk_app/lib/`, `crosswalk_app/pubspec.yaml`, `.github/workflows/build_apk.yml`, `train/`, `model/`, and git history (`develop`).
+
+> **2026-08-22 정정 고지 (중요):** 2026-07-17 / 2026-08-02 / 2026-08-21 측정값은 모두 **데이터 누수 위에서 나온 값**으로 신뢰할 수 없습니다. 이력 보존을 위해 삭제하지 않고 남기되, 모두 "누수 있음"으로 표시했습니다. 현재 권위 있는 값은 2026-08-22 GroupKFold 측정(§Model Accuracy)뿐입니다.
 
 > Status legend: 구현됨 = implemented (evidence in code), 부분구현 = partial, 미구현 = not implemented, 추정 = inferred (not confirmable from code — see Open Questions).
 
@@ -46,8 +48,53 @@ Evidence: `pubspec.yaml:2` (description), `ARCHITECTURE.md:3`, `crosswalk_app/li
 | Offline operation | No network calls in `lib/` (fully on-device today). | v1 offline; online components may be added later (Open Q #4, ANSWERED 2026-07-17 — not a permanent fully-offline constraint). |
 | Performance | Throttle=5 → ~6fps@30fps (`classifier.dart:30`); YUV→RGB is per-pixel Dart loop on UI isolate (`classifier.dart:132-148` runs in `_onFrame`, no isolate) | Still undefined; to be decided after real-device testing (Open Q #11). |
 | Accessibility | Custom Korean TTS + vibration; no native Semantics; high-contrast dark UI | Standard to meet still undecided (Open Q #5). |
-| Safety (false-negative risk) | Training weights left=10/right=20 vs front=1 (`ARCHITECTURE.md:77`); deviation threshold lowered to 0.55. **MEASURED 2026-07-17 (T1, `train/eval_model.py` on shipped `model/crosswalk_model.onnx`): TARGET NOT MET. left recall = 83.3% (5/6, 1 miss) — below the ≥90% target. right recall = 100% (3/3) but n=3 is statistically meaningless. front recall = 70.0% (35/50). Additional false-alarm finding: 14% (7/50) of truly-straight frames misclassified as a deviation (→left 4, →right 3), producing spurious "off-course" warnings. Deviation sample is tiny (left n=6, right n=3) so all figures have wide confidence intervals — but left is measured below target regardless.** | Deviation recall ≥ 90% / miss rate ≤ 10% (Open Q #3, ANSWERED 2026-07-17). NOT MET by current model (see current-state cell) — retrain on more data and re-measure against the final checkpoint (T1 / Open Q #10). Front false-positive tolerance not yet defined (the 14% false-alarm finding is new reason to define one). |
+| Safety (false-negative risk) | Training weights left=10/right=20 vs front=1 (`ARCHITECTURE.md:77`); deviation threshold lowered to 0.55. **AUTHORITATIVE = 2026-08-22 leak-free GroupKFold measurement — see §Model Accuracy below. left recall 87.5% CI [80.2%, 94.2%], right recall 90.7% CI [85.5%, 95.3%] → 두 CI 모두 90%를 포함하므로 목표 달성 여부는 현재 데이터로 판정 불가 (미달일 수도, 달성했을 수도 있음).** 이전의 2026-07-17 측정(누수 있음)은 §Model Accuracy의 이력 표에 보존. | Deviation recall ≥ 90% / miss rate ≤ 10% (Open Q #3, ANSWERED 2026-07-17). **판정 불가 (NOT "미달")** — 이전 서술의 "TARGET NOT MET" 단언은 표본 크기를 고려하지 않은 것으로 2026-08-22에 정정됨. 판정 확정에는 촬영 세션 다양성 확대가 필요(T44 — 기준은 "장수"가 아니라 "서로 다른 장소·다른 날의 세션 수"). Front false-positive tolerance는 여전히 미정 — 이제 오경보 실재(10.1%)가 확정되어 정할 근거가 생김(Open Q #3 참조, T49). |
 | Model provenance | App-bundled `crosswalk_model.onnx` present; integrity hash is placeholder → verification effectively off | Confirm real vs dummy model → Open Q #10 |
+
+## Model Accuracy (측정 이력 및 현재 권위 값)
+
+### 데이터 누수 발견 (2026-08-22) — 이전 측정 전부 무효화
+- 843장 중 **789장(93.6%)이 연속 촬영 그룹**에 속함.
+- 파일명에 `_saved`가 붙은 **245장**은 앱이 카메라 프레임을 자동 저장한 연사 프레임. 64×64 그레이스케일 평균 픽셀차가 **2.2~8.5**(일반 사진끼리는 **23~45**) — 사실상 같은 사진. 바이트 완전 복제는 **0건**이나 시각적으로 중복.
+- `train/train_model.py`의 `prepare_data()`가 **무작위 셔플로 분할**하므로, `_001`로 학습한 모델이 `_002`로 평가받는 누수가 발생.
+- **누수 크기** (같은 데이터·같은 학습설정, 분할 방식만 다름): 무작위 k-fold가 front recall을 **13.3%p 부풀림**(92.8% vs 79.5%), front 오경보를 **2.8배 축소**(3.6% vs 10.1%).
+
+### 측정 이력 — 신뢰성 표시
+
+| 측정일 | 분할 방식 | 누수 여부 | 상태 |
+|---|---|---|---|
+| 2026-07-17 (T1, `train/eval_model.py`) | 무작위 | **누수 있음** | **신뢰 불가.** 기록만 보존: left recall 83.3% (5/6), right recall 100% (3/3, n=3), front recall 70.0% (35/50), front 오경보 14% (7/50, →left 4 / →right 3). 표본이 극히 작음. |
+| 2026-08-02 | 무작위 | **누수 있음** | **신뢰 불가.** 상세 수치는 `docs/Tasks.md` 이력 참조. |
+| 2026-08-21 (2회) | 무작위 | **누수 있음** | **신뢰 불가.** 상세 수치는 `docs/Tasks.md` 이력 참조. |
+| 2026-08-22 (`train/groupkfold_cv.py`) | 세션 단위 GroupKFold | 누수 없음 | **현재 권위 값 (아래).** |
+
+### 현재 권위 값 — 2026-08-22 leak-free GroupKFold
+방법: `train/groupkfold_cv.py`. EXIF `DateTimeOriginal`(843장 전부 보유) 기준 **60초 간격으로 147개 세션** 분할, 세션을 통째로 fold에 배정. 근사 중복 클러스터도 fold를 넘지 않음. 분할 직후 **assert로 강제 검사**(위반 시 즉시 중단), 실행 시 통과. **5-fold**, 근사 중복 클러스터당 1장 집계(**768장**).
+
+| 지표 | 점추정 | 95% CI (클러스터 부트스트랩) |
+|---|---|---|
+| front recall | 79.5% (213/268) | [71.8%, 86.1%] |
+| left recall | 87.5% (105/120) | [80.2%, 94.2%] |
+| none recall | 87.8% (201/229) | [82.9%, 91.4%] |
+| right recall | 90.7% (137/151) | [85.5%, 95.3%] |
+| front 오경보 (직진을 left/right로 오판) | 10.1% (27/268) | [4.3%, 17.4%] |
+
+- CI는 **클러스터 부트스트랩(세션 단위 재표본 10000회)이 정본**. Wilson 구간은 이미지 독립을 가정하는데 같은 세션 이미지들은 상관되어 있어 실제보다 좁게 나옴.
+
+### 목표 판정 (deviation recall ≥ 90%, Open Q #3)
+
+| 클래스 | 점추정 | 95% CI | 판정 |
+|---|---|---|---|
+| left | 87.5% | [80.2%, 94.2%] | **판정 불가** (CI가 90%를 포함) |
+| right | 90.7% | [85.5%, 95.3%] | **판정 불가** (CI가 90%를 포함) |
+
+**정정 (2026-08-22):** 이전 PRD 서술은 "TARGET NOT MET"이라 단언했으나, 이는 표본 크기를 고려하지 않은 것이었음. 정확한 표현은 **"현재 데이터로는 판정 불가"** — 미달일 수도, 달성했을 수도 있음. 판정을 확정하려면 촬영 세션 다양성 확대가 필요 (`docs/Tasks.md` T44 — 기준은 "장수"가 아니라 **서로 다른 장소·다른 날의 세션 수**).
+
+## Dataset 현황 (2026-08-22)
+- 총 **843장** — front 332 / left 127 / right 155 / none 229.
+- 근사 중복 제거 시 **768장** — front 268 / left 120 / right 151 / none 229.
+- **147개 촬영 세션**, 촬영 기간 2025-11-19 ~ 2026-08-19 (**23일**).
+- 날짜 편중: 2025-11-19 **279장(33%)**, 2026-07-31 **178장(21%)**.
 
 ## Known Documentation Drift (evidence-based, not requirements)
 `ARCHITECTURE.md` is stale vs current code — flag for docs agent, not a code change:
@@ -69,8 +116,8 @@ Evidence: `pubspec.yaml:2` (description), `ARCHITECTURE.md:3`, `crosswalk_app/li
 ## Risks
 | Risk | Impact | Mitigation |
 |---|---|---|
-| False negative (miss a deviation) | High (user safety) | Recall target ≥ 90% / miss ≤ 10% set (Open Q #3, ANSWERED 2026-07-17). MEASURED 2026-07-17 (T1): current shipped model FAILS — left recall 83.3% (1 miss), right n=3 (unreliable). Mitigation NOT yet achieved: retrain on more data → re-measure against final checkpoint (T1 / Open Q #10). |
-| False alarm (spurious deviation warning while walking straight) | Med–High (user trust / safety — may cause the user to correct off a straight path, and erodes trust in the alert) | MEASURED 2026-07-17 (T1): 14% (7/50) of straight/front frames misclassified as left/right. No mitigation yet; front false-positive tolerance is still undefined (Open Q #3 covered only deviation recall). Reduce via retraining and/or defining + tuning a front false-positive target. |
+| False negative (miss a deviation) | High (user safety) | Recall target ≥ 90% / miss ≤ 10% set (Open Q #3, ANSWERED 2026-07-17). **MEASURED 2026-08-22 (leak-free GroupKFold): left 87.5% CI [80.2%, 94.2%], right 90.7% CI [85.5%, 95.3%] → 목표 달성 여부 판정 불가** (두 CI 모두 90%를 포함). 이전의 "FAILS/미달" 단언은 2026-08-22 정정됨. 2026-07-17 값(left 83.3%, right n=3)은 **누수 있음 → 신뢰 불가**, 이력으로만 보존. 판정 확정 경로: 촬영 세션 다양성 확대(T44) 후 재측정. 참고로 편향 미검출은 전부 임계값 미달에 의한 무판정(침묵)으로 나타나 상대적으로 안전한 실패 양상. |
+| False alarm (spurious deviation warning while walking straight) | Med–High (user trust / safety — 직진 중인 사용자에게 허위 이탈 경고를 보내 시각장애인을 위험한 방향으로 유도할 수 있음) | **실재 확정으로 격상 (2026-08-22).** leak-free GroupKFold 측정: **10.1% (27/268), CI [4.3%, 17.4%]** — **CI 하한 4.3%가 0을 명확히 배제하므로 실재하는 문제로 확정**, 소표본 착시가 아님. 다만 크기는 4~17%로 아직 정밀하지 않음. 이전 2026-07-17 값 14% (7/50)은 **누수 있음 → 신뢰 불가**, 이력으로만 보존. 조사 태스크는 `docs/Tasks.md` **T49 (P1)** 로 등록되어 있고 판정표·실행계획이 착수 전에 확정·기록됨. front false-positive 허용치는 **여전히 미정** — T49의 임계값 스윕 결과를 사용자에게 제시해 결정 예정(임의로 정하지 않음). |
 | Per-pixel YUV→RGB on UI thread may drop frames on low-end devices | Med (latency) | Define perf target + device tier (Open Q #11); consider isolate/native conversion |
 | Integrity check disabled (placeholder hash) | Med (tampered model shipped silently) | Populate real SHA-256 in build (T-prefixed task) |
 | No tests | Med (regressions) | Add unit tests for classifier/feedback logic |
@@ -81,7 +128,8 @@ Evidence: `pubspec.yaml:2` (description), `ARCHITECTURE.md:3`, `crosswalk_app/li
 |---|---|---|
 | 1 | Target platform(s): Android only, or iOS too? (CI=APK only; BGRA path hints iOS) | ANSWERED (user, 2026-07-17): BOTH Android and iOS. NOTE: no iOS build/signing pipeline exists yet (CI is Android/APK-only) — see Out of Scope; new task candidate T33 (iOS build/signing pipeline). |
 | 2 | Minimum supported OS versions (Android minSdk / iOS target)? | ANSWERED (user, 2026-07-17): Android minSdk 26 (Android 8.0); iOS minimum = iOS 15. Both parts now decided. NOTE: reflecting these values in the actual project config (Android Gradle minSdk, iOS deployment target in the Xcode/Runner project) is separate implementer work — Android config under T2; iOS config work is coupled to the iOS build/signing pipeline (T33), which is currently PAUSED (see T33). |
-| 3 | Required accuracy — acceptable false-negative (missed-deviation) rate / recall target for left/right? | ANSWERED (user, 2026-07-17): deviation (left/right) detection target recall ≥ 90%, i.e. false-negative (missed-deviation) rate ≤ 10%. NOTE: acceptable front (normal) false-positive rate was NOT stated by the user — left undecided, not guessed. |
+| 3 | Required accuracy — acceptable false-negative (missed-deviation) rate / recall target for left/right? | **ANSWERED (user, 2026-07-17) — 유지**: deviation (left/right) detection target recall ≥ 90%, i.e. false-negative rate ≤ 10%. **현재 달성 여부는 아직 판정 불가** (2026-08-22 leak-free 측정: left 87.5% CI [80.2%, 94.2%], right 90.7% CI [85.5%, 95.3%] — 두 CI 모두 90%를 포함). 판정 확정에는 촬영 세션 다양성 확대(T44)가 필요. **하위 항목 3a는 여전히 OPEN** — 아래 참조. |
+| 3a | Front (직진) 오경보 허용치는 몇 %인가? (Open Q #3의 미결 하위 항목 — 2026-07-17 이후 계속 미정) | **OPEN — 임의로 정하지 않음.** 2026-07-17에 사용자가 이 값을 제시하지 않아 미정으로 남았고 현재도 미정. 변화: 2026-08-22 leak-free 측정에서 front 오경보 **10.1% (27/268), CI [4.3%, 17.4%]** 로 **실재함이 확정**(CI 하한이 0을 배제)되어, 이제 이 값을 정할 근거가 생김. 결정 방법: **T49의 임계값 스윕 결과를 사용자에게 제시해 사용자가 결정**. |
 | 4 | Confirm fully offline; any online component ever intended? | ANSWERED (user, 2026-07-17): NOT confirmed as permanently fully offline. v1 is offline, but "추후 온라인 요소 추가 가능성 있음" (online components such as server communication / remote logging may be added in the future). So "fully offline" is not a fixed constraint. |
 | 5 | Accessibility standard to meet (WCAG level? native TalkBack/VoiceOver compatibility required)? | open (user re-confirmed, 2026-07-17: 아직 미정 / still undecided). **ANSWERED (user, 2026-07-24)**: TalkBack/VoiceOver 실사용 호환성만 확보 — 공식 WCAG 인증 수준은 요구하지 않음. 표준 선택 자체는 완료; 준수 체크리스트 작성 및 실제 Semantics 구현은 별도 구현 작업(T3/T16)으로 남음. |
 | 6 | Supported languages — Korean only or multilingual? | ANSWERED (user, 2026-07-17): multilingual required (not Korean-only). Supported language list fixed (user, 2026-07-17) = 한국어 (Korean) + 영어 (English) — exactly two languages. Concrete locale codes / translated strings are decided at implementation time (T17/T34), not here. NOTE: `feedback_service.dart` currently hardcodes ko-KR — see T34 (multi-language support). |
