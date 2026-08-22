@@ -54,6 +54,9 @@ class AppStrings {
   final String labelLeft;
   final String labelRight;
   final String labelNone;
+  // T51: 5-class 체계에서 신설된 `approach`(인도 위인데 앞에 진입할 횡단보도가
+  // 보이는 상태)의 화면 표시용 라벨.
+  final String labelApproach;
 
   final String cameraPermissionRequiredLabel;
   final String cameraPermissionRequiredSettingsLabel;
@@ -173,6 +176,7 @@ class AppStrings {
     required this.labelLeft,
     required this.labelRight,
     required this.labelNone,
+    required this.labelApproach,
     required this.cameraPermissionRequiredLabel,
     required this.cameraPermissionRequiredSettingsLabel,
     required this.cameraPermissionRequiredAnnouncement,
@@ -238,6 +242,7 @@ class AppStrings {
     labelLeft: '왼쪽 이탈',
     labelRight: '오른쪽 이탈',
     labelNone: '횡단보도 없음',
+    labelApproach: '횡단보도 앞',
     cameraPermissionRequiredLabel: '카메라 권한 필요',
     cameraPermissionRequiredSettingsLabel: '카메라 권한 필요 (설정 이동)',
     cameraPermissionRequiredAnnouncement: '카메라 권한이 필요합니다. 설정에서 허용해주세요.',
@@ -292,6 +297,10 @@ class AppStrings {
       'left': '오른쪽으로 방향을 조정하세요',
       'right': '왼쪽으로 방향을 조정하세요',
       'none': '카메라가 횡단보도를 인식하지 못했습니다',
+      // T51: `approach`는 `none`과 동일하게 침묵 처리되므로(feedback_service.dart
+      // decideMessage) 이 문구는 TTS로 발화되지 않는다. 이 맵은 화면 표시용이며,
+      // 다른 클래스와 형식을 맞추기 위해 항목을 둔다.
+      'approach': '앞에 횡단보도가 있습니다',
     },
     cameraGuidanceDisclaimer:
         '방향 안내는 카메라 인식 결과를 기호로 표시한 것입니다. 실제 경계선이 아닙니다.',
@@ -315,6 +324,7 @@ class AppStrings {
     labelLeft: 'Drifted left',
     labelRight: 'Drifted right',
     labelNone: 'No crosswalk detected',
+    labelApproach: 'Crosswalk ahead',
     cameraPermissionRequiredLabel: 'Camera permission required',
     cameraPermissionRequiredSettingsLabel:
         'Camera permission required (open settings)',
@@ -378,6 +388,10 @@ class AppStrings {
       'left': 'Adjust to your right',
       'right': 'Adjust to your left',
       'none': "Camera can't detect a crosswalk",
+      // T51: `approach` is silenced exactly like `none` (see
+      // feedback_service.dart decideMessage), so this string is never spoken.
+      // It exists for on-screen display and parity with the other classes.
+      'approach': 'A crosswalk is ahead',
     },
     cameraGuidanceDisclaimer:
         'Direction cues are symbolic, based on camera classification — '

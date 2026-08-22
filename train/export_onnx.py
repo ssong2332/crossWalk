@@ -8,9 +8,10 @@ MODEL_PT   = REPO_ROOT / "model" / "crosswalk_model.pt"
 ONNX_OUT   = REPO_ROOT / "model" / "crosswalk_model.onnx"
 IMG_SIZE   = 224
 
-# T42: 3-class(front/left/right) -> 4-class(front/left/right/none). train_model.py의
-# CLASSES 리스트 길이와 반드시 일치해야 한다.
-NUM_CLASSES = 4
+# T42: 3-class(front/left/right) -> 4-class(front/left/right/none).
+# T51: 4-class -> 5-class(none/approach/front/left/right). train_model.py의
+# CLASS_DIRS/LABELS 리스트 길이와 반드시 일치해야 한다.
+NUM_CLASSES = 5
 
 model = mobilenet_v3_small(weights=MobileNet_V3_Small_Weights.DEFAULT)
 in_features = model.classifier[3].in_features
