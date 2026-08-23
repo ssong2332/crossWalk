@@ -81,6 +81,13 @@ class _CameraScreenState extends State<CameraScreen>
   static const _colorAccent = Color(0xFF3AA0FF);
   // T42: 중성 회청색 — "이탈도 정상도 아닌, 횡단보도 자체가 없음"을 나타내는 색.
   static const _colorNone = Color(0xFF8A94A6);
+  // T51: `approach`(인도 위, 앞에 진입할 횡단보도가 보임) 전용 색.
+  // 의도적으로 front(초록)/left(빨강)/right(주황) 어디에도 가깝지 않은 색을
+  // 골랐다 — approach는 "횡단보도 위" 상태가 아니므로 진행/이탈 신호색을
+  // 재사용하면 상태를 오해하게 만든다. _colorAccent(#3AA0FF)·
+  // _colorWarning(#FFD166)·_colorNone(#8A94A6)과도 색상이 겹치지 않는다.
+  // 승인된 디자인 팔레트에 없던 값이므로 디자인 검토 대상임.
+  static const _colorApproach = Color(0xFF9B8CFF);
   // Claude Design import: dark navy for text on the accent-colored CTA
   // (contrast spec §1 — white-on-accent measures well under WCAG AA;
   // #08182A on #3AA0FF measures 6.49:1).
@@ -106,6 +113,7 @@ class _CameraScreenState extends State<CameraScreen>
     'left': _colorLeft,
     'right': _colorRight,
     'none': _colorNone,
+    'approach': _colorApproach,
   };
 
   Map<String, String> get _labelText => {
@@ -113,6 +121,7 @@ class _CameraScreenState extends State<CameraScreen>
         'left': _strings.labelLeft,
         'right': _strings.labelRight,
         'none': _strings.labelNone,
+        'approach': _strings.labelApproach,
       };
 
   static const _labelIcons = {
@@ -120,12 +129,16 @@ class _CameraScreenState extends State<CameraScreen>
     'left': Icons.chevron_left,
     'right': Icons.chevron_right,
     'none': Icons.search_off,
+    // T51: approach는 "아직 횡단보도 위가 아니고 앞에 있다"는 상태이므로
+    // 진행/이탈 아이콘이 아니라 전방을 가리키는 중립 아이콘을 쓴다.
+    'approach': Icons.north,
   };
 
   // T41: direction-guidance corridor overlay animation state.
   //
-  // HONESTY CONSTRAINT (docs/Tasks.md T41): `Classifier` is a 3-class
-  // classifier (front/left/right + confidence) with NO coordinate/geometry
+  // HONESTY CONSTRAINT (docs/Tasks.md T41; class count updated by T51):
+  // `Classifier` is a 5-class classifier
+  // (none/approach/front/left/right + confidence) with NO coordinate/geometry
   // output — it never detects an actual crosswalk's real-world position.
   // Everything below converts the classification result into a purely
   // symbolic directional guide (a "guidance corridor"), NOT a rendering of a
@@ -201,8 +214,17 @@ class _CameraScreenState extends State<CameraScreen>
   // T41: the guidance corridor/vignette are only meaningful once the
   // classifier is actively producing labels — hidden during loading/error
   // so they never imply guidance where none exists yet.
+  //
+  // T51 HONESTY CONSTRAINT: `approach` means the user is still on the
+  // sidewalk with a crosswalk ahead — NOT on the crosswalk. A directional
+  // corridor there would imply left/right guidance along a crosswalk axis
+  // the user has not entered, so `approach` is hidden exactly like `none`.
+  static const _guidanceHiddenLabels = {'none', 'approach'};
+
   bool get _showGuidance =>
-      !_hasError && !_isLoading && _guidanceLabel != 'none';
+      !_hasError &&
+      !_isLoading &&
+      !_guidanceHiddenLabels.contains(_guidanceLabel);
 
   Future<void> _initCamera() async {
     if (_isInitializing) return;
@@ -403,6 +425,7 @@ class _CameraScreenState extends State<CameraScreen>
     if (_statusLabel == _strings.labelLeft) return _colorLeft;
     if (_statusLabel == _strings.labelRight) return _colorRight;
     if (_statusLabel == _strings.labelNone) return _colorNone;
+    if (_statusLabel == _strings.labelApproach) return _colorApproach;
     return Colors.grey;
   }
 
@@ -412,6 +435,7 @@ class _CameraScreenState extends State<CameraScreen>
     if (_statusLabel == _strings.labelLeft) return _labelIcons['left'];
     if (_statusLabel == _strings.labelRight) return _labelIcons['right'];
     if (_statusLabel == _strings.labelNone) return _labelIcons['none'];
+    if (_statusLabel == _strings.labelApproach) return _labelIcons['approach'];
     return null;
   }
 
@@ -637,7 +661,7 @@ class _CameraScreenState extends State<CameraScreen>
           // decorative ambient feedback — it does not draw or imply any
           // detected object, only tints the screen edges with the current
           // classification result's color.
-          if (!_hasError && _guidanceLabel != 'none')
+          if (!_hasError && !_guidanceHiddenLabels.contains(_guidanceLabel))
             Positioned.fill(
               child: IgnorePointer(
                 child: DecoratedBox(
@@ -896,8 +920,9 @@ class _CameraScreenState extends State<CameraScreen>
 /// from the classifier's front/left/right label into a directional guide
 /// line (T41, docs/Tasks.md).
 ///
-/// HONESTY CONSTRAINT: `Classifier` is a 3-class classifier
-/// (front/left/right + confidence) with NO coordinate or geometry output —
+/// HONESTY CONSTRAINT: `Classifier` is a 5-class classifier
+/// (none/approach/front/left/right + confidence) with NO coordinate or
+/// geometry output —
 /// it never detects an actual crosswalk's real-world position. This
 /// painter does NOT render a detected object; it converts a classification
 /// result into a directional guidance symbol only. 이 오버레이는 분류 결과

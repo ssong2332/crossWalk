@@ -69,6 +69,27 @@ void main() {
     });
   });
 
+  // T51: "approach"(인도 위인데 앞에 진입할 횡단보도가 보임)도 "front"/"none"과
+  // 동일하게 무음이어야 한다 — 아직 횡단보도 위가 아니므로 좌/우 이탈 경보를
+  // 울릴 근거가 없다. 5-class 전환으로 사용자가 겪는 동작이 바뀌지 않는다는
+  // 보장이 이 테스트다 (docs/PRD.md §클래스 정의).
+  group('FeedbackService.decideMessage — approach silence', () {
+    test('returns null for "approach" regardless of prior state', () {
+      final service = FeedbackService();
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+
+      expect(service.decideMessage('approach', t0), isNull);
+
+      // Even after a prior alert has fired for another class, "approach"
+      // must still stay silent.
+      service.decideMessage('left', t0);
+      expect(
+        service.decideMessage('approach', t0.add(const Duration(seconds: 10))),
+        isNull,
+      );
+    });
+  });
+
   group('FeedbackService.decideMessage — first alert', () {
     test('fires immediately on a fresh instance for "left"', () {
       final service = FeedbackService();
