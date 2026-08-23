@@ -106,44 +106,49 @@ void main() {
     test('thresholds 0.5/0.55/0.50 are reachable given a sufficiently skewed logit vector', () {
       final classifier = Classifier();
 
-      // Strongly skewed toward "front" (index 0) — should clear the 0.5
+      // T51: 5-class order is ['none','approach','front','left','right'],
+      // so front is index 2 and left is index 3 (was 0 / 1 under 4-class).
+      //
+      // Strongly skewed toward "front" (index 2) — should clear the 0.5
       // front threshold (lowered from 0.65 after the T42 4-class retrain
       // diluted softmax confidence; see classifier.dart comment).
-      final frontProbs = classifier.softmax([10.0, 0.0, 0.0, 0.0]);
-      expect(frontProbs[0], greaterThanOrEqualTo(0.5));
+      final frontProbs = classifier.softmax([0.0, 0.0, 10.0, 0.0, 0.0]);
+      expect(frontProbs[2], greaterThanOrEqualTo(0.5));
 
-      // Moderately skewed toward "left" (index 1) — should clear the 0.55
-      // deviation threshold. With 4 classes now (T42), a logit of only 1.0
-      // dilutes to ~0.475 (3 other classes each get exp(0)=1, so
-      // prob = e^1 / (3 + e^1) ≈ 0.475 < 0.55) — this used to clear 0.55
-      // under the old 3-class softmax (e^1 / (2 + e^1) ≈ 0.576) but no
-      // longer does with a 4th class added, so the skew must be a bit
-      // stronger here (2.0 -> e^2 / (3 + e^2) ≈ 0.711).
-      final leftProbs = classifier.softmax([0.0, 2.0, 0.0, 0.0]);
-      expect(leftProbs[1], greaterThanOrEqualTo(0.55));
+      // Moderately skewed toward "left" (index 3) — should clear the 0.55
+      // deviation threshold. Adding a 5th class dilutes softmax a little
+      // further than 4-class did, so the logit value was re-checked rather
+      // than assumed: 4 other classes each get exp(0)=1, so
+      // prob = e^2 / (4 + e^2) ≈ 7.389 / 11.389 ≈ 0.649 >= 0.55.
+      // The 2.0 logit therefore still clears the threshold and is kept
+      // unchanged (under 4-class it was e^2 / (3 + e^2) ≈ 0.711).
+      // A logit of 1.0 would NOT clear it (e^1 / (4 + e^1) ≈ 0.405).
+      final leftProbs = classifier.softmax([0.0, 0.0, 0.0, 2.0, 0.0]);
+      expect(leftProbs[3], greaterThanOrEqualTo(0.55));
     });
   });
 
-  // 4-클래스 라벨 순서: ['front', 'left', 'none', 'right'] (front=idx0,
-  // left=idx1, none=idx2, right=idx3) — torchvision ImageFolder의 알파벳순
-  // 폴더 정렬과 일치해야 함 (classifier.dart 참고).
+  // T51 5-클래스 라벨 순서: ['none', 'approach', 'front', 'left', 'right']
+  // (none=idx0, approach=idx1, front=idx2, left=idx3, right=idx4) —
+  // torchvision ImageFolder의 알파벳순 폴더 정렬(`0_none`..`4_right`)과
+  // 일치해야 함 (classifier.dart 참고).
   group('Classifier.decideFromLogits — smoothing window', () {
     test('averages only the most recent 5 pushes (sliding window)', () {
       final classifier = Classifier();
 
-      // Push 5 frames strongly favoring "left" (index 1).
+      // Push 5 frames strongly favoring "left" (index 3).
       for (int i = 0; i < 5; i++) {
-        final result = classifier.decideFromLogits([0.0, 10.0, 0.0, 0.0]);
+        final result = classifier.decideFromLogits([0.0, 0.0, 0.0, 10.0, 0.0]);
         expect(result, isNotNull);
         expect(result!.label, 'left');
       }
 
-      // Push 5 more frames strongly favoring "front" (index 0). After the
+      // Push 5 more frames strongly favoring "front" (index 2). After the
       // 5-frame sliding window fully rotates out the "left" pushes, the
       // result should transition to "front".
       ClassificationResult? lastResult;
       for (int i = 0; i < 5; i++) {
-        lastResult = classifier.decideFromLogits([10.0, 0.0, 0.0, 0.0]);
+        lastResult = classifier.decideFromLogits([0.0, 0.0, 10.0, 0.0, 0.0]);
       }
 
       // After 5 more "front"-favoring pushes, the window contains only
@@ -155,15 +160,15 @@ void main() {
     test('blends during the transition before the old window fully rotates out', () {
       final classifier = Classifier();
 
-      // Fill window with 5 "left"-favoring frames.
+      // Fill window with 5 "left"-favoring frames (index 3).
       for (int i = 0; i < 5; i++) {
-        classifier.decideFromLogits([0.0, 10.0, 0.0, 0.0]);
+        classifier.decideFromLogits([0.0, 0.0, 0.0, 10.0, 0.0]);
       }
 
       // Push a single "front"-favoring frame — with a 5-frame window this
       // should be averaged with 4 remaining "left" frames, not fully
       // overwrite them (unbounded running average would behave differently).
-      final blended = classifier.decideFromLogits([10.0, 0.0, 0.0, 0.0]);
+      final blended = classifier.decideFromLogits([0.0, 0.0, 10.0, 0.0, 0.0]);
 
       // Still dominated by "left" since only 1 of 5 window slots changed.
       expect(blended, isNotNull);
@@ -177,7 +182,9 @@ void main() {
 
       // Near-uniform/ambiguous logits -> near-uniform probabilities -> no
       // class clears its threshold.
-      final result = classifier.decideFromLogits([0.01, 0.0, -0.01, 0.0]);
+      // T51: 5 elements now. Max averaged prob here is ~0.202, below every
+      // threshold (front 0.50 / none 0.50 / approach 0.50 / dev 0.55).
+      final result = classifier.decideFromLogits([0.01, 0.0, 0.01, 0.0, -0.01]);
 
       expect(result, isNull);
     });
@@ -185,14 +192,30 @@ void main() {
     test('returns "none" when its confidence clears the 0.50 none threshold', () {
       final classifier = Classifier();
 
-      // Strongly skewed toward "none" (index 2).
+      // Strongly skewed toward "none" (index 0 under the T51 5-class order).
       ClassificationResult? result;
       for (int i = 0; i < 5; i++) {
-        result = classifier.decideFromLogits([0.0, 0.0, 10.0, 0.0]);
+        result = classifier.decideFromLogits([10.0, 0.0, 0.0, 0.0, 0.0]);
       }
 
       expect(result, isNotNull);
       expect(result!.label, 'none');
+    });
+
+    // T51: `approach` (index 1) is a new class with its own provisional
+    // 0.50 threshold. Verifies the switch in decideFromLogits actually maps
+    // it — a missing branch would silently fall through to the 0.55
+    // deviation threshold.
+    test('returns "approach" when its confidence clears the 0.50 threshold', () {
+      final classifier = Classifier();
+
+      ClassificationResult? result;
+      for (int i = 0; i < 5; i++) {
+        result = classifier.decideFromLogits([0.0, 10.0, 0.0, 0.0, 0.0]);
+      }
+
+      expect(result, isNotNull);
+      expect(result!.label, 'approach');
     });
   });
 

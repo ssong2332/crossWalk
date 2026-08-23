@@ -58,8 +58,12 @@ REPO = Path(__file__).resolve().parent.parent
 DATA_DIR = REPO / "image"
 OUT_DIR = REPO / "train" / "groupkfold_out"
 
-# ImageFolder 알파벳 순서와 동일해야 한다 (classifier.dart:28과 같은 순서).
-CLASSES = ["front", "left", "none", "right"]
+# T51: 5-class. 파일시스템 폴더명과 의미 라벨을 분리한다.
+# CLASS_DIRS[i]는 CLASSES[i]의 폴더명(같은 인덱스). ImageFolder 알파벳 순서와
+# 동일해야 하며 (실측: {'0_none':0,'1_approach':1,'2_front':2,'3_left':3,'4_right':4}),
+# CLASSES는 classifier.dart의 `_labels`와 정확히 같은 순서여야 한다.
+CLASS_DIRS = ["0_none", "1_approach", "2_front", "3_left", "4_right"]
+CLASSES = ["none", "approach", "front", "left", "right"]
 
 IMG_SIZE = 224
 BATCH_SIZE = 32
@@ -72,8 +76,10 @@ N_FOLDS = 5
 SESSION_GAP_SEC = 60
 DUP_PIXEL_THR = 10.0
 
-# 앱 실제 임계값 — classifier.dart:33,38,39 / eval_model.py:50-52와 동일.
-FRONT_T, DEV_T, NONE_T = 0.5, 0.55, 0.50
+# 앱 실제 임계값 — classifier.dart / eval_model.py와 동일.
+# APPROACH_T는 T51 잠정값(재학습 후 진단으로 확정).
+FRONT_T, DEV_T, NONE_T, APPROACH_T = 0.5, 0.55, 0.50, 0.50
+THRESHOLDS = {"front": FRONT_T, "none": NONE_T, "approach": APPROACH_T}
 
 TRAIN_TF = transforms.Compose([
     transforms.Resize((IMG_SIZE, IMG_SIZE)),
@@ -116,11 +122,11 @@ def wilson(k, n, z=1.96):
 def load_images():
     """EXIF 촬영시각과 함께 전체 이미지 목록을 만든다."""
     out = []
-    for ci, cls in enumerate(CLASSES):
-        for f in sorted(os.listdir(DATA_DIR / cls)):
+    for ci, (cls_dir, cls) in enumerate(zip(CLASS_DIRS, CLASSES)):
+        for f in sorted(os.listdir(DATA_DIR / cls_dir)):
             if not f.lower().endswith((".jpg", ".jpeg", ".png")):
                 continue
-            p = DATA_DIR / cls / f
+            p = DATA_DIR / cls_dir / f
             ex = Image.open(p)._getexif() or {}
             dt = None
             for k, v in ex.items():
@@ -250,8 +256,11 @@ def run_fold(k, items, device):
     val_loader = DataLoader(val_ds, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
     test_loader = DataLoader(test_ds, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
 
-    fc = tc["front"]
-    class_weights = torch.tensor([fc / tc[c] for c in CLASSES], dtype=torch.float).to(device)
+    # T51: 기준을 하드코딩된 "front"에서 최다 클래스로 일반화 (train_model.py와 동일).
+    # 재라벨링 후 front는 더 이상 다수 클래스가 아니다. CrossEntropyLoss(mean)는
+    # 가중치의 상수배에 불변이므로 학습 결과는 바뀌지 않는다.
+    mc = max(tc[c] for c in CLASSES)
+    class_weights = torch.tensor([mc / tc[c] for c in CLASSES], dtype=torch.float).to(device)
     criterion = nn.CrossEntropyLoss(weight=class_weights)
 
     model = mobilenet_v3_small(weights=MobileNet_V3_Small_Weights.DEFAULT)
@@ -327,7 +336,7 @@ def run_fold(k, items, device):
 
 def decide(p):
     lab = max(p, key=p.get)
-    t = FRONT_T if lab == "front" else (NONE_T if lab == "none" else DEV_T)
+    t = THRESHOLDS.get(lab, DEV_T)  # left/right는 DEV_T
     return lab if p[lab] >= t else None
 
 
@@ -353,11 +362,26 @@ def report(recs, title, key=None):
         nones = sum(1 for r in sub if decide(r["probs"]) is None)
         print(f"  {cls:6s} recall={hit/len(sub):.3f} ({hit}/{len(sub)})  "
               f"95% CI [{lo:.3f}, {hi:.3f}]  precision={prec:.3f}  무판정={nones}")
+    # T51: 이 집계 자체는 그대로다 — "실제 front인데 left/right로 예측"이 곧
+    # 사용자가 듣는 오경보다. 다만 집계 대상이 달라졌다: 재라벨링 전에는 front에
+    # "인도 위에서 촬영"이 섞여 있었고(T50 배경), 이제 그것들은 approach로 빠졌다.
+    # 따라서 아래 수치는 "횡단보도 위 정렬 상태"만의 오경보율이며, 재라벨링 전
+    # 수치와 직접 비교할 수 없다.
     fr = [r for r in recs if r["true"] == "front"]
     if fr:
         fa = sum(1 for r in fr if decide(r["probs"]) in ("left", "right"))
         lo, hi = wilson(fa, len(fr))
         print(f"\n  front 오경보(직진->편향): {fa}/{len(fr)} = {fa/len(fr)*100:.1f}%  "
+              f"95% CI [{lo*100:.1f}%, {hi*100:.1f}%]")
+
+    # T51 신설: approach는 앱에서 침묵 처리되지만, approach 이미지가 left/right로
+    # **예측되면** 앱은 실제로 경보를 울린다. front에서 분리해 낸 오경보 위험이
+    # 사라진 것이 아니라 이 클래스로 옮겨간 것이므로 별도로 집계한다.
+    ap = [r for r in recs if r["true"] == "approach"]
+    if ap:
+        afa = sum(1 for r in ap if decide(r["probs"]) in ("left", "right"))
+        lo, hi = wilson(afa, len(ap))
+        print(f"  approach 오경보(진입 전->편향): {afa}/{len(ap)} = {afa/len(ap)*100:.1f}%  "
               f"95% CI [{lo*100:.1f}%, {hi*100:.1f}%]")
     print("\n  목표(left/right recall >= 90%) 판정:")
     for cls in ("left", "right"):

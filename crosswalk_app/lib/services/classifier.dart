@@ -21,11 +21,27 @@ class ModelIntegrityException implements Exception {
 }
 
 class Classifier {
-  // 4-클래스 모델(front/left/none/right). 이 순서는 torchvision ImageFolder가
-  // 하위 폴더명을 알파벳순으로 정렬해 만든 실제 모델 출력(logits) 인덱스 순서와
-  // 정확히 일치해야 한다(front=idx0, left=idx1, none=idx2, right=idx3).
-  // train/eval_model.py에서 검증됨.
-  static const _labels = ['front', 'left', 'none', 'right'];
+  // 5-클래스 모델(none/approach/front/left/right). 이 순서는 torchvision
+  // ImageFolder가 하위 폴더명을 알파벳순으로 정렬해 만든 실제 모델 출력(logits)
+  // 인덱스 순서와 정확히 일치해야 한다.
+  //
+  // T51: image/ 폴더가 `0_none`/`1_approach`/`2_front`/`3_left`/`4_right`로
+  // 재구성되어, 알파벳순 정렬 결과가 곧 의미 순서가 된다. 실측값(ImageFolder의
+  // class_to_idx 출력):
+  //   {'0_none': 0, '1_approach': 1, '2_front': 2, '3_left': 3, '4_right': 4}
+  // 즉 none=idx0, approach=idx1, front=idx2, left=idx3, right=idx4.
+  // 이 순서를 "보기 편한" 순서로 바꾸면 로짓이 엉뚱한 라벨에 매핑되며
+  // 에러 없이 조용히 오작동한다(T42에서 실제로 겪은 함정).
+  // train/train_model.py가 학습 시작 시 class_to_idx를 assert로 검사한다.
+  static const _labels = ['none', 'approach', 'front', 'left', 'right'];
+
+  /// T54: 라벨 동기화 검증용 노출.
+  /// `assets/model/labels.json`이 익스포트 시점의 모델과 함께 생성되며,
+  /// `test/labels_sync_test.dart`가 이 배열과 그 파일을 대조한다.
+  /// 이 프로젝트에서 라벨-모델 불일치는 세 번 발생했고 매번 에러 없이
+  /// 조용히 틀린 라벨을 냈다(T42, T51, T51 브랜치의 4-class 에셋 잔류).
+  @visibleForTesting
+  static const labelsForTest = _labels;
   static const _inputSize = 224;
   static const _smoothingWindow = 5;
 
@@ -37,6 +53,10 @@ class Classifier {
   // precision 96.2% 유지 확인 (0.3~0.5 구간 동일한 결과).
   static const _frontThreshold = 0.5;
   static const _noneThreshold = 0.50;
+  // T51 신설. **재학습 전 잠정값이다.** approach는 feedback_service.dart에서
+  // none과 동일하게 침묵 처리되므로, none과 같은 값(0.50)에서 출발한다.
+  // 확정값은 5-class 재학습 후 train/eval_model.py 진단 결과로 정한다.
+  static const _approachThreshold = 0.50;
 
   // 10 → 5: 약 6fps@30fps, 이탈 감지 지연 단축
   static const _throttleFrames = 5;
@@ -161,6 +181,7 @@ class Classifier {
     final threshold = switch (label) {
       'front' => _frontThreshold,
       'none' => _noneThreshold,
+      'approach' => _approachThreshold,
       _ => _deviationThreshold,
     };
     if (conf < threshold) return null;

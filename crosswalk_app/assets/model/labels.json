@@ -1,0 +1,18 @@
+{
+  "labels": [
+    "none",
+    "approach",
+    "front",
+    "left",
+    "right"
+  ],
+  "class_dirs": [
+    "0_none",
+    "1_approach",
+    "2_front",
+    "3_left",
+    "4_right"
+  ],
+  "num_classes": 5,
+  "model_sha256": "7455f201be4ca8285a15f3188d1ad3aa45b48cb295d908d281720e4f67c81e51"
+}
