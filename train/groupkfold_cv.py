@@ -56,7 +56,14 @@ torch.manual_seed(SEED)
 
 REPO = Path(__file__).resolve().parent.parent
 DATA_DIR = REPO / "image"
-OUT_DIR = REPO / "train" / "groupkfold_out"
+# T53: 출력 폴더를 산출물별로 분리한다. 과거에 이 스크립트의 5-class 결과가
+# `groupkfold_out`(843장 4-class 결과 보관 폴더)을 덮어써서, 어느 실험의
+# 숫자인지 파일만 보고는 알 수 없는 상태가 됐었다.
+#   groupkfold_out        : 843장 4-class (T1/T49 시절, 참조용 보존)
+#   groupkfold_5class_out : 638장 5-class 손실가중 ON  (②)
+#   groupkfold_noweight_out : 638장 5-class 손실가중 OFF (④, groupkfold_noweight.py)
+#   groupkfold_noapproach_out : 561장 4-class approach 제외 (③)
+OUT_DIR = REPO / "train" / "groupkfold_5class_out"
 
 # T51: 5-class. 파일시스템 폴더명과 의미 라벨을 분리한다.
 # CLASS_DIRS[i]는 CLASSES[i]의 폴더명(같은 인덱스). ImageFolder 알파벳 순서와
