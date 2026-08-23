@@ -73,6 +73,15 @@ LR_FROZEN = 1e-3
 LR_FINETUNE = 1e-4
 N_FOLDS = 5
 
+# T53: 클래스 불균형 보정을 몇 겹으로 걸지 제어한다.
+#   True  = 샘플러 + 손실가중 (기존 동작, 소수 클래스가 곱으로 강조됨)
+#   False = 샘플러만 (보정 1회)
+# WeightedRandomSampler가 이미 배치를 클래스 균등하게 만드는데
+# CrossEntropyLoss(weight=1/빈도)를 또 걸면 강조가 제곱으로 누적된다.
+# 실측(fold0 train): approach 실효 8.78배 vs none 1.00배, right 3.51배.
+# approach가 right보다 2.5배 강조되어 argmax를 뺏는다는 가설의 검증용 스위치.
+USE_LOSS_WEIGHT = True
+
 SESSION_GAP_SEC = 60
 DUP_PIXEL_THR = 10.0
 
@@ -259,9 +268,14 @@ def run_fold(k, items, device):
     # T51: 기준을 하드코딩된 "front"에서 최다 클래스로 일반화 (train_model.py와 동일).
     # 재라벨링 후 front는 더 이상 다수 클래스가 아니다. CrossEntropyLoss(mean)는
     # 가중치의 상수배에 불변이므로 학습 결과는 바뀌지 않는다.
-    mc = max(tc[c] for c in CLASSES)
-    class_weights = torch.tensor([mc / tc[c] for c in CLASSES], dtype=torch.float).to(device)
-    criterion = nn.CrossEntropyLoss(weight=class_weights)
+    if USE_LOSS_WEIGHT:
+        mc = max(tc[c] for c in CLASSES)
+        class_weights = torch.tensor([mc / tc[c] for c in CLASSES], dtype=torch.float).to(device)
+        criterion = nn.CrossEntropyLoss(weight=class_weights)
+        print(f"[fold {k}] 손실가중 ON: {[round(mc / tc[c], 2) for c in CLASSES]}", flush=True)
+    else:
+        criterion = nn.CrossEntropyLoss()
+        print(f"[fold {k}] 손실가중 OFF (샘플러만)", flush=True)
 
     model = mobilenet_v3_small(weights=MobileNet_V3_Small_Weights.DEFAULT)
     model.classifier[3] = nn.Linear(model.classifier[3].in_features, len(CLASSES))
