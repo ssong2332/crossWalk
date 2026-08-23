@@ -49,6 +49,8 @@ from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from torchvision import transforms
 from torchvision.models import MobileNet_V3_Small_Weights, mobilenet_v3_small
 
+import build_cache
+
 SEED = 42
 random.seed(SEED)
 np.random.seed(SEED)
@@ -89,6 +91,16 @@ N_FOLDS = 5
 # approach가 right보다 2.5배 강조되어 argmax를 뺏는다는 가설의 검증용 스위치.
 USE_LOSS_WEIGHT = True
 
+# T56: 학습 입력을 224x224 PNG 캐시에서 읽는다.
+# 원본은 전부 4000x3000(12MP, 평균 4.8MB)이라 매 에폭 디코딩 비용이
+# 모델 연산보다 크다 (실측: 장당 376.6ms -> 캐시 15.8ms, 24배).
+# TRAIN_TF/EVAL_TF의 첫 연산이 고정 `Resize((224,224))`이고 증강은 그 뒤에
+# 오므로, 여기까지를 미리 계산해 두는 것은 **비트 단위로 동일한 입력**을 준다
+# (`build_cache.py --verify` 최대 픽셀 차이 0.00000000).
+# 세션 분할과 근사중복 판정은 계속 **원본**을 쓴다. 그래야 지금까지의
+# 세션/중복 기준과 수치가 그대로 비교된다.
+USE_CACHE = True
+
 SESSION_GAP_SEC = 60
 DUP_PIXEL_THR = 10.0
 
@@ -122,6 +134,8 @@ class ListDataset(Dataset):
 
     def __getitem__(self, i):
         path, label = self.items[i]
+        if USE_CACHE:
+            path = build_cache.cache_path(Path(path))
         return self.tf(Image.open(path).convert("RGB")), label
 
 
@@ -419,6 +433,9 @@ def report(recs, title, key=None):
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device} | 세션간격 {SESSION_GAP_SEC}s | 중복임계 {DUP_PIXEL_THR} | {N_FOLDS}-fold", flush=True)
+    if USE_CACHE:
+        made, kept = build_cache.build(verbose=False)
+        print(f"224 캐시: 신규 {made} / 유지 {kept}", flush=True)
     items = load_images()
     n_sess = assign_sessions(items)
     n_dupc = dup_clusters(items)
