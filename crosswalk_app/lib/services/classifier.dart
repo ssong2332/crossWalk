@@ -34,6 +34,14 @@ class Classifier {
   // 에러 없이 조용히 오작동한다(T42에서 실제로 겪은 함정).
   // train/train_model.py가 학습 시작 시 class_to_idx를 assert로 검사한다.
   static const _labels = ['none', 'approach', 'front', 'left', 'right'];
+
+  /// T54: 라벨 동기화 검증용 노출.
+  /// `assets/model/labels.json`이 익스포트 시점의 모델과 함께 생성되며,
+  /// `test/labels_sync_test.dart`가 이 배열과 그 파일을 대조한다.
+  /// 이 프로젝트에서 라벨-모델 불일치는 세 번 발생했고 매번 에러 없이
+  /// 조용히 틀린 라벨을 냈다(T42, T51, T51 브랜치의 4-class 에셋 잔류).
+  @visibleForTesting
+  static const labelsForTest = _labels;
   static const _inputSize = 224;
   static const _smoothingWindow = 5;
 
