@@ -295,8 +295,7 @@ void main() {
       'left와 right는 같은 색을 쓴다 — 방향은 색이 아니라 형태와 위치로 '
       '전달되므로 색각이상에서도 구분된다',
       () {
-        const left =
-            StateFieldPainter(state: 'left', color: Color(0xFFF2B14A));
+        const left = StateFieldPainter(state: 'left', color: Color(0xFFF2B14A));
         const right =
             StateFieldPainter(state: 'right', color: Color(0xFFF2B14A));
 
@@ -305,5 +304,27 @@ void main() {
         expect(right.shouldRepaint(left), isTrue);
       },
     );
+
+    // T63: 강도(severe)만 바뀌어도 다시 그려야 한다 — 굵은 화살표로
+    // 전환되는 시각적 변화를 놓치면 안 된다.
+    test('강도만 바뀌어도 다시 그린다', () {
+      const mildPainter = StateFieldPainter(
+        state: 'left',
+        color: Color(0xFFF2B14A),
+      );
+      const severePainter = StateFieldPainter(
+        state: 'left',
+        color: Color(0xFFFF5A5F),
+        severe: true,
+      );
+
+      expect(severePainter.shouldRepaint(mildPainter), isTrue);
+    });
+
+    test('severe 기본값은 false다', () {
+      const painter =
+          StateFieldPainter(state: 'left', color: Color(0xFFF2B14A));
+      expect(painter.severe, isFalse);
+    });
   });
 }

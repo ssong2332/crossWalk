@@ -58,6 +58,11 @@ class AppStrings {
   // 보이는 상태)의 화면 표시용 라벨.
   final String labelApproach;
 
+  // T63: 심한 이탈 전용 화면 라벨. 색만으로 강도를 구분하지 않기 위한
+  // 텍스트 겹침(redundancy) — 색각이상 사용자에게도 강도가 전달되도록.
+  final String labelLeftSevere;
+  final String labelRightSevere;
+
   // Claude Design 1d/1f: 무판정은 6번째 상태다. 전체의 약 6%로 실제로 자주
   // 발생하며, 숨기면 "모르는 것을 아는 척"이 된다.
   final String labelNoCall;
@@ -82,8 +87,21 @@ class AppStrings {
   final String openSettingsButton;
   final String confidenceLabel;
 
-  final String leftDeviationMessage;
-  final String rightDeviationMessage;
+  // T63: 이탈 정도(모델 확신도를 근사치로 쓴다 — 실제 기하학적 이탈량이
+  // 아니다. docs/Tasks.md T63 참조)에 따라 두 단계로 나눈 음성 문구.
+  // 약한 이탈은 즉시성을 빼고, 심한 이탈은 "즉시"를 붙여 지시 강도를 높인다.
+  final String leftDeviationMessageMild;
+  final String leftDeviationMessageSevere;
+  final String rightDeviationMessageMild;
+  final String rightDeviationMessageSevere;
+
+  // 처음부터 똑바로 가고 있을 때는 말하지 않는다 — 이탈에서 회복했을 때만
+  // 1회 발화한다 (FeedbackService.decideRecoveryMessage).
+  final String recoveredMessage;
+
+  // 상태 전이 안내 — 반복 경고가 아니라 "구간이 바뀌었다"는 1회성 사실.
+  final String enteredCrosswalkMessage;
+  final String crossedCrosswalkMessage;
 
   // T38: accessibility labels for the voice/vibration status pills and the
   // settings-entry gear button added to CameraScreen's top-right corner.
@@ -124,6 +142,15 @@ class AppStrings {
   final String settingsLowLightSectionHeader;
   final String settingsTorchLabel;
   final String settingsTorchNote;
+
+  // T63: 카메라 프리뷰 렌더링 여부. 끄면(기본값) 화살표만 그리는 계기판
+  // (T61 시안)만 표시하고, 켜면 프리뷰가 배경에 함께 보인다. 프리뷰를 켜면
+  // 배경이 매 프레임 바뀌어 전경 텍스트의 대비를 수학적으로 보장할 수
+  // 없으므로(camera_screen.dart의 스크림 계산 참조), 배터리 절약과 대비
+  // 보장 두 이유 모두로 기본값은 끔이다.
+  final String settingsBatterySectionHeader;
+  final String settingsPowerSaveLabel;
+  final String settingsPowerSaveNote;
 
   // T40: OnboardingScreen — integrates T19 (chest-mount posture guidance)
   // + T36 (first-launch legal safety disclaimer) into one first-run
@@ -186,6 +213,8 @@ class AppStrings {
     required this.labelRight,
     required this.labelNone,
     required this.labelApproach,
+    required this.labelLeftSevere,
+    required this.labelRightSevere,
     required this.labelNoCall,
     required this.noCallBody,
     required this.cameraEntryAnnouncement,
@@ -202,8 +231,13 @@ class AppStrings {
     required this.retryButton,
     required this.openSettingsButton,
     required this.confidenceLabel,
-    required this.leftDeviationMessage,
-    required this.rightDeviationMessage,
+    required this.leftDeviationMessageMild,
+    required this.leftDeviationMessageSevere,
+    required this.rightDeviationMessageMild,
+    required this.rightDeviationMessageSevere,
+    required this.recoveredMessage,
+    required this.enteredCrosswalkMessage,
+    required this.crossedCrosswalkMessage,
     required this.voiceIndicatorLabel,
     required this.vibrationIndicatorLabel,
     required this.settingsButtonLabel,
@@ -222,6 +256,9 @@ class AppStrings {
     required this.settingsLowLightSectionHeader,
     required this.settingsTorchLabel,
     required this.settingsTorchNote,
+    required this.settingsBatterySectionHeader,
+    required this.settingsPowerSaveLabel,
+    required this.settingsPowerSaveNote,
     required this.onboardingEyebrow,
     required this.onboardingTitle,
     required this.onboardingPostureHeading,
@@ -255,6 +292,8 @@ class AppStrings {
     labelRight: '오른쪽으로 틀어짐',
     labelNone: '횡단보도 없음',
     labelApproach: '앞에 횡단보도',
+    labelLeftSevere: '왼쪽으로 크게 벗어남',
+    labelRightSevere: '오른쪽으로 크게 벗어남',
     labelNoCall: '판정 없음',
     noCallBody: '확신이 낮습니다',
     cameraEntryAnnouncement: '횡단보도 안내. 보조 도구입니다. 안내는 음성과 진동으로 나갑니다.',
@@ -272,8 +311,13 @@ class AppStrings {
     retryButton: '다시 시도',
     openSettingsButton: '설정 열기',
     confidenceLabel: '신뢰도',
-    leftDeviationMessage: '오른쪽으로 조금',
-    rightDeviationMessage: '왼쪽으로 조금',
+    leftDeviationMessageMild: '오른쪽으로 이동하세요',
+    leftDeviationMessageSevere: '즉시 오른쪽으로 이동하세요',
+    rightDeviationMessageMild: '왼쪽으로 이동하세요',
+    rightDeviationMessageSevere: '즉시 왼쪽으로 이동하세요',
+    recoveredMessage: '직진하세요',
+    enteredCrosswalkMessage: '횡단보도에 진입했습니다.',
+    crossedCrosswalkMessage: '횡단보도를 건넜습니다.',
     voiceIndicatorLabel: '음성 안내',
     vibrationIndicatorLabel: '진동 알림',
     settingsButtonLabel: '설정',
@@ -293,6 +337,10 @@ class AppStrings {
     settingsTorchLabel: '손전등 켜기',
     settingsTorchNote: '어두운 곳에서 인식을 돕습니다. 배터리 소모가 늘어날 수 있으며, '
         '기기에 따라 지원되지 않을 수 있습니다.',
+    settingsBatterySectionHeader: '배터리',
+    settingsPowerSaveLabel: '배터리 절약 모드',
+    settingsPowerSaveNote: '켜면 화면에 화살표만 표시합니다(카메라 화면 없음). '
+        '끄면 카메라 화면도 함께 보여줍니다 — 배터리를 더 씁니다.',
     onboardingEyebrow: '시작하기 전에',
     onboardingTitle: '안전 이용 안내',
     onboardingPostureHeading: '가슴거치 착용 방법',
@@ -301,8 +349,7 @@ class AppStrings {
     onboardingDisclaimerHeading: '법적 고지',
     onboardingDisclaimerDraftBadge: '법률 검토 전 초안',
     // 디자인 초안 문구 — 법률 검토 필요. 사용자가 승인한 원문 그대로 사용 (docs/Tasks.md T40).
-    onboardingDisclaimerBody:
-        '이 앱은 횡단보도 이탈을 감지해 음성·진동으로 알려주는 보조 도구입니다. '
+    onboardingDisclaimerBody: '이 앱은 횡단보도 이탈을 감지해 음성·진동으로 알려주는 보조 도구입니다. '
         '흰지팡이·안내견·동행인의 판단을 대신하지 않으며, '
         '최종 판단과 주의는 항상 보행자 본인에게 있습니다.',
     onboardingTtsNotice: '전체 내용을 음성으로 읽어드리고 있습니다',
@@ -341,9 +388,12 @@ class AppStrings {
     labelRight: 'Veering right',
     labelNone: 'No crosswalk detected',
     labelApproach: 'Crosswalk ahead',
+    labelLeftSevere: 'Veering left sharply',
+    labelRightSevere: 'Veering right sharply',
     labelNoCall: 'No call',
     noCallBody: 'Confidence is low',
-    cameraEntryAnnouncement: 'Crosswalk Guide. This is an assistive tool. Guidance comes through voice and vibration.',
+    cameraEntryAnnouncement:
+        'Crosswalk Guide. This is an assistive tool. Guidance comes through voice and vibration.',
     cameraPermissionRequiredLabel: 'Camera permission required',
     cameraPermissionRequiredSettingsLabel:
         'Camera permission required (open settings)',
@@ -362,8 +412,13 @@ class AppStrings {
     retryButton: 'Retry',
     openSettingsButton: 'Open settings',
     confidenceLabel: 'Confidence',
-    leftDeviationMessage: 'A little to the right',
-    rightDeviationMessage: 'A little to the left',
+    leftDeviationMessageMild: 'Move to the right',
+    leftDeviationMessageSevere: 'Move right now',
+    rightDeviationMessageMild: 'Move to the left',
+    rightDeviationMessageSevere: 'Move left now',
+    recoveredMessage: 'Go straight',
+    enteredCrosswalkMessage: 'You have entered the crosswalk.',
+    crossedCrosswalkMessage: 'You have crossed the crosswalk.',
     voiceIndicatorLabel: 'Voice guidance',
     vibrationIndicatorLabel: 'Vibration alert',
     settingsButtonLabel: 'Settings',
@@ -383,6 +438,10 @@ class AppStrings {
     settingsTorchLabel: 'Turn on flashlight',
     settingsTorchNote: 'Helps detection in dark areas. May increase battery '
         'use, and may not be supported on all devices.',
+    settingsBatterySectionHeader: 'Battery',
+    settingsPowerSaveLabel: 'Battery saver',
+    settingsPowerSaveNote: 'On: shows arrows only (no camera view). '
+        'Off: also shows the camera view — uses more battery.',
     onboardingEyebrow: 'Before you start',
     onboardingTitle: 'Safety Guide',
     onboardingPostureHeading: 'How to Wear the Chest Mount',
