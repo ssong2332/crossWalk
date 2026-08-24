@@ -1,0 +1,104 @@
+Device: cpu
+
+[1] 데이터 준비 중...
+[train] {'0_none': 183, '1_approach': 61, '2_front': 104, '3_left': 71, '4_right': 90}
+[val] {'0_none': 22, '1_approach': 7, '2_front': 13, '3_left': 8, '4_right': 11}
+[test] {'0_none': 24, '1_approach': 9, '2_front': 13, '3_left': 10, '4_right': 12}
+
+[2] DataLoader 구성 중...
+클래스 매핑(class_to_idx): {'0_none': 0, '1_approach': 1, '2_front': 2, '3_left': 3, '4_right': 4}
+기대 순서(CLASS_DIRS): ['0_none', '1_approach', '2_front', '3_left', '4_right']
+의미 라벨(LABELS, classifier.dart의 _labels와 동일해야 함): ['none', 'approach', 'front', 'left', 'right']
+
+[3] 모델 구성 중...
+
+[4] 학습 시작...
+클래스별 train 개수: {'0_none': 183, '1_approach': 61, '2_front': 104, '3_left': 71, '4_right': 90}
+클래스 가중치 (max_count/count): {'0_none': 1.0, '1_approach': 3.0, '2_front': 1.7596153846153846, '3_left': 2.5774647887323945, '4_right': 2.033333333333333}
+
+=== 1차 학습 (backbone frozen) ===
+Epoch 01 | train loss=1.2980 acc=0.4185 | val loss=1.4738 acc=0.2623
+Epoch 02 | train loss=0.9099 acc=0.6248 | val loss=1.3681 acc=0.4426
+Epoch 03 | train loss=0.6885 acc=0.7525 | val loss=1.4485 acc=0.3934
+Epoch 04 | train loss=0.5666 acc=0.8055 | val loss=1.0620 acc=0.6230
+Epoch 05 | train loss=0.5282 acc=0.7917 | val loss=0.9557 acc=0.6230
+Epoch 06 | train loss=0.5001 acc=0.8094 | val loss=0.7571 acc=0.6721
+Epoch 07 | train loss=0.4942 acc=0.8212 | val loss=0.7582 acc=0.6557
+Epoch 08 | train loss=0.4710 acc=0.8153 | val loss=0.8076 acc=0.6721
+Epoch 09 | train loss=0.3998 acc=0.8664 | val loss=0.6727 acc=0.7541
+Epoch 10 | train loss=0.3744 acc=0.8487 | val loss=0.8273 acc=0.7213
+
+=== 2차 학습 (fine-tuning) ===
+Epoch 01 | train loss=0.2844 acc=0.9037 | val loss=0.6979 acc=0.7869
+  -> Best model saved (val_acc=0.7869)
+Epoch 02 | train loss=0.2270 acc=0.9234 | val loss=0.5884 acc=0.8033
+  -> Best model saved (val_acc=0.8033)
+Epoch 03 | train loss=0.2326 acc=0.9018 | val loss=0.5090 acc=0.8033
+Epoch 04 | train loss=0.1305 acc=0.9607 | val loss=0.4932 acc=0.8197
+  -> Best model saved (val_acc=0.8197)
+Epoch 05 | train loss=0.1537 acc=0.9548 | val loss=0.4867 acc=0.8852
+  -> Best model saved (val_acc=0.8852)
+Epoch 06 | train loss=0.1175 acc=0.9745 | val loss=0.4669 acc=0.8689
+Epoch 07 | train loss=0.1426 acc=0.9489 | val loss=0.4571 acc=0.8525
+Epoch 08 | train loss=0.1120 acc=0.9646 | val loss=0.4546 acc=0.8689
+Epoch 09 | train loss=0.1155 acc=0.9646 | val loss=0.4553 acc=0.8689
+Epoch 10 | train loss=0.0912 acc=0.9784 | val loss=0.4586 acc=0.8525
+
+[5] 최적 모델 로드 후 평가...
+
+=== Test Set 평가 ===
+              precision    recall  f1-score   support
+
+      0_none       0.96      0.92      0.94        24
+  1_approach       0.70      0.78      0.74         9
+     2_front       1.00      0.77      0.87        13
+      3_left       0.75      0.90      0.82        10
+     4_right       0.77      0.83      0.80        12
+
+    accuracy                           0.85        68
+   macro avg       0.84      0.84      0.83        68
+weighted avg       0.87      0.85      0.86        68
+
+혼동행렬 저장: C:\vibecoding\crossWalk\model\confusion_matrix.png
+
+[6] ONNX 변환...
+C:\vibecoding\crossWalk\train\train_model.py:285: UserWarning: # 'dynamic_axes' is not recommended when dynamo=True, and may lead to 'torch._dynamo.exc.UserError: Constraints violated.' Supply the 'dynamic_shapes' argument instead if export is unsuccessful.
+  torch.onnx.export(
+W0822 19:38:00.100000 8224 site-packages\torch\onnx\_internal\exporter\_compat.py:133] Setting ONNX exporter to use operator set version 18 because the requested opset_version 17 is a lower version than we have implementations for. Automatic version conversion will be performed, which may not be successful at converting to the requested version. If version conversion is unsuccessful, the opset version of the exported model will be kept at 18. Please consider setting opset_version >=18 to leverage latest ONNX features
+[torch.onnx] Obtain model graph for `MobileNetV3([...]` with `torch.export.export(..., strict=False)`...
+[torch.onnx] Obtain model graph for `MobileNetV3([...]` with `torch.export.export(..., strict=False)`... ✅
+[torch.onnx] Run decompositions...
+C:\Python\Python313\Lib\copyreg.py:99: FutureWarning: `isinstance(treespec, LeafSpec)` is deprecated, use `isinstance(treespec, TreeSpec) and treespec.is_leaf()` instead.
+  return cls.__new__(cls, *args)
+[torch.onnx] Run decompositions... ✅
+[torch.onnx] Translate the graph into ONNX...
+[torch.onnx] Translate the graph into ONNX... ✅
+The model version conversion is not supported by the onnxscript version converter and fallback is enabled. The model will be converted using the onnx C API (target version: 17).
+Failed to convert the model to the target version 17 using the ONNX C API. The model was not modified
+Traceback (most recent call last):
+  File "C:\Python\Python313\Lib\site-packages\onnxscript\version_converter\__init__.py", line 137, in call
+    converted_proto = _c_api_utils.call_onnx_api(
+        func=_partial_convert_version, model=model
+    )
+  File "C:\Python\Python313\Lib\site-packages\onnxscript\version_converter\_c_api_utils.py", line 65, in call_onnx_api
+    result = func(proto)
+  File "C:\Python\Python313\Lib\site-packages\onnxscript\version_converter\__init__.py", line 132, in _partial_convert_version
+    return onnx.version_converter.convert_version(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        proto, target_version=self.target_version
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Python\Python313\Lib\site-packages\onnx\version_converter.py", line 39, in convert_version
+    converted_model_str = C.convert_version(model_str, target_version)
+RuntimeError: D:\a\onnx\onnx\onnx/version_converter/adapters/axes_input_to_attribute.h:68: adapt: Assertion `node->hasAttribute(kaxes)` failed: No initializer or constant input to node found
+[torch.onnx] Optimize the ONNX graph...
+[torch.onnx] Optimize the ONNX graph... ✅
+ONNX 모델 저장: C:\vibecoding\crossWalk\model\crosswalk_model.onnx
+
+다음 명령으로 TFLite 변환:
+  pip install onnx2tf
+  onnx2tf -i C:\vibecoding\crossWalk\model\crosswalk_model.onnx -o C:\vibecoding\crossWalk\model\tflite_out
+  -> crosswalk_model.tflite 생성됨
+
+완료!

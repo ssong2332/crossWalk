@@ -11,6 +11,37 @@ Last updated: 2026-08-22 (5-class 클래스 정의 사용자 확정 — §클래
 On-device (offline, 추정) mobile app that warns a visually impaired user in real time, via voice + vibration, when they drift left/right off a crosswalk while crossing.
 Evidence: `pubspec.yaml:2` (description), `ARCHITECTURE.md:3`, `crosswalk_app/lib/services/feedback_service.dart:30-38`.
 
+## 제품 형태 (2026-08-23 사용자 확정)
+
+**최종 목표는 전용 하드웨어 기기다.** 스마트폰 앱은 없어지지 않는다 — **병행 제품으로 존재하거나,
+하드웨어와 연동되는 형태**로 남는다. (사용자 확정, 2026-08-23)
+
+하드웨어는 **아직 구상 단계**다. 카메라 모듈·렌즈 화각·장착 각도/높이 중 무엇도 정해지지 않았다.
+
+이 결정이 지금 작업에 주는 영향 — 무엇이 유지되고 무엇이 조건부인가:
+
+| 항목 | 하드웨어 전환 시 |
+|---|---|
+| 세션 단위 누수 없는 평가 방법론 | 유지 (카메라와 무관) |
+| 5-class 정의·판정 기준 | 유지 (문제 정의) |
+| 손실가중 이중 보정 결론 (T53) | 유지 (학습 절차의 성질) |
+| 라벨↔모델 동기화 검증 (T54) | 유지 |
+| 224px 캐시 (T56) | 유지 |
+| EXIF Orientation 정렬 (T57) | **유지** — 앱이 병행 제품이므로 여전히 필요 |
+| 세로 촬영 원칙 | **앱 기준으로는 유지.** 하드웨어는 케이스를 직접 만들므로 자유 선택 |
+| 현재 637장 데이터 | **앱에는 그대로 유효.** 하드웨어 카메라가 정해지면 도메인 격차만큼 재수집/파인튜닝 필요 |
+
+데이터가 버려지지 않는 이유: 앱이 병행 제품이므로 폰 카메라 데이터는 그 자체로 제품용이다.
+다만 하드웨어 카메라가 폰과 화각이 크게 다르면 그 기기용으로는 추가 수집이 필요하다 —
+**얼마나 필요한지는 카메라가 정해지기 전에는 추정조차 불가능하다.**
+
+하드웨어 쪽의 기회 (미검증, 구상 단계이므로 설계 입력으로만 기록):
+현재 `right` 실패의 가장 큰 원인이 "횡단보도 좌우 경계가 프레임 밖"이다. 폰 화각 약 68도,
+가슴 높이 1.3m 가정 시 지면 촬영 폭 약 1.75m인데 횡단보도 폭은 통상 4m 이상이라, 중앙에 서면
+경계가 양쪽 다 화면 밖이다. 하드웨어는 **광각 렌즈를 선택할 수 있으므로** 폰에서 못 고치던 이
+기하학적 한계를 부품 선택으로 완화할 수 있다.
+
+
 ## Target Users
 - Primary: visually impaired pedestrians crossing at crosswalks. Evidence: `pubspec.yaml:2`, `feedback_service.dart` (ko-KR voice guidance).
 - Deployment target platform(s): Android + iOS (Open Q #1, ANSWERED 2026-07-17). Min OS: Android minSdk 26; iOS minimum iOS 15 (Open Q #2, ANSWERED 2026-07-17). Distribution channel: undecided (Open Q #7).
@@ -89,6 +120,39 @@ Evidence: `pubspec.yaml:2` (description), `ARCHITECTURE.md:3`, `crosswalk_app/li
 | right | 90.7% | [85.5%, 95.3%] | **판정 불가** (CI가 90%를 포함) |
 
 **정정 (2026-08-22):** 이전 PRD 서술은 "TARGET NOT MET"이라 단언했으나, 이는 표본 크기를 고려하지 않은 것이었음. 정확한 표현은 **"현재 데이터로는 판정 불가"** — 미달일 수도, 달성했을 수도 있음. 판정을 확정하려면 촬영 세션 다양성 확대가 필요 (`docs/Tasks.md` T44 — 기준은 "장수"가 아니라 **서로 다른 장소·다른 날의 세션 수**).
+
+## 측정 이력 — right recall이 움직이지 않은 다섯 번의 시도 (2026-08-22~24)
+
+모두 **세션 단위 5-fold, 데이터 누수 없음**. 같은 잣대로 비교 가능하다.
+
+| # | 구성 | right recall | 비고 |
+|---|---|---|---|
+| ① | 843장 4-class | 89.9% | `approach` 신설 전 |
+| ② | 638장 5-class 손실가중 ON | 70.6% | `approach` 신설 직후 |
+| ③ | 561장 4-class (approach 제외) | 88.1% | 대조군, **배포 불가 구성** |
+| ④ | 638장 5-class 손실가중 OFF | 75.2% | T53 |
+| ⑤ | 637장 5-class 재라벨링 | 75.0% | McNemar p=1.0000 (변화 없음) |
+| ⑥ | 637장 헤드 2개 (상태+방향) | 81.7% | T55. **단, 오경보 동률로 맞추면 74.6%** |
+
+소진한 축과 결론:
+
+| 축 | 시도 | 결과 |
+|---|---|---|
+| 클래스 불균형 보정 | 이중 보정 제거 (T53) | 기각 — 개선 +4.4pp, McNemar p=0.0625 |
+| 임계값 | deviation 0.30~0.90 스윕 | 한계 76.8%, 오경보와 맞교환일 뿐 |
+| 라벨 정의 | 2차 재라벨링 (18장 이동) | right 변화 없음. 단 front 오경보 7.7 -> 4.3%로 개선 |
+| 모델 구조 | 출력 헤드 2개 (T55) | 방향 인지는 성공(91.2%), 이탈 감지는 개선 없음 |
+
+**세 축이 모두 같은 곳을 가리킨다: 사진이 '인도 위인지 횡단보도 위인지'를 말해주지 않는다.**
+T55의 헤드 분리로 이것이 수치로 확인됐다 — 방향 head 91.2% vs 상태 head의 approach 67.8%,
+상태 혼동 최다가 `approach -> on` 17건. 후속은 T58.
+
+### 새로 확보한 능력 (T55)
+
+`approach` 상태, 즉 **횡단보도까지 거리가 있는 상황에서도 방향을 91.5%** 맞힌다
+(54/59, 95% CI [81.6%, 96.3%]). 사용자 요구사항이며 5-class 단일 출력 구조에서는
+측정조차 불가능했던 값이다. 다만 이 능력을 앱 안내에 어떻게 쓸지는 미정이다 —
+현재 `feedback_service.dart`는 `approach`에서 음성·진동을 모두 침묵시킨다.
 
 ## Dataset 현황 (2026-08-22)
 - 총 **843장** — front 332 / left 127 / right 155 / none 229.
@@ -183,3 +247,5 @@ Evidence: `pubspec.yaml:2` (description), `ARCHITECTURE.md:3`, `crosswalk_app/li
 | 14 | Camera choice — rear assumed; any front-camera or dual use case? | ANSWERED (user, 2026-07-17): rear camera only (keep current behavior). No code change needed. |
 | 15 | 가슴착용 카메라의 정확한 틸트 각도/장착 높이는? (Exact chest-mount camera tilt/pitch angle and mount height) — raised by architect in T35, `docs/Architecture.md` §16.6 Open Question D, because training data was captured with a steep downward ground-view framing (§16.2) that does not match the confirmed chest-mount forward posture (Open Q #8); the size of that mismatch depends on this unstated tilt angle. | ANSWERED — DIRECTION ONLY, NOT A PRECISE SPEC (user, 2026-07-18): 사용자는 "정면에 가깝게, 약간 아래로 기울어질 것 같아"라고 답함 — 즉 가슴착용 시 카메라가 수평(정면)에 가깝되 약간 아래를 향할 것으로 **예상/추정**한다는 정성적 방향성만 제시. 사용자 스스로 "~것 같아"라는 추정성 어투로 답했으므로 이는 실측값이 아님. **정확한 각도(도° 단위)와 장착 높이는 여전히 미정** — 정밀 재현이 필요하면 실측 또는 사용자의 추가 확정이 필요. Related: Open Q #8, #10; Tasks T1, T35. |
 | 16 | 클래스 체계 — 기존 `front`가 "횡단보도 위 직진"과 "인도에서 대기 중"을 섞고 있는데, 이를 어떻게 나눌 것인가? | **ANSWERED (user, 2026-08-22): 5-class 체계로 확정** — `front` / `left` / `right` / `approach`(신설) / `none`. 정의·판정 기준·결정 근거(Fisher 정확검정 p=0.00088, 오즈비 20.8)·앱 동작(`approach`는 `none`과 동일하게 침묵)은 위 **§클래스 정의 (2026-08-22 사용자 확정)** 에 기록됨. 판정 기준은 촬영 당시 실제 위치가 아니라 **사진만으로 판정 가능한 기준**을 쓰기로 확정. 남은 작업은 결정이 아니라 실행 — 재라벨링 T50, 코드 대응 T51. **주의: 이 답변은 Open Q #3a(front 오경보 허용치)를 해소하지 않음** — #3a는 여전히 OPEN. |
+| 17 | 하드웨어 기기와 스마트폰 앱의 역할 분담 — 추론은 어디서 도는가(기기 내장 / 폰), 둘 사이 통신은 무엇인가(BLE/Wi-Fi/유선), 모델을 공유하는가 아니면 각자 최적화하는가? | open (2026-08-23 제기). 하드웨어가 구상 단계라지금 답할 수 없으나, **카메라 모듈·렌즈 화각·장착 각도/높이보다 먼저 답할 필요는 없다.** 데이터 수집 계획을 좌우하는 것은 카메라 사양이므로 그쪽이 선행이다. 이 질문은 아키텍처 문서 재작성 시점의 선행 조건으로 기록해 둔다. |
+| 18 | 하드웨어 카메라 사양(모듈·렌즈 화각·장착 각도/높이) — 무엇으로 확정하는가? | open (2026-08-23 제기). **대규모 데이터 수집을 막고 있는 실질적 병목.** 카메라가 정해지기 전에 그 기기용 데이터를 수백 장 모으면 화각이 다를 경우 노동이 버려진다. 권고 순서: (1) 카메라·렌즈·장착 각도 확정 -> (2) 그 카메라로 20~30장 시험 촬영해 좌우 판별이 사람 눈으로 가능한지 확인 -> (3) 본격 수집. 앱용 폰 데이터 수집은 이 질문과 무관하게 계속 유효하다(앱이 병행 제품이므로). |
