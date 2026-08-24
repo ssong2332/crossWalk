@@ -23,6 +23,20 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.14.3
+
+# T62: 런처 아이콘 생성 설정. `dart run flutter_launcher_icons`로 실행한다.
+# 레거시 아이콘은 원본(흰 배경 정사각형)을 그대로 쓰고, 적응형 아이콘은
+# 흰 배경을 투명 처리하고 안전 영역(약 62%)에 맞춰 축소한 별도 전경
+# 이미지를 쓴다 — 그대로 쓰면 원형/둥근사각형 마스크에 로고 바깥쪽이 잘린다.
+# (assets/icon/icon_foreground.png 생성 스크립트는 PR 설명 참조.)
+flutter_launcher_icons:
+  image_path: "assets/icon/icon.png"
+  android: true
+  ios: false
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/icon/icon_foreground.png"
+  min_sdk_android: 21
 
 flutter:
   uses-material-design: true

@@ -48,8 +48,14 @@ void main() {
       expect(strings.labelFront, '직진');
       // T51: new 5-class label.
       expect(strings.labelApproach, '앞에 횡단보도');
-      expect(strings.leftDeviationMessage, '오른쪽으로 조금');
-      expect(strings.rightDeviationMessage, '왼쪽으로 조금');
+      // T63: 이탈 정도(모델 확신도 근사치)에 따른 2단계 문구.
+      expect(strings.leftDeviationMessageMild, '오른쪽으로 이동하세요');
+      expect(strings.leftDeviationMessageSevere, '즉시 오른쪽으로 이동하세요');
+      expect(strings.rightDeviationMessageMild, '왼쪽으로 이동하세요');
+      expect(strings.rightDeviationMessageSevere, '즉시 왼쪽으로 이동하세요');
+      expect(strings.recoveredMessage, '직진하세요');
+      expect(strings.enteredCrosswalkMessage, '횡단보도에 진입했습니다.');
+      expect(strings.crossedCrosswalkMessage, '횡단보도를 건넜습니다.');
     });
 
     test('returns English strings for AppLanguage.en', () {
@@ -57,14 +63,26 @@ void main() {
       expect(strings.labelFront, 'Straight');
       // T51: new 5-class label.
       expect(strings.labelApproach, 'Crosswalk ahead');
-      expect(strings.leftDeviationMessage, 'A little to the right');
-      expect(strings.rightDeviationMessage, 'A little to the left');
+      expect(strings.leftDeviationMessageMild, 'Move to the right');
+      expect(strings.leftDeviationMessageSevere, 'Move right now');
+      expect(strings.rightDeviationMessageMild, 'Move to the left');
+      expect(strings.rightDeviationMessageSevere, 'Move left now');
+      expect(strings.recoveredMessage, 'Go straight');
+      expect(
+        strings.enteredCrosswalkMessage,
+        'You have entered the crosswalk.',
+      );
+      expect(
+        strings.crossedCrosswalkMessage,
+        'You have crossed the crosswalk.',
+      );
     });
 
     // T40: the disclaimer copy must match the user-approved original
     // verbatim (docs/Tasks.md T40 acceptance criterion (2)) — regression
     // guard against accidental edits to app_strings.dart.
-    test('Korean onboarding disclaimer matches the user-approved copy '
+    test(
+        'Korean onboarding disclaimer matches the user-approved copy '
         'verbatim', () {
       final strings = AppStrings.of(AppLanguage.ko);
       expect(

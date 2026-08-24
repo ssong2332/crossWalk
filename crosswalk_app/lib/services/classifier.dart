@@ -47,6 +47,14 @@ class Classifier {
 
   // 이탈(left/right)은 민감하게, 정상(front) 확인은 엄격하게
   static const _deviationThreshold = 0.55;
+
+  // T63: 이탈 "정도"를 판정하는 기준. 이 분류기는 좌표·기하 정보를 내지
+  // 않으므로 실제 이탈 각도/거리는 알 수 없다 — left/right 확신도를
+  // **근사치**로 쓴다. 확신도가 높을수록 그 방향으로의 특징이 뚜렷하다는
+  // 것이지, 몇 도/몇 미터 벗어났는지를 재는 것이 아니다.
+  // 0.80은 **잠정값**(측정 아님). _deviationThreshold(0.55)와 1.0 사이의
+  // 중간보다 살짝 위 — 실기기 보행 테스트로 재보정이 필요하다.
+  static const deviationSeverityThreshold = 0.80;
   // T42 재학습 후 none 데이터가 36→101장으로 늘며 softmax 확률이 더 분산돼
   // 0.65는 front 판정을 과도하게 "무판정(None)" 처리함 (recall 78.6%→57.1% 하락,
   // train/eval_model.py로 실측). 0.65→0.5로 낮춰 재측정 시 recall 89.3%,
@@ -116,7 +124,8 @@ class Classifier {
     final expectedHash = expectedHashRaw.trim();
 
     // placeholder 해시이거나 형식이 다르면 검증 건너뜀 (더미 빌드 / 개발 환경)
-    if (expectedHash.length != 64 || expectedHash == 'placeholder_hash') return true;
+    if (expectedHash.length != 64 || expectedHash == 'placeholder_hash')
+      return true;
 
     final actualHash = sha256.convert(modelBytes).toString();
     return actualHash == expectedHash;
@@ -201,7 +210,8 @@ class Classifier {
         return null;
       }
 
-      final resized = img.copyResize(decoded, width: _inputSize, height: _inputSize);
+      final resized =
+          img.copyResize(decoded, width: _inputSize, height: _inputSize);
 
       // NCHW 포맷 [1, 3, 224, 224] + ImageNet 정규화
       const mean = [0.485, 0.456, 0.406];
@@ -212,9 +222,12 @@ class Classifier {
         for (int x = 0; x < _inputSize; x++) {
           final pixel = resized.getPixel(x, y);
           final idx = y * _inputSize + x;
-          buffer[0 * _inputSize * _inputSize + idx] = (pixel.r / 255.0 - mean[0]) / std[0];
-          buffer[1 * _inputSize * _inputSize + idx] = (pixel.g / 255.0 - mean[1]) / std[1];
-          buffer[2 * _inputSize * _inputSize + idx] = (pixel.b / 255.0 - mean[2]) / std[2];
+          buffer[0 * _inputSize * _inputSize + idx] =
+              (pixel.r / 255.0 - mean[0]) / std[0];
+          buffer[1 * _inputSize * _inputSize + idx] =
+              (pixel.g / 255.0 - mean[1]) / std[1];
+          buffer[2 * _inputSize * _inputSize + idx] =
+              (pixel.b / 255.0 - mean[2]) / std[2];
         }
       }
       return buffer;
@@ -280,7 +293,9 @@ class Classifier {
         final uVal = uPlane[uvIdx];
         final vVal = vPlane[uvIdx];
         final r = (yVal + 1.402 * (vVal - 128)).clamp(0, 255).toInt();
-        final g = (yVal - 0.344136 * (uVal - 128) - 0.714136 * (vVal - 128)).clamp(0, 255).toInt();
+        final g = (yVal - 0.344136 * (uVal - 128) - 0.714136 * (vVal - 128))
+            .clamp(0, 255)
+            .toInt();
         final b = (yVal + 1.772 * (uVal - 128)).clamp(0, 255).toInt();
         out.setPixelRgb(x, y, r, g, b);
       }

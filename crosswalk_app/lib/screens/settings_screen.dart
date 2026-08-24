@@ -43,6 +43,8 @@ class SettingsScreen extends StatefulWidget {
     required this.onLanguageChanged,
     required this.torchEnabled,
     required this.onTorchChanged,
+    required this.powerSaveMode,
+    required this.onPowerSaveModeChanged,
   });
 
   final FeedbackService feedback;
@@ -54,6 +56,11 @@ class SettingsScreen extends StatefulWidget {
   // docs/Tasks.md T37.
   final bool torchEnabled;
   final Future<void> Function(bool enabled) onTorchChanged;
+
+  // T63: 카메라 프리뷰 렌더링 여부(owned by CameraScreen — 프리뷰를
+  // Scaffold body의 Stack에 얹는 주체가 CameraScreen이므로).
+  final bool powerSaveMode;
+  final ValueChanged<bool> onPowerSaveModeChanged;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -74,6 +81,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late double _speechRate;
   late int _vibrationDurationMs;
   late bool _torchEnabled;
+  late bool _powerSaveMode;
 
   @override
   void initState() {
@@ -83,6 +91,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _speechRate = widget.feedback.speechRate;
     _vibrationDurationMs = widget.feedback.vibrationDurationMs;
     _torchEnabled = widget.torchEnabled;
+    _powerSaveMode = widget.powerSaveMode;
   }
 
   void _selectLanguage(AppLanguage language) {
@@ -114,6 +123,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _toggleTorch(bool value) {
     setState(() => _torchEnabled = value);
     unawaited(widget.onTorchChanged(value));
+  }
+
+  void _togglePowerSave(bool value) {
+    setState(() => _powerSaveMode = value);
+    widget.onPowerSaveModeChanged(value);
   }
 
   Widget _buildSectionHeader(String title) {
@@ -167,7 +181,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ),
-
           _buildSectionHeader(_strings.settingsVoiceVibrationSectionHeader),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -246,7 +259,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
           ),
-
+          _buildSectionHeader(_strings.settingsBatterySectionHeader),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: SwitchListTile(
+              value: _powerSaveMode,
+              onChanged: _togglePowerSave,
+              activeColor: _colorAccent,
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                _strings.settingsPowerSaveLabel,
+                style: const TextStyle(color: Colors.white70),
+              ),
+              subtitle: Text(
+                _strings.settingsPowerSaveNote,
+                style: const TextStyle(color: Colors.white38, fontSize: 12),
+              ),
+            ),
+          ),
           _buildSectionHeader(_strings.settingsAccessibilitySectionHeader),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -265,7 +295,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ),
-
           _buildSectionHeader(_strings.settingsLowLightSectionHeader),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),

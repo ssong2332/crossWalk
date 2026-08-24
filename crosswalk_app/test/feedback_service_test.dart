@@ -18,8 +18,15 @@ import 'package:crosswalk_app/services/feedback_service.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  const leftMessage = '오른쪽으로 조금';
-  const rightMessage = '왼쪽으로 조금';
+  const leftMild = '오른쪽으로 이동하세요';
+  const leftSevere = '즉시 오른쪽으로 이동하세요';
+  const rightMild = '왼쪽으로 이동하세요';
+  const rightSevere = '즉시 왼쪽으로 이동하세요';
+  // T63: decideMessage(class, confidence, now)의 confidence는 이탈 '정도'의
+  // 근사치다(Classifier.deviationSeverityThreshold=0.80). 아래 두 상수로
+  // 강도와 무관한 기존 쿨다운/전이 테스트를 그대로 재사용한다.
+  const mild = 0.6;
+  const severe = 0.9;
 
   // flutter_tts 4.2.5 (lib/flutter_tts.dart:330):
   // static const MethodChannel _channel = MethodChannel('flutter_tts');
@@ -44,12 +51,16 @@ void main() {
       final service = FeedbackService();
       final t0 = DateTime(2026, 1, 1, 12, 0, 0);
 
-      expect(service.decideMessage('front', t0), isNull);
+      expect(service.decideMessage('front', 0.0, t0), isNull);
 
       // Even after a prior alert has fired for another class, "front"
       // must still stay silent.
-      service.decideMessage('left', t0);
-      expect(service.decideMessage('front', t0.add(const Duration(seconds: 10))), isNull);
+      service.decideMessage('left', mild, t0);
+      expect(
+        service.decideMessage(
+            'front', 0.0, t0.add(const Duration(seconds: 10))),
+        isNull,
+      );
     });
   });
 
@@ -60,12 +71,15 @@ void main() {
       final service = FeedbackService();
       final t0 = DateTime(2026, 1, 1, 12, 0, 0);
 
-      expect(service.decideMessage('none', t0), isNull);
+      expect(service.decideMessage('none', 0.0, t0), isNull);
 
       // Even after a prior alert has fired for another class, "none"
       // must still stay silent.
-      service.decideMessage('left', t0);
-      expect(service.decideMessage('none', t0.add(const Duration(seconds: 10))), isNull);
+      service.decideMessage('left', mild, t0);
+      expect(
+        service.decideMessage('none', 0.0, t0.add(const Duration(seconds: 10))),
+        isNull,
+      );
     });
   });
 
@@ -78,13 +92,14 @@ void main() {
       final service = FeedbackService();
       final t0 = DateTime(2026, 1, 1, 12, 0, 0);
 
-      expect(service.decideMessage('approach', t0), isNull);
+      expect(service.decideMessage('approach', 0.0, t0), isNull);
 
       // Even after a prior alert has fired for another class, "approach"
       // must still stay silent.
-      service.decideMessage('left', t0);
+      service.decideMessage('left', mild, t0);
       expect(
-        service.decideMessage('approach', t0.add(const Duration(seconds: 10))),
+        service.decideMessage(
+            'approach', 0.0, t0.add(const Duration(seconds: 10))),
         isNull,
       );
     });
@@ -95,22 +110,25 @@ void main() {
       final service = FeedbackService();
       final t0 = DateTime(2026, 1, 1, 12, 0, 0);
 
-      final message = service.decideMessage('left', t0);
+      final message = service.decideMessage('left', mild, t0);
 
       expect(message, isNotNull);
-      expect(message, leftMessage);
+      expect(message, leftMild);
     });
   });
 
   group('FeedbackService.decideMessage — cooldown', () {
-    test('suppresses a same-class repeat within the cooldown window', () {
+    test(
+        'suppresses a same-class-and-severity repeat within the cooldown '
+        'window', () {
       final service = FeedbackService();
       final t0 = DateTime(2026, 1, 1, 12, 0, 0);
 
-      final first = service.decideMessage('left', t0);
+      final first = service.decideMessage('left', mild, t0);
       expect(first, isNotNull);
 
-      final second = service.decideMessage('left', t0.add(const Duration(seconds: 1)));
+      final second = service.decideMessage(
+          'left', mild, t0.add(const Duration(seconds: 1)));
       expect(second, isNull);
     });
 
@@ -118,14 +136,34 @@ void main() {
       final service = FeedbackService();
       final t0 = DateTime(2026, 1, 1, 12, 0, 0);
 
-      final first = service.decideMessage('left', t0);
+      final first = service.decideMessage('left', mild, t0);
       expect(first, isNotNull);
 
       // Cooldown check is `< _cooldownSeconds` (3), so exactly 3 seconds
       // later must no longer be suppressed.
-      final second = service.decideMessage('left', t0.add(const Duration(seconds: 3)));
+      final second = service.decideMessage(
+          'left', mild, t0.add(const Duration(seconds: 3)));
       expect(second, isNotNull);
-      expect(second, leftMessage);
+      expect(second, leftMild);
+    });
+
+    // T63: 강도가 바뀌면(약함<->심함) 방향이 그대로여도 쿨다운을 무시하고
+    // 즉시 재발화한다 — 갑자기 심해진 이탈을 3초 동안 못 알리면 안 된다.
+    test(
+        'bypasses cooldown immediately when severity changes for the '
+        'same class', () {
+      final service = FeedbackService();
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+
+      final first = service.decideMessage('left', mild, t0);
+      expect(first, leftMild);
+
+      final second = service.decideMessage(
+        'left',
+        severe,
+        t0.add(const Duration(milliseconds: 1)),
+      );
+      expect(second, leftSevere);
     });
   });
 
@@ -134,30 +172,168 @@ void main() {
       final service = FeedbackService();
       final t0 = DateTime(2026, 1, 1, 12, 0, 0);
 
-      final first = service.decideMessage('left', t0);
+      final first = service.decideMessage('left', mild, t0);
       expect(first, isNotNull);
 
       // Well within what would be the "left" cooldown window, but the
       // class changed to "right" — cooldown is per-class, not global.
-      final second = service.decideMessage('right', t0.add(const Duration(milliseconds: 1)));
+      final second = service.decideMessage(
+        'right',
+        mild,
+        t0.add(const Duration(milliseconds: 1)),
+      );
       expect(second, isNotNull);
-      expect(second, rightMessage);
+      expect(second, rightMild);
     });
   });
 
   group('FeedbackService.decideMessage — message content', () {
-    test('returns the exact left-deviation Korean message', () {
+    test('returns the exact left-deviation Korean messages (mild/severe)', () {
       final service = FeedbackService();
-      final message = service.decideMessage('left', DateTime(2026, 1, 1));
 
-      expect(message, '오른쪽으로 조금');
+      expect(
+        service.decideMessage('left', mild, DateTime(2026, 1, 1)),
+        '오른쪽으로 이동하세요',
+      );
+      expect(
+        service.decideMessage('left', severe, DateTime(2026, 1, 1, 0, 0, 5)),
+        '즉시 오른쪽으로 이동하세요',
+      );
     });
 
-    test('returns the exact right-deviation Korean message', () {
+    test('returns the exact right-deviation Korean messages (mild/severe)', () {
       final service = FeedbackService();
-      final message = service.decideMessage('right', DateTime(2026, 1, 1));
 
-      expect(message, '왼쪽으로 조금');
+      expect(
+        service.decideMessage('right', mild, DateTime(2026, 1, 1)),
+        '왼쪽으로 이동하세요',
+      );
+      expect(
+        service.decideMessage('right', severe, DateTime(2026, 1, 1, 0, 0, 5)),
+        rightSevere,
+      );
+    });
+
+    // T63: confidence == deviationSeverityThreshold 정확히 그 값은 심함으로
+    // 친다(>=, > 아님) — Classifier.deviationSeverityThreshold 문서와 일치.
+    test('treats confidence exactly at the threshold as severe', () {
+      final service = FeedbackService();
+      final message = service.decideMessage('left', 0.80, DateTime(2026, 1, 1));
+
+      expect(message, leftSevere);
+    });
+  });
+
+  // T63: 구간 전이 — 반복 경고가 아니라 1회성 사실. decidePhaseMessage는
+  // "직전 클래스"를 인자로 받는 순수 함수라, 시간 흐름을 시뮬레이션하지
+  // 않고도 모든 전이 조합을 테스트할 수 있다.
+  group('FeedbackService.decidePhaseMessage — 구간 전이 (T63)', () {
+    test('approach -> front/left/right는 진입 안내를 낸다', () {
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+
+      for (final entering in ['front', 'left', 'right']) {
+        final s = FeedbackService();
+        expect(
+          s.decidePhaseMessage('approach', entering, t0),
+          '횡단보도에 진입했습니다.',
+          reason: 'approach -> $entering',
+        );
+      }
+    });
+
+    test('front/left/right -> none은 완료 안내를 낸다', () {
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+
+      for (final crossing in ['front', 'left', 'right']) {
+        final s = FeedbackService();
+        expect(
+          s.decidePhaseMessage(crossing, 'none', t0),
+          '횡단보도를 건넜습니다.',
+          reason: '$crossing -> none',
+        );
+      }
+    });
+
+    test('그 외 전이는 안내하지 않는다', () {
+      final service = FeedbackService();
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+
+      expect(service.decidePhaseMessage('none', 'approach', t0), isNull);
+      expect(service.decidePhaseMessage('front', 'left', t0), isNull);
+      expect(service.decidePhaseMessage('left', 'right', t0), isNull);
+      expect(
+        service.decidePhaseMessage('', 'front', t0),
+        isNull,
+        reason: '콜드 스타트(직전 클래스 없음)는 진입으로 보지 않는다',
+      );
+    });
+
+    test('같은 전이가 3초 안에 반복되면(떨림) 억제한다', () {
+      final service = FeedbackService();
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+
+      final first = service.decidePhaseMessage('approach', 'front', t0);
+      expect(first, isNotNull);
+
+      final flicker = service.decidePhaseMessage(
+        'approach',
+        'front',
+        t0.add(const Duration(seconds: 2)),
+      );
+      expect(flicker, isNull);
+
+      final after = service.decidePhaseMessage(
+        'approach',
+        'front',
+        t0.add(const Duration(seconds: 3)),
+      );
+      expect(after, isNotNull);
+    });
+  });
+
+  // T63: 이탈에서 회복했을 때만 1회 발화. 처음부터 똑바로 가는 경우
+  // (previousClass가 'left'/'right'가 아님)는 항상 null이어야 한다.
+  group('FeedbackService.decideRecoveryMessage — 회복 안내 (T63)', () {
+    test('left/right -> front에서만 발화한다', () {
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+
+      final fromLeft = FeedbackService();
+      expect(fromLeft.decideRecoveryMessage('left', 'front', t0), '직진하세요');
+
+      final fromRight = FeedbackService();
+      expect(fromRight.decideRecoveryMessage('right', 'front', t0), '직진하세요');
+    });
+
+    test('처음부터 front였다면 발화하지 않는다', () {
+      final service = FeedbackService();
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+
+      expect(service.decideRecoveryMessage('front', 'front', t0), isNull);
+      expect(service.decideRecoveryMessage('', 'front', t0), isNull);
+      expect(service.decideRecoveryMessage('approach', 'front', t0), isNull);
+    });
+
+    test('front가 아닌 상태로의 전이는 발화하지 않는다', () {
+      final service = FeedbackService();
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+
+      expect(service.decideRecoveryMessage('left', 'right', t0), isNull);
+      expect(service.decideRecoveryMessage('left', 'none', t0), isNull);
+    });
+
+    test('짧은 시간 안의 반복(떨림)은 억제한다', () {
+      final service = FeedbackService();
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+
+      final first = service.decideRecoveryMessage('left', 'front', t0);
+      expect(first, isNotNull);
+
+      final flicker = service.decideRecoveryMessage(
+        'left',
+        'front',
+        t0.add(const Duration(seconds: 1)),
+      );
+      expect(flicker, isNull);
     });
   });
 
@@ -173,7 +349,8 @@ void main() {
   // race — same code path, called directly instead of through the plugin
   // gate.
   group('FeedbackService — isVibrating race guard', () {
-    test('a single activation resets isVibrating to false after the '
+    test(
+        'a single activation resets isVibrating to false after the '
         'vibration duration', () async {
       final service = FeedbackService();
 
@@ -205,8 +382,7 @@ void main() {
         expect(
           service.isVibrating.value,
           isTrue,
-          reason:
-              'the first activation\'s timer must have been cancelled by '
+          reason: 'the first activation\'s timer must have been cancelled by '
               'the second activateVibrationIndicator() call',
         );
 
@@ -218,7 +394,8 @@ void main() {
   });
 
   group('FeedbackService — isSpeaking race guard', () {
-    test('finishSpeechGeneration resets isSpeaking when it is the current '
+    test(
+        'finishSpeechGeneration resets isSpeaking when it is the current '
         'generation', () {
       final service = FeedbackService();
 
@@ -248,8 +425,7 @@ void main() {
         expect(
           service.isSpeaking.value,
           isTrue,
-          reason:
-              'a stale handler for an older generation must not reset a '
+          reason: 'a stale handler for an older generation must not reset a '
               'newer, still-active speech',
         );
 
@@ -271,7 +447,8 @@ void main() {
       expect(service.vibrationDurationMs, 500);
     });
 
-    test('updateVibrationDuration changes vibrationDurationMs immediately '
+    test(
+        'updateVibrationDuration changes vibrationDurationMs immediately '
         'without touching any platform channel', () {
       final service = FeedbackService();
 
@@ -296,7 +473,7 @@ void main() {
         final t0 = DateTime(2026, 1, 1, 12, 0, 0);
 
         // Before switching: Korean (default).
-        expect(service.decideMessage('left', t0), leftMessage);
+        expect(service.decideMessage('left', mild, t0), leftMild);
 
         await service.updateLanguage(AppLanguage.en);
         expect(service.language, AppLanguage.en);
@@ -305,11 +482,12 @@ void main() {
         // is reachable immediately after the prior Korean alert above.
         final englishMessage = service.decideMessage(
           'right',
+          mild,
           t0.add(const Duration(milliseconds: 1)),
         );
         expect(
           englishMessage,
-          AppStrings.of(AppLanguage.en).rightDeviationMessage,
+          AppStrings.of(AppLanguage.en).rightDeviationMessageMild,
         );
       },
     );
