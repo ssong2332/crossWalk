@@ -12,6 +12,7 @@
 // source under the pub cache (see each mock's comment for the exact file),
 // not guessed — matching this repo's established verification discipline
 // (see docs/Tasks.md T24/T25 notes).
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -207,97 +208,102 @@ void main() {
     );
   });
 
-  // T41: direction-guidance corridor overlay + peripheral vignette + glass
-  // HUD. `Classifier.processFrame()` never runs in these widget tests (no
-  // camera image stream is fed in), so front/left/right guidance-color
-  // transitions themselves are covered by the plain-Dart
-  // GuidanceCorridorPainter unit tests below instead. What IS verifiable at
-  // the widget level from the existing error-path setup is: (a) the
-  // guidance overlay/vignette are correctly hidden while `_hasError` is
-  // true (per `_showGuidance`'s doc comment in camera_screen.dart), and (b)
-  // — updated for the Claude Design import — the bottom glass-HUD tray is
-  // now hidden entirely during `_hasError` (replaced by the dedicated
-  // full-screen error card), so `BackdropFilter` should be ABSENT in that
-  // state; it is still present in the normal (non-error) loading state.
-  group('CameraScreen — T41 guidance overlay / glass HUD', () {
-    Finder guidancePainterFinder() => find.byWidgetPredicate(
+  // Claude Design 1a: 카메라 프리뷰와 유리(BackdropFilter) HUD, 그리고 코리도
+  // 오버레이가 전부 제거됐다. 화면은 이제 단색 배경 위의 계기판이고, 상태는
+  // `StateFieldPainter`가 **형태와 위치**로 그린다.
+  //
+  // 이 위젯 테스트들에서 `Classifier.processFrame()`은 절대 실행되지 않으므로
+  // (카메라 이미지 스트림을 넣지 않는다) 상태 전환 자체는 아래 순수 Dart
+  // 페인터 테스트로 덮는다. 위젯 수준에서 검증 가능한 것은 오류 상태에서
+  // 계기판이 사라지고 전용 오류 카드가 나온다는 것이다.
+  group('CameraScreen — 상태 필드 / 프리뷰 제거', () {
+    Finder stateFieldFinder() => find.byWidgetPredicate(
           (widget) =>
-              widget is CustomPaint &&
-              widget.painter is GuidanceCorridorPainter,
+              widget is CustomPaint && widget.painter is StateFieldPainter,
         );
 
     testWidgets(
-      'hides the guidance corridor overlay while _hasError is true',
+      '오류 상태에서는 상태 필드 대신 오류 카드를 보여준다',
       (tester) async {
         mockPermissionHandler(deniedStatusValue);
 
         await tester.pumpWidget(const MaterialApp(home: CameraScreen()));
         await tester.pumpAndSettle();
 
-        expect(guidancePainterFinder(), findsNothing);
-      },
-    );
-
-    testWidgets(
-      'hides the blurred glass HUD (BackdropFilter) in the error state, '
-      'showing the dedicated error card instead',
-      (tester) async {
-        mockPermissionHandler(deniedStatusValue);
-
-        await tester.pumpWidget(const MaterialApp(home: CameraScreen()));
-        await tester.pumpAndSettle();
-
-        expect(find.byType(BackdropFilter), findsNothing);
+        expect(stateFieldFinder(), findsNothing);
         expect(errorCardFinder(), findsOneWidget);
       },
     );
 
     testWidgets(
-      'shows the blurred glass HUD (BackdropFilter) while loading '
-      '(non-error state)',
+      '유리(BackdropFilter) HUD는 어느 상태에서도 더 이상 존재하지 않는다',
       (tester) async {
-        // No permission mock response configured -> the permission request
-        // future never resolves within this test, so CameraScreen stays in
-        // its initial (_isLoading == true, _hasError == false) state.
+        // 권한 응답을 설정하지 않으면 CameraScreen이 초기 로딩 상태
+        // (_isLoading == true, _hasError == false)에 머문다.
         await tester.pumpWidget(const MaterialApp(home: CameraScreen()));
         await tester.pump();
 
-        expect(find.byType(BackdropFilter), findsOneWidget);
+        expect(find.byType(BackdropFilter), findsNothing);
+      },
+    );
+
+    testWidgets(
+      '카메라 프리뷰를 렌더링하지 않는다 — 배경이 매 프레임 바뀌면 대비를 '
+      '보장할 수 없기 때문',
+      (tester) async {
+        mockPermissionHandler(deniedStatusValue);
+
+        await tester.pumpWidget(const MaterialApp(home: CameraScreen()));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(CameraPreview), findsNothing);
       },
     );
   });
 
-  // T41: GuidanceCorridorPainter is a plain CustomPainter with no
-  // widget-tree dependency, so its `shouldRepaint` contract (the thing that
-  // actually drives the animated per-frame chevron redraw) can be tested
-  // directly without pumping a widget tree or mocking the classifier/camera
-  // pipeline.
-  group('GuidanceCorridorPainter — shouldRepaint', () {
-    test('repaints when curveAmount changes (e.g. front -> left)', () {
+  // StateFieldPainter는 위젯 트리에 의존하지 않는 순수 CustomPainter이므로
+  // 다시 그릴 조건을 직접 검증할 수 있다.
+  group('StateFieldPainter — shouldRepaint', () {
+    test('상태가 바뀌면 다시 그린다 (front -> left)', () {
       const oldPainter =
-          GuidanceCorridorPainter(curveAmount: 0.0, color: Colors.green);
+          StateFieldPainter(state: 'front', color: Color(0xFFA8CDE8));
       const newPainter =
-          GuidanceCorridorPainter(curveAmount: -1.0, color: Colors.green);
+          StateFieldPainter(state: 'left', color: Color(0xFFF2B14A));
 
       expect(newPainter.shouldRepaint(oldPainter), isTrue);
     });
 
-    test('repaints when color changes (e.g. front-green -> right-orange)', () {
+    test('색만 바뀌어도 다시 그린다', () {
       const oldPainter =
-          GuidanceCorridorPainter(curveAmount: 0.0, color: Colors.green);
+          StateFieldPainter(state: 'front', color: Color(0xFFA8CDE8));
       const newPainter =
-          GuidanceCorridorPainter(curveAmount: 0.0, color: Colors.orange);
+          StateFieldPainter(state: 'front', color: Color(0xFFF2B14A));
 
       expect(newPainter.shouldRepaint(oldPainter), isTrue);
     });
 
-    test('does not repaint when curveAmount and color are unchanged', () {
+    test('상태와 색이 모두 같으면 다시 그리지 않는다', () {
       const oldPainter =
-          GuidanceCorridorPainter(curveAmount: 1.0, color: Colors.orange);
+          StateFieldPainter(state: 'right', color: Color(0xFFF2B14A));
       const newPainter =
-          GuidanceCorridorPainter(curveAmount: 1.0, color: Colors.orange);
+          StateFieldPainter(state: 'right', color: Color(0xFFF2B14A));
 
       expect(newPainter.shouldRepaint(oldPainter), isFalse);
     });
+
+    test(
+      'left와 right는 같은 색을 쓴다 — 방향은 색이 아니라 형태와 위치로 '
+      '전달되므로 색각이상에서도 구분된다',
+      () {
+        const left =
+            StateFieldPainter(state: 'left', color: Color(0xFFF2B14A));
+        const right =
+            StateFieldPainter(state: 'right', color: Color(0xFFF2B14A));
+
+        expect(left.color, equals(right.color));
+        // 같은 색이지만 상태가 다르므로 다시 그려야 한다 (형태·위치가 다름).
+        expect(right.shouldRepaint(left), isTrue);
+      },
+    );
   });
 }

@@ -58,6 +58,15 @@ class AppStrings {
   // 보이는 상태)의 화면 표시용 라벨.
   final String labelApproach;
 
+  // Claude Design 1d/1f: 무판정은 6번째 상태다. 전체의 약 6%로 실제로 자주
+  // 발생하며, 숨기면 "모르는 것을 아는 척"이 된다.
+  final String labelNoCall;
+  final String noCallBody;
+
+  // Claude Design 1f: 화면 진입 시 1회 낭독. 이 앱이 무엇이고 안내가 어느
+  // 채널로 나가는지를 먼저 알린다.
+  final String cameraEntryAnnouncement;
+
   final String cameraPermissionRequiredLabel;
   final String cameraPermissionRequiredSettingsLabel;
   final String cameraPermissionRequiredAnnouncement;
@@ -177,6 +186,9 @@ class AppStrings {
     required this.labelRight,
     required this.labelNone,
     required this.labelApproach,
+    required this.labelNoCall,
+    required this.noCallBody,
+    required this.cameraEntryAnnouncement,
     required this.cameraPermissionRequiredLabel,
     required this.cameraPermissionRequiredSettingsLabel,
     required this.cameraPermissionRequiredAnnouncement,
@@ -238,11 +250,14 @@ class AppStrings {
     loadingModel: '모델 로딩 중...',
     connectingCamera: '카메라 연결 중...',
     detecting: '감지 중...',
-    labelFront: '정상 진행',
-    labelLeft: '왼쪽 이탈',
-    labelRight: '오른쪽 이탈',
+    labelFront: '직진',
+    labelLeft: '왼쪽으로 틀어짐',
+    labelRight: '오른쪽으로 틀어짐',
     labelNone: '횡단보도 없음',
-    labelApproach: '횡단보도 앞',
+    labelApproach: '앞에 횡단보도',
+    labelNoCall: '판정 없음',
+    noCallBody: '확신이 낮습니다',
+    cameraEntryAnnouncement: '횡단보도 안내. 보조 도구입니다. 안내는 음성과 진동으로 나갑니다.',
     cameraPermissionRequiredLabel: '카메라 권한 필요',
     cameraPermissionRequiredSettingsLabel: '카메라 권한 필요 (설정 이동)',
     cameraPermissionRequiredAnnouncement: '카메라 권한이 필요합니다. 설정에서 허용해주세요.',
@@ -257,8 +272,8 @@ class AppStrings {
     retryButton: '다시 시도',
     openSettingsButton: '설정 열기',
     confidenceLabel: '신뢰도',
-    leftDeviationMessage: '왼쪽으로 이탈했습니다. 오른쪽으로 이동하세요',
-    rightDeviationMessage: '오른쪽으로 이탈했습니다. 왼쪽으로 이동하세요',
+    leftDeviationMessage: '오른쪽으로 조금',
+    rightDeviationMessage: '왼쪽으로 조금',
     voiceIndicatorLabel: '음성 안내',
     vibrationIndicatorLabel: '진동 알림',
     settingsButtonLabel: '설정',
@@ -293,17 +308,18 @@ class AppStrings {
     onboardingTtsNotice: '전체 내용을 음성으로 읽어드리고 있습니다',
     onboardingConfirmButton: '확인했습니다',
     cameraStateDescriptions: {
-      'front': '이대로 직진하세요',
-      'left': '오른쪽으로 방향을 조정하세요',
-      'right': '왼쪽으로 방향을 조정하세요',
-      'none': '카메라가 횡단보도를 인식하지 못했습니다',
+      // Claude Design 1d: 화살표(형태)는 항상 **가야 할 방향**, 문구는 틀어진
+      // 방향을 말한다. 여기 보조 문구는 화살표와 같은 편 — 가야 할 방향이다.
+      'front': '',
+      'left': '오른쪽으로',
+      'right': '왼쪽으로',
+      'none': '',
       // T51: `approach`는 `none`과 동일하게 침묵 처리되므로(feedback_service.dart
       // decideMessage) 이 문구는 TTS로 발화되지 않는다. 이 맵은 화면 표시용이며,
       // 다른 클래스와 형식을 맞추기 위해 항목을 둔다.
-      'approach': '앞에 횡단보도가 있습니다',
+      'approach': '',
     },
-    cameraGuidanceDisclaimer:
-        '방향 안내는 카메라 인식 결과를 기호로 표시한 것입니다. 실제 경계선이 아닙니다.',
+    cameraGuidanceDisclaimer: '흰지팡이나 안내견을 대신하지 않습니다.',
     warnLowLightTitle: '조도가 낮습니다',
     warnLowLightBody: '인식 정확도가 낮아질 수 있어요',
     warnTiltTitle: '거치 각도를 확인하세요',
@@ -320,11 +336,14 @@ class AppStrings {
     loadingModel: 'Loading model...',
     connectingCamera: 'Connecting camera...',
     detecting: 'Detecting...',
-    labelFront: 'On track',
-    labelLeft: 'Drifted left',
-    labelRight: 'Drifted right',
+    labelFront: 'Straight',
+    labelLeft: 'Veering left',
+    labelRight: 'Veering right',
     labelNone: 'No crosswalk detected',
     labelApproach: 'Crosswalk ahead',
+    labelNoCall: 'No call',
+    noCallBody: 'Confidence is low',
+    cameraEntryAnnouncement: 'Crosswalk Guide. This is an assistive tool. Guidance comes through voice and vibration.',
     cameraPermissionRequiredLabel: 'Camera permission required',
     cameraPermissionRequiredSettingsLabel:
         'Camera permission required (open settings)',
@@ -343,8 +362,8 @@ class AppStrings {
     retryButton: 'Retry',
     openSettingsButton: 'Open settings',
     confidenceLabel: 'Confidence',
-    leftDeviationMessage: 'You have drifted left. Move to the right',
-    rightDeviationMessage: 'You have drifted right. Move to the left',
+    leftDeviationMessage: 'A little to the right',
+    rightDeviationMessage: 'A little to the left',
     voiceIndicatorLabel: 'Voice guidance',
     vibrationIndicatorLabel: 'Vibration alert',
     settingsButtonLabel: 'Settings',
@@ -384,18 +403,20 @@ class AppStrings {
     onboardingTtsNotice: 'Reading the full notice aloud',
     onboardingConfirmButton: 'I Understand',
     cameraStateDescriptions: {
-      'front': 'Continue straight',
-      'left': 'Adjust to your right',
-      'right': 'Adjust to your left',
-      'none': "Camera can't detect a crosswalk",
+      // Claude Design 1d: the arrow (shape) always points where to GO;
+      // the headline names where the user has veered. This sub-line matches
+      // the arrow — it is the direction to go.
+      'front': '',
+      'left': 'To the right',
+      'right': 'To the left',
+      'none': '',
       // T51: `approach` is silenced exactly like `none` (see
       // feedback_service.dart decideMessage), so this string is never spoken.
       // It exists for on-screen display and parity with the other classes.
-      'approach': 'A crosswalk is ahead',
+      'approach': '',
     },
     cameraGuidanceDisclaimer:
-        'Direction cues are symbolic, based on camera classification — '
-        'not a drawn crosswalk boundary.',
+        'This does not replace a white cane or a guide dog.',
     warnLowLightTitle: 'Low light detected',
     warnLowLightBody: 'Detection accuracy may drop',
     warnTiltTitle: 'Check mount angle',
