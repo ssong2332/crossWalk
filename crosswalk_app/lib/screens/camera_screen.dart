@@ -1,4 +1,4 @@
-import 'dart:ui' as ui;
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -59,6 +59,19 @@ class _CameraScreenState extends State<CameraScreen>
 
   late String _statusLabel;
   double _confidence = 0.0;
+
+  // Claude Design 1d: 무판정은 6번째 상태다(전체의 약 6%). 이전 구현은
+  // `processFrame`이 null을 돌려주면 **아무것도 하지 않아** 직전 상태가 화면에
+  // 그대로 남았다 — 모르는 것을 아는 척하는 셈이었다.
+  //
+  // `processFrame`은 스로틀로 건너뛴 프레임에서도 null을 돌려주므로 단일
+  // null만으로는 "임계값 미달"과 구분할 수 없다. 그래서 **지속 시간**으로
+  // 판단한다: 마지막 성공 판정 이후 3초가 지나면 무판정으로 표시한다.
+  // 3초는 디자인 1f의 polite live region 낭독 조건과 같은 값이다.
+  static const _noCallAfter = Duration(seconds: 3);
+  DateTime? _lastResultAt;
+  bool _noCall = false;
+  Timer? _noCallTicker;
   bool _isProcessing = false;
   bool _hasError = false;
   bool _isInitializing = false;
@@ -72,30 +85,38 @@ class _CameraScreenState extends State<CameraScreen>
   // controller that no longer exists.
   bool _torchEnabled = false;
 
-  // T38: signal palette matching real pedestrian-crossing signal colors
-  // (approved design), replacing the previous arbitrary Material defaults.
-  static const _colorFront = Color(0xFF35C46A);
-  static const _colorLeft = Color(0xFFFF5A5F);
-  static const _colorRight = Color(0xFFFF9F40);
-  // Non-status interactive elements (buttons, progress indicators, etc.).
-  static const _colorAccent = Color(0xFF3AA0FF);
-  // T42: 중성 회청색 — "이탈도 정상도 아닌, 횡단보도 자체가 없음"을 나타내는 색.
-  static const _colorNone = Color(0xFF8A94A6);
-  // T51: `approach`(인도 위, 앞에 진입할 횡단보도가 보임) 전용 색.
-  // 의도적으로 front(초록)/left(빨강)/right(주황) 어디에도 가깝지 않은 색을
-  // 골랐다 — approach는 "횡단보도 위" 상태가 아니므로 진행/이탈 신호색을
-  // 재사용하면 상태를 오해하게 만든다. _colorAccent(#3AA0FF)·
-  // _colorWarning(#FFD166)·_colorNone(#8A94A6)과도 색상이 겹치지 않는다.
-  // 승인된 디자인 팔레트에 없던 값이므로 디자인 검토 대상임.
-  static const _colorApproach = Color(0xFF9B8CFF);
-  // Claude Design import: dark navy for text on the accent-colored CTA
-  // (contrast spec §1 — white-on-accent measures well under WCAG AA;
-  // #08182A on #3AA0FF measures 6.49:1).
+  // Claude Design "Crosswalk Guide" 1e 팔레트 (Industry 디자인 시스템 기반).
+  //
+  // 이전 팔레트는 front=녹색 / left=빨강 / right=주황이었다. 빨강과 주황의
+  // 상호 대비가 1.50:1이라 적록색약(남성 약 8%)에게 **좌우가 같은 색**으로
+  // 보였다 — 안전상 절대 헷갈리면 안 되는 두 방향이 그랬다.
+  //
+  // 새 팔레트는 스틸(청)–앰버(황) 축 하나만 쓴다. 이 축은 protan/deutan/tritan
+  // 세 유형 모두에서 명도차가 유지된다. **좌·우에 같은 색(앰버)을 쓰고**,
+  // 방향은 화살표(형태) · 좌우 정렬(위치) · 문구(텍스트) 세 겹으로 전달한다.
+  // 색이 전부 사라져도 형태와 위치만으로 여섯 상태가 구분되어야 한다.
+  //
+  // 배경 #0E1013 대비 (계산값): 본문 15.8:1 / 보조 7.4:1 / 스틸 9.9:1 /
+  // 앰버 9.6:1 / 무판정 윤곽 11.6:1.
+  static const _colorBg = Color(0xFF0E1013);
+  static const _colorSurface = Color(0xFF171A1D);
+  static const _colorText = Color(0xFFF1F3F4);
+  static const _colorTextDim = Color(0xFFA9B0B6);
+  /// 정렬(front/approach) · 크롬 공통색.
+  static const _colorSteel = Color(0xFFA8CDE8);
+  /// 이탈(left/right) 공통색. **방향을 구분하지 않는다** — 종류만 말한다.
+  static const _colorAmber = Color(0xFFF2B14A);
+  /// 무판정 윤곽.
+  static const _colorNoCall = Color(0xFFCBD1D6);
+  static const _colorAccent = _colorSteel;
+  static const _colorNone = Color(0xFFA9B0B6);
+  static const _colorApproach = _colorSteel;
+  static const _colorFront = _colorSteel;
+  static const _colorLeft = _colorAmber;
+  static const _colorRight = _colorAmber;
+  /// 스틸 배경 위 텍스트 (CTA).
   static const _colorAccentOnText = Color(0xFF08182A);
-  // Claude Design import: warning-banner color for low-light/tilt notices
-  // (design spec §1 amber/warning token, chosen not to overlap hue with the
-  // 4 state colors above).
-  static const _colorWarning = Color(0xFFFFD166);
+  static const _colorWarning = _colorAmber;
 
   // Claude Design import: low-light / mount-tilt warning banners are new UI
   // components from the imported design. NEITHER is wired to a real sensor
@@ -124,15 +145,6 @@ class _CameraScreenState extends State<CameraScreen>
         'approach': _strings.labelApproach,
       };
 
-  static const _labelIcons = {
-    'front': Icons.check_circle,
-    'left': Icons.chevron_left,
-    'right': Icons.chevron_right,
-    'none': Icons.search_off,
-    // T51: approach는 "아직 횡단보도 위가 아니고 앞에 있다"는 상태이므로
-    // 진행/이탈 아이콘이 아니라 전방을 가리키는 중립 아이콘을 쓴다.
-    'approach': Icons.north,
-  };
 
   // T41: direction-guidance corridor overlay animation state.
   //
@@ -156,6 +168,14 @@ class _CameraScreenState extends State<CameraScreen>
   @override
   void initState() {
     super.initState();
+    // 무판정 감시: 마지막 성공 판정이 3초 이상 지나면 화면에 무판정을 표시한다.
+    _noCallTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+      final last = _lastResultAt;
+      final stale = last == null
+          ? false
+          : DateTime.now().difference(last) >= _noCallAfter;
+      if (stale != _noCall && mounted) setState(() => _noCall = stale);
+    });
     _feedback = widget.feedback ?? FeedbackService();
     _ownsFeedback = widget.feedback == null;
     _language = widget.initialLanguage ??
@@ -211,20 +231,6 @@ class _CameraScreenState extends State<CameraScreen>
       ..forward();
   }
 
-  // T41: the guidance corridor/vignette are only meaningful once the
-  // classifier is actively producing labels — hidden during loading/error
-  // so they never imply guidance where none exists yet.
-  //
-  // T51 HONESTY CONSTRAINT: `approach` means the user is still on the
-  // sidewalk with a crosswalk ahead — NOT on the crosswalk. A directional
-  // corridor there would imply left/right guidance along a crosswalk axis
-  // the user has not entered, so `approach` is hidden exactly like `none`.
-  static const _guidanceHiddenLabels = {'none', 'approach'};
-
-  bool get _showGuidance =>
-      !_hasError &&
-      !_isLoading &&
-      !_guidanceHiddenLabels.contains(_guidanceLabel);
 
   Future<void> _initCamera() async {
     if (_isInitializing) return;
@@ -379,6 +385,8 @@ class _CameraScreenState extends State<CameraScreen>
         setState(() {
           _statusLabel = _labelText[result.label] ?? result.label;
           _confidence = result.confidence;
+          _lastResultAt = DateTime.now();
+          _noCall = false;
         });
         // T41: drive the guidance corridor overlay from the same
         // classification result — see _updateGuidanceTarget's doc comment
@@ -403,6 +411,7 @@ class _CameraScreenState extends State<CameraScreen>
 
   @override
   void dispose() {
+    _noCallTicker?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     WakelockPlus.disable();
     _guidanceAnimController.dispose();
@@ -419,25 +428,10 @@ class _CameraScreenState extends State<CameraScreen>
     super.dispose();
   }
 
-  Color get _statusColor {
-    if (_hasError) return Colors.red;
-    if (_statusLabel == _strings.labelFront) return _colorFront;
-    if (_statusLabel == _strings.labelLeft) return _colorLeft;
-    if (_statusLabel == _strings.labelRight) return _colorRight;
-    if (_statusLabel == _strings.labelNone) return _colorNone;
-    if (_statusLabel == _strings.labelApproach) return _colorApproach;
-    return Colors.grey;
-  }
-
-  IconData? get _statusIcon {
-    if (_hasError) return Icons.error_outline;
-    if (_statusLabel == _strings.labelFront) return _labelIcons['front'];
-    if (_statusLabel == _strings.labelLeft) return _labelIcons['left'];
-    if (_statusLabel == _strings.labelRight) return _labelIcons['right'];
-    if (_statusLabel == _strings.labelNone) return _labelIcons['none'];
-    if (_statusLabel == _strings.labelApproach) return _labelIcons['approach'];
-    return null;
-  }
+  // Claude Design 1a: 상태 색·아이콘 판단은 `_fieldColor`/`StateFieldPainter`로
+  // 옮겼다. 이전 `_statusColor`/`_statusIcon`은 표시 문자열을 되짚어 상태를
+  // 역추론했는데(`_statusLabel == _strings.labelFront` 비교), 문구가 바뀌면
+  // 조용히 깨지는 구조였다. 지금은 분류 라벨(`_guidanceLabel`)을 직접 쓴다.
 
   bool get _isLoading =>
       !_hasError && (_controller == null || !_controller!.value.isInitialized);
@@ -645,345 +639,371 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
+  /// 현재 표시할 상태 키. 무판정이 최우선이다 — 모르는 것을 아는 척하지 않는다.
+  String get _fieldState {
+    if (_hasError) return 'error';
+    if (_isLoading) return 'loading';
+    if (_noCall) return 'nocall';
+    return _guidanceLabel;
+  }
+
+  Color get _fieldColor {
+    switch (_fieldState) {
+      case 'left':
+      case 'right':
+        return _colorAmber;
+      case 'front':
+      case 'approach':
+        return _colorSteel;
+      case 'nocall':
+        return _colorNoCall;
+      default:
+        return _colorNone;
+    }
+  }
+
+  /// 화면 제목 — 관측형 문장(Claude Design 1g의 C안). 화면은 보호자·심사자가
+  /// 읽으므로 단정하지 않는 관측 문장이 정직하다. 음성은 지시형(B안)으로
+  /// 따로 나간다("오른쪽으로 조금").
+  String get _fieldHeadline {
+    switch (_fieldState) {
+      case 'nocall':
+        return _strings.labelNoCall;
+      case 'loading':
+      case 'error':
+        return _statusLabel;
+      default:
+        return _labelText[_fieldState] ?? _statusLabel;
+    }
+  }
+
+  /// 보조 한 줄 — 화살표와 같은 편, 즉 **가야 할 방향**.
+  String get _fieldSubline {
+    if (_fieldState == 'nocall') return _strings.noCallBody;
+    return _strings.cameraStateDescriptions[_fieldState] ?? '';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final statusIcon = _statusIcon;
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          if (_controller != null && _controller!.value.isInitialized)
-            Positioned.fill(
-              child: CameraPreview(_controller!),
-            ),
+    // Claude Design 1l: 200%에서 살아남는 방법은 크기를 줄이는 것이 아니라
+    // **내용을 버리는 것**이다. 확대 시 확신도 같은 2차 정보는 화면에서 빠지고
+    // 음성으로만 남는다. 어떤 컨테이너에도 고정 높이를 주지 않는다.
+    final scale = MediaQuery.textScalerOf(context).scale(16) / 16;
+    final dense = scale > 1.5;
+    final color = _fieldColor;
 
-          // T41: status-colored peripheral vignette (edge glow). Purely
-          // decorative ambient feedback — it does not draw or imply any
-          // detected object, only tints the screen edges with the current
-          // classification result's color.
-          if (!_hasError && !_guidanceHiddenLabels.contains(_guidanceLabel))
-            Positioned.fill(
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: RadialGradient(
-                      center: Alignment.center,
-                      radius: 1.0,
-                      stops: const [0.55, 1.0],
-                      colors: [
-                        Colors.transparent,
-                        _statusColor.withValues(alpha: 0.35),
+    return Scaffold(
+      backgroundColor: _colorBg,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // ── 상단 크롬: 음성/진동 표시 + 설정 ──────────────────────────
+            if (!_hasError)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        ValueListenableBuilder<bool>(
+                          valueListenable: _feedback.isSpeaking,
+                          builder: (context, active, _) => _buildStatusPill(
+                            icon: Icons.volume_up,
+                            active: active,
+                            semanticLabel: _strings.voiceIndicatorLabel,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        ValueListenableBuilder<bool>(
+                          valueListenable: _feedback.isVibrating,
+                          builder: (context, active, _) => _buildStatusPill(
+                            icon: Icons.vibration,
+                            active: active,
+                            semanticLabel: _strings.vibrationIndicatorLabel,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        _buildSettingsButton(),
                       ],
                     ),
-                  ),
+                    if (_warnLowLight)
+                      _buildWarningBanner(
+                        title: _strings.warnLowLightTitle,
+                        body: _strings.warnLowLightBody,
+                      ),
+                    if (_warnTilt)
+                      _buildWarningBanner(
+                        title: _strings.warnTiltTitle,
+                        body: _strings.warnTiltBody,
+                      ),
+                  ],
                 ),
+              ),
+
+            // ── 상태 필드 ────────────────────────────────────────────────
+            //
+            // Claude Design 1a(권장안): **카메라 프리뷰를 렌더링하지 않는다.**
+            // 주 사용자는 화면을 보지 않고, 프리뷰를 깔면 배경이 매 프레임 바뀌어
+            // 그 위 텍스트의 대비를 보장할 수 없다(흰 줄무늬 위와 아스팔트 위가
+            // 다르다). 카메라 스트림은 그대로 돌아가며 분류에 쓰인다 —
+            // 화면에만 그리지 않는다.
+            //
+            // 형태 + 위치가 방향을 말하고, 색은 "이탈인가 아닌가"만 말한다.
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: _isLoading
+                    ? const Center(
+                        child: SizedBox(
+                          width: 32,
+                          height: 32,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 3,
+                            color: _colorSteel,
+                          ),
+                        ),
+                      )
+                    : RepaintBoundary(
+                        child: CustomPaint(
+                          size: Size.infinite,
+                          painter: StateFieldPainter(
+                            state: _fieldState,
+                            color: color,
+                          ),
+                        ),
+                      ),
               ),
             ),
 
-          // T41: direction-guidance corridor overlay.
-          //
-          // HONESTY CONSTRAINT: this is NOT a rendering of an actually
-          // detected crosswalk. `Classifier` outputs only a 3-class label
-          // (front/left/right) + confidence, with no coordinate/geometry
-          // data. `GuidanceCorridorPainter` converts that classification
-          // result into a directional guidance symbol (5 chained chevrons)
-          // — a guidance graphic, not object detection.
-          if (_showGuidance)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: AnimatedBuilder(
-                  animation: _guidanceAnimController,
-                  builder: (context, _) => CustomPaint(
-                    painter: GuidanceCorridorPainter(
-                      curveAmount:
-                          _guidanceCurveTween.evaluate(_guidanceAnimController),
-                      color: _guidanceColorTween
-                              .evaluate(_guidanceAnimController) ??
-                          _colorFront,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
-          // T38: top-right status pills (voice/vibration active) + settings
-          // entry button (gear icon).
-          if (!_hasError)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Row(
+            // ── 하단 판독부 ──────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Claude Design 1f: 상태 변화는 사용자가 찾아 들어가지 않아도
+                  // 자동으로 낭독되어야 한다. 확신도 숫자는 낭독하지 않는다 —
+                  // 걷는 중에 "0.71"은 판단을 돕지 않고 소음이 된다.
+                  Semantics(
+                    liveRegion: true,
+                    label: _fieldSubline.isEmpty
+                        ? _fieldHeadline
+                        : '$_fieldHeadline. $_fieldSubline',
+                    child: ExcludeSemantics(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          ValueListenableBuilder<bool>(
-                            valueListenable: _feedback.isSpeaking,
-                            builder: (context, active, _) => _buildStatusPill(
-                              icon: Icons.volume_up,
-                              active: active,
-                              semanticLabel: _strings.voiceIndicatorLabel,
+                          Text(
+                            _fieldHeadline,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: color,
+                              fontSize: 30,
+                              height: 1.15,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          ValueListenableBuilder<bool>(
-                            valueListenable: _feedback.isVibrating,
-                            builder: (context, active, _) => _buildStatusPill(
-                              icon: Icons.vibration,
-                              active: active,
-                              semanticLabel: _strings.vibrationIndicatorLabel,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          _buildSettingsButton(),
-                        ],
-                      ),
-                      if (_warnLowLight)
-                        _buildWarningBanner(
-                          title: _strings.warnLowLightTitle,
-                          body: _strings.warnLowLightBody,
-                        ),
-                      if (_warnTilt)
-                        _buildWarningBanner(
-                          title: _strings.warnTiltTitle,
-                          body: _strings.warnTiltBody,
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-
-          if (!_hasError)
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            // T41: glass-HUD refresh of the bottom status tray — same
-            // loading/status/retry logic as before, only the visuals
-            // changed (flat black tray -> blurred translucent "glass"
-            // panel, per approved design v2 §00).
-            child: SafeArea(
-              top: false,
-              child: RepaintBoundary(
-                child: ClipRect(
-                  child: BackdropFilter(
-                  filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.38),
-                      border: Border(
-                        top: BorderSide(
-                          color: Colors.white.withValues(alpha: 0.14),
-                          width: 1,
-                        ),
-                      ),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 24, horizontal: 20),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (_isLoading)
-                          const Padding(
-                            padding: EdgeInsets.only(bottom: 12),
-                            child: SizedBox(
-                              width: 28,
-                              height: 28,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 3,
-                                color: Colors.white70,
-                              ),
-                            ),
-                          ),
-                        // Claude Design import: live region so a screen
-                        // reader automatically announces state changes
-                        // ("정상 경로, 신뢰도 92%") without the user needing
-                        // to manually navigate to this element (spec §4,
-                        // "HUD 상태 영역").
-                        Semantics(
-                          liveRegion: true,
-                          label: _confidence > 0
-                              ? '$_statusLabel, ${_strings.confidenceLabel} '
-                                  '${(_confidence * 100).toStringAsFixed(0)}%'
-                              : _statusLabel,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (!_isLoading && statusIcon != null) ...[
-                                Icon(statusIcon, color: _statusColor, size: 32),
-                                const SizedBox(width: 8),
-                              ],
-                              Flexible(
-                                child: Text(
-                                  _statusLabel,
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: _statusColor,
-                                    fontSize: 26,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                          if (_fieldSubline.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(
+                                _fieldSubline,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: _colorText,
+                                  fontSize: 20,
+                                  height: 1.2,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
-                            ],
-                          ),
-                        ),
-                        // Claude Design import: secondary description line
-                        // under the state label (e.g. "이대로 직진하세요").
-                        if (!_isLoading &&
-                            _strings.cameraStateDescriptions
-                                .containsKey(_guidanceLabel))
-                          Padding(
-                            padding: const EdgeInsets.only(top: 2),
-                            child: Text(
-                              _strings.cameraStateDescriptions[_guidanceLabel]!,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                  color: Colors.white70, fontSize: 13),
                             ),
-                          ),
-                        if (_confidence > 0 && !_hasError)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 6),
-                            child: Text(
-                              '${_strings.confidenceLabel}: ${(_confidence * 100).toStringAsFixed(1)}%',
-                              style: const TextStyle(
-                                  color: Colors.white70, fontSize: 14),
-                            ),
-                          ),
-                        // T41: thin status-colored confidence line, in addition
-                        // to the existing text label above — a lightweight
-                        // visual read of the same confidence value.
-                        if (_confidence > 0 && !_hasError)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: LayoutBuilder(
-                              builder: (context, constraints) => Stack(
-                                children: [
-                                  Container(
-                                    height: 3,
-                                    width: constraints.maxWidth,
-                                    decoration: BoxDecoration(
-                                      color: Colors.white24,
-                                      borderRadius: BorderRadius.circular(2),
-                                    ),
-                                  ),
-                                  Container(
-                                    height: 3,
-                                    width: constraints.maxWidth *
-                                        _confidence.clamp(0.0, 1.0),
-                                    decoration: BoxDecoration(
-                                      color: _statusColor,
-                                      borderRadius: BorderRadius.circular(2),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        // Claude Design import: fixed reminder that the
-                        // direction cue is symbolic, not a drawn boundary —
-                        // extends T41's honesty constraint into user-facing
-                        // copy (spec §6).
-                        if (!_isLoading)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 10),
-                            child: Text(
-                              _strings.cameraGuidanceDisclaimer,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                  color: Colors.white38, fontSize: 11),
-                            ),
-                          ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
+                  // 2차 정보 — 200% 확대 시 화면에서 버린다 (음성으로만 남는다).
+                  if (!dense && _confidence > 0 && !_hasError) ...[
+                    Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: Text(
+                        '${_strings.confidenceLabel} '
+                        '${(_confidence * 100).toStringAsFixed(0)}%',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                            color: _colorTextDim, fontSize: 14),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) => Stack(
+                          children: [
+                            Container(
+                              height: 3,
+                              width: constraints.maxWidth,
+                              color: _colorSurface,
+                            ),
+                            Container(
+                              height: 3,
+                              width: constraints.maxWidth *
+                                  _confidence.clamp(0.0, 1.0),
+                              color: color,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                  Padding(
+                    padding: const EdgeInsets.only(top: 14),
+                    child: Text(
+                      _strings.cameraGuidanceDisclaimer,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          color: _colorTextDim, fontSize: 13, height: 1.4),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
-          ),
 
-          if (_hasError) _buildErrorCard(),
-        ],
+            if (_hasError) _buildErrorCard(),
+          ],
+        ),
       ),
     );
   }
 }
 
-/// Paints a "direction-guidance corridor" — 5 chained chevrons converted
-/// from the classifier's front/left/right label into a directional guide
-/// line (T41, docs/Tasks.md).
+/// 상태를 **형태와 위치**로 그린다 — 색이 전부 사라져도 여섯 상태가 구분되도록.
 ///
-/// HONESTY CONSTRAINT: `Classifier` is a 5-class classifier
-/// (none/approach/front/left/right + confidence) with NO coordinate or
-/// geometry output —
-/// it never detects an actual crosswalk's real-world position. This
-/// painter does NOT render a detected object; it converts a classification
-/// result into a directional guidance symbol only. 이 오버레이는 분류 결과
-/// 기반 안내 기호이며 실제 객체 감지가 아니다. All naming here intentionally
-/// uses "guidance", never "detection"/"detected"/"recognized".
-class GuidanceCorridorPainter extends CustomPainter {
-  const GuidanceCorridorPainter({
-    required this.curveAmount,
-    required this.color,
-  });
+/// 정직성 제약: `Classifier`는 좌표·기하 정보를 내지 않는다. 여기 그려지는
+/// 화살표는 실제로 감지된 횡단보도의 위치가 아니라 **분류 결과를 옮긴 안내
+/// 기호**다. 화살표는 항상 **가야 할 방향**을 가리키고, 문구가 틀어진 방향을
+/// 말한다 (Claude Design 1d).
+class StateFieldPainter extends CustomPainter {
+  const StateFieldPainter({required this.state, required this.color});
 
-  /// -1.0 (guidance curves left) .. 0.0 (straight) .. 1.0 (guidance curves
-  /// right). Derived purely from the classifier's label — NOT a measured
-  /// real-world angle of any physical feature.
-  final double curveAmount;
-
-  /// Current guidance color (interpolated between the T38 palette
-  /// constants as the classification label changes).
+  /// 'front' | 'left' | 'right' | 'approach' | 'none' | 'nocall' | 'error'
+  final String state;
   final Color color;
 
-  static const _chevronCount = 5;
+  static const _pi = 3.1415926535897932;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
+    final stroke = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 10
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..color = color;
+
+    final unit = size.shortestSide * 0.30;
+    switch (state) {
+      case 'front':
+        _arrow(canvas, stroke, Offset(size.width / 2, size.height / 2), unit,
+            -_pi / 2);
+        break;
+      case 'left':
+        // 왼쪽으로 틀어졌다 -> 가야 할 방향은 오른쪽. 위치도 우측 정렬.
+        _arrow(canvas, stroke, Offset(size.width * 0.70, size.height / 2), unit,
+            0);
+        break;
+      case 'right':
+        _arrow(canvas, stroke, Offset(size.width * 0.30, size.height / 2), unit,
+            _pi);
+        break;
+      case 'approach':
+        _thresholdBar(canvas, stroke, size, unit);
+        break;
+      case 'nocall':
+        _hatchedSquare(canvas, stroke, size, unit);
+        break;
+      default:
+        _dashedCircle(canvas, stroke, size, unit);
+    }
+  }
+
+  void _arrow(Canvas canvas, Paint p, Offset c, double unit, double rot) {
+    canvas.save();
+    canvas.translate(c.dx, c.dy);
+    canvas.rotate(rot);
+    canvas.drawLine(Offset(-unit, 0), Offset(unit, 0), p);
+    canvas.drawLine(Offset(unit, 0), Offset(unit - unit * 0.5, -unit * 0.5), p);
+    canvas.drawLine(Offset(unit, 0), Offset(unit - unit * 0.5, unit * 0.5), p);
+    canvas.restore();
+  }
+
+  /// 문턱 막대 — "여기서부터 횡단보도" (중앙 상단).
+  void _thresholdBar(Canvas canvas, Paint p, Size size, double unit) {
+    final y = size.height * 0.34;
+    final cx = size.width / 2;
+    canvas.drawLine(Offset(cx - unit, y), Offset(cx + unit, y), p);
+    final thin = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4
+      ..strokeCap = StrokeCap.round
+      ..color = p.color.withValues(alpha: 0.55);
+    for (var i = 1; i <= 3; i++) {
+      final yy = y + i * (unit * 0.32);
+      final w = unit * (1 - i * 0.2);
+      canvas.drawLine(Offset(cx - w, yy), Offset(cx + w, yy), thin);
+    }
+  }
+
+  /// 사선 해칭 사각 — "판정 없음". 채우지 않는다: 비어 있음을 보여준다.
+  void _hatchedSquare(Canvas canvas, Paint p, Size size, double unit) {
+    final r = Rect.fromCenter(
+      center: Offset(size.width / 2, size.height / 2),
+      width: unit * 1.8,
+      height: unit * 1.8,
+    );
+    final outline = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 6
+      ..color = p.color;
+    canvas.drawRect(r, outline);
+    canvas.save();
+    canvas.clipRect(r);
+    final hatch = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..color = p.color.withValues(alpha: 0.6);
+    for (var x = r.left - r.height; x < r.right + r.height; x += 16) {
+      canvas.drawLine(Offset(x, r.bottom), Offset(x + r.height, r.top), hatch);
+    }
+    canvas.restore();
+  }
+
+  /// 점선 원 — "횡단보도 없음".
+  void _dashedCircle(Canvas canvas, Paint p, Size size, double unit) {
+    final c = Offset(size.width / 2, size.height / 2);
+    final dash = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 6
       ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
-    final baseX = size.width / 2;
-    final bottomY = size.height * 0.82;
-    final topY = size.height * 0.38;
-    final chevronWidth = size.width * 0.16;
-    const chevronHeight = 22.0;
-
-    for (var i = 0; i < _chevronCount; i++) {
-      // t=0 is the chevron nearest the viewer (bottom), t=1 is the
-      // furthest (top) — purely a layout parameter, not a depth estimate.
-      final t = i / (_chevronCount - 1);
-      final y = bottomY - (bottomY - topY) * t;
-      final lateralOffset = curveAmount * (size.width * 0.28) * t;
-      final rotation = curveAmount * 0.5 * t;
-      final cx = baseX + lateralOffset;
-
-      final chevronPath = Path()
-        ..moveTo(-chevronWidth / 2, chevronHeight / 2)
-        ..lineTo(0, -chevronHeight / 2)
-        ..lineTo(chevronWidth / 2, chevronHeight / 2);
-
-      canvas.save();
-      canvas.translate(cx, y);
-      canvas.rotate(rotation);
-      paint.color = color.withValues(alpha: 0.9 - t * 0.5);
-      canvas.drawPath(chevronPath, paint);
-      canvas.restore();
+      ..color = p.color;
+    const segments = 16;
+    for (var i = 0; i < segments; i++) {
+      final start = (i * 2 * _pi) / segments;
+      canvas.drawArc(
+        Rect.fromCircle(center: c, radius: unit),
+        start,
+        (2 * _pi / segments) * 0.55,
+        false,
+        dash,
+      );
     }
   }
 
   @override
-  bool shouldRepaint(covariant GuidanceCorridorPainter oldDelegate) {
-    return oldDelegate.curveAmount != curveAmount || oldDelegate.color != color;
+  bool shouldRepaint(covariant StateFieldPainter oldDelegate) {
+    return oldDelegate.state != state || oldDelegate.color != color;
   }
 }

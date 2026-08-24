@@ -45,7 +45,7 @@ void main() {
   group('AppStrings.of', () {
     test('returns Korean strings for AppLanguage.ko', () {
       final strings = AppStrings.of(AppLanguage.ko);
-      expect(strings.labelFront, '정상 진행');
+      expect(strings.labelFront, '직진');
       // T51: new 5-class label.
       expect(strings.labelApproach, '횡단보도 앞');
       expect(strings.leftDeviationMessage, '왼쪽으로 이탈했습니다. 오른쪽으로 이동하세요');
@@ -54,7 +54,7 @@ void main() {
 
     test('returns English strings for AppLanguage.en', () {
       final strings = AppStrings.of(AppLanguage.en);
-      expect(strings.labelFront, 'On track');
+      expect(strings.labelFront, 'Straight');
       // T51: new 5-class label.
       expect(strings.labelApproach, 'Crosswalk ahead');
       expect(strings.leftDeviationMessage, 'You have drifted left. Move to the right');
