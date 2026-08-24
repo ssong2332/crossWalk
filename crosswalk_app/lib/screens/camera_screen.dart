@@ -85,10 +85,11 @@ class _CameraScreenState extends State<CameraScreen>
   // controller that no longer exists.
   bool _torchEnabled = false;
 
-  // T63: 배터리 절약 모드. 켜면(기본값) 화살표만 그리는 계기판만 표시하고,
-  // 끄면 카메라 프리뷰가 배경에 함께 보인다. 세션 한정 — 재시작 시
-  // 기본값(true)으로 돌아간다(다른 설정들과 동일한 영속성 정책).
-  bool _powerSaveMode = true;
+  // T65: 배터리 절약 모드. 켜면 화살표만 그리는 계기판만 표시하고, 끄면(기본값)
+  // 카메라 프리뷰가 배경에 함께 보인다. 사용자 명시 요청(2026-08-24)으로
+  // 기본값을 false로 변경 — 배터리 절약보다 "지금 보이는 화면"을 기본으로
+  // 우선한다. 세션 한정 — 재시작 시 이 기본값(false)으로 돌아간다.
+  bool _powerSaveMode = false;
 
   // Claude Design "Crosswalk Guide" 1e 팔레트 (Industry 디자인 시스템 기반).
   //
@@ -795,19 +796,16 @@ class _CameraScreenState extends State<CameraScreen>
     final reducedMotion = MediaQuery.of(context).disableAnimations;
     _syncPulseAnimation(reducedMotion);
 
-    // T63: 배터리 절약 모드가 꺼져 있으면 카메라 프리뷰를 배경에 보여준다.
-    // Claude Design 1a가 프리뷰를 없앤 이유(배경이 매 프레임 바뀌어 전경
-    // 텍스트의 대비를 보장할 수 없음)는 여전히 유효하다 — 완전히 해소할
-    // 수는 없고, 강한 스크림(불투명도 0.86)으로 **최악의 경우(순백색
-    // 프레임)에도 AA 기준(4.5:1)을 만족하도록 수학적으로 보장**한다.
-    // 계산: 텍스트 #F1F3F4(휘도 0.92) vs 스크림 후 최악 휘도
-    // (1-0.86)*1.0 + 0.86*L(#0E1013) ≈ 0.15 -> 대비 4.85:1.
-    // 대가는 실질적으로 프리뷰가 거의 안 보인다는 것이다 — 이것이 바로
-    // "라이브 영상 위에서 임의 대비를 보장하는 것은 사실상 불가능하다"는
-    // Claude Design 1a의 결론이 옳았음을 재확인해 준다. 그럼에도 이
-    // 옵션을 두는 이유는 사용자가 명시적으로 "기존처럼 카메라 환경을 볼 수
-    // 있게" 해달라고 요청했기 때문이며, 기본값(배터리 절약 모드 켜짐)에서는
-    // 이 트레이드오프 자체가 발생하지 않는다.
+    // T63/T65: 배터리 절약 모드가 꺼져 있으면(T65부터 기본값) 카메라 프리뷰를
+    // 배경에 보여준다. Claude Design 1a가 프리뷰를 없앤 이유(배경이 매 프레임
+    // 바뀌어 전경 텍스트의 대비를 보장할 수 없음)는 여전히 유효하다.
+    //
+    // T65(사용자 명시 요청, 2026-08-24 "화면이 너무 어두워"): 이전에는
+    // 화면 전체에 0.86 스크림을 깔아 텍스트 대비를 보장했는데, 그 결과 상태
+    // 필드(화살표) 영역까지 함께 어두워져 프리뷰가 거의 안 보였다. 지금은
+    // 텍스트가 실제로 놓이는 상단 칩/하단 판독부에만 각자 불투명 배경을 주고
+    // (상단 칩·경고 배너는 이미 자체 배경 보유), 화면 전체 스크림은 없앴다 —
+    // 상태 필드는 카메라 원본 밝기 그대로 보인다.
     final showPreview = !_powerSaveMode &&
         _controller != null &&
         _controller!.value.isInitialized;
@@ -817,14 +815,6 @@ class _CameraScreenState extends State<CameraScreen>
       body: Stack(
         children: [
           if (showPreview) Positioned.fill(child: _buildFullBleedPreview()),
-          if (showPreview)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: ColoredBox(
-                  color: _colorBg.withValues(alpha: 0.86),
-                ),
-              ),
-            ),
           // T64: 펄스를 화면 전체 높이로 옮겼다 — 상태 필드 영역에만 갇혀
           // 있던 초판은 화면 일부에서만 번져 잘린 사각형처럼 보였다.
           Positioned.fill(child: _buildEdgePulse(color, reducedMotion)),
@@ -916,10 +906,25 @@ class _CameraScreenState extends State<CameraScreen>
 
                 // ── 하단 판독부 ──────────────────────────────────────────────
                 // 오류 상태에서는 전용 오류 카드가 화면 전체를 채우므로 그리지 않는다.
+                //
+                // T65: 이 블록만 자체 배경(0.86)을 가진다 — 화면 전체 스크림을
+                // 없앤 대신, 실제 텍스트가 놓이는 이 영역에만 이전과 동일한
+                // 수학적 보장(계산: 텍스트 #F1F3F4(휘도 0.92) vs 스크림 후
+                // 최악 휘도(순백 프레임 가정) (1-0.86)*1.0 + 0.86*L(#0E1013)
+                // ≈ 0.15 -> 대비 4.85:1, AA 4.5:1 충족)을 남긴다.
                 if (!_hasError)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-                    child: Column(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: showPreview
+                            ? _colorBg.withValues(alpha: 0.86)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -1009,6 +1014,7 @@ class _CameraScreenState extends State<CameraScreen>
                           ),
                         ),
                       ],
+                      ),
                     ),
                   ),
 
