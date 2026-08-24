@@ -55,7 +55,7 @@ class StripeDirectionEstimator {
     int sampleStride = 4,
     double gradientThreshold = 24.0,
     double maxTiltDegrees = 60.0,
-    double minConfidence = 0.12,
+    double minConfidence = 0.2,
   }) {
     // 1도 단위 히스토그램, 인덱스 0..180 은 -90..+90도에 대응.
     final histogram = List<double>.filled(181, 0.0);
