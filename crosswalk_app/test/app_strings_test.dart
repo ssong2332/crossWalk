@@ -47,9 +47,9 @@ void main() {
       final strings = AppStrings.of(AppLanguage.ko);
       expect(strings.labelFront, '직진');
       // T51: new 5-class label.
-      expect(strings.labelApproach, '횡단보도 앞');
-      expect(strings.leftDeviationMessage, '왼쪽으로 이탈했습니다. 오른쪽으로 이동하세요');
-      expect(strings.rightDeviationMessage, '오른쪽으로 이탈했습니다. 왼쪽으로 이동하세요');
+      expect(strings.labelApproach, '앞에 횡단보도');
+      expect(strings.leftDeviationMessage, '오른쪽으로 조금');
+      expect(strings.rightDeviationMessage, '왼쪽으로 조금');
     });
 
     test('returns English strings for AppLanguage.en', () {
@@ -57,8 +57,8 @@ void main() {
       expect(strings.labelFront, 'Straight');
       // T51: new 5-class label.
       expect(strings.labelApproach, 'Crosswalk ahead');
-      expect(strings.leftDeviationMessage, 'You have drifted left. Move to the right');
-      expect(strings.rightDeviationMessage, 'You have drifted right. Move to the left');
+      expect(strings.leftDeviationMessage, 'A little to the right');
+      expect(strings.rightDeviationMessage, 'A little to the left');
     });
 
     // T40: the disclaimer copy must match the user-approved original

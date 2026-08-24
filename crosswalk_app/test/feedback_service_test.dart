@@ -18,8 +18,8 @@ import 'package:crosswalk_app/services/feedback_service.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  const leftMessage = '왼쪽으로 이탈했습니다. 오른쪽으로 이동하세요';
-  const rightMessage = '오른쪽으로 이탈했습니다. 왼쪽으로 이동하세요';
+  const leftMessage = '오른쪽으로 조금';
+  const rightMessage = '왼쪽으로 조금';
 
   // flutter_tts 4.2.5 (lib/flutter_tts.dart:330):
   // static const MethodChannel _channel = MethodChannel('flutter_tts');
@@ -150,14 +150,14 @@ void main() {
       final service = FeedbackService();
       final message = service.decideMessage('left', DateTime(2026, 1, 1));
 
-      expect(message, '왼쪽으로 이탈했습니다. 오른쪽으로 이동하세요');
+      expect(message, '오른쪽으로 조금');
     });
 
     test('returns the exact right-deviation Korean message', () {
       final service = FeedbackService();
       final message = service.decideMessage('right', DateTime(2026, 1, 1));
 
-      expect(message, '오른쪽으로 이탈했습니다. 왼쪽으로 이동하세요');
+      expect(message, '왼쪽으로 조금');
     });
   });
 
