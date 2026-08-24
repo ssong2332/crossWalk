@@ -261,6 +261,8 @@ T55의 헤드 분리로 이것이 수치로 확인됐다 — 방향 head 91.2% v
 - v1 runs offline on-device; online components may be added later (Open Q #4, ANSWERED 2026-07-17 — no longer a fixed fully-offline assumption).
 - Rear camera only (Open Q #14, ANSWERED 2026-07-17), chest-mounted (lanyard/chest-mount) facing the crosswalk ahead (Open Q #8, ANSWERED 2026-07-17). Frame-interpretation/preprocessing may need re-review against this posture — see T35.
 - Multilingual support required (Open Q #6, ANSWERED 2026-07-17) — the prior "Korean-only for v1" assumption is retired. Supported languages fixed (user, 2026-07-17) = 한국어 (Korean) + 영어 (English), two languages only. Concrete locale codes and translated strings are implementation-stage decisions (see T17/T34). Current code hardcodes ko-KR (see T34).
+- **이탈 "정도"는 측정값이 아니라 근사치다** (T63). `Classifier`는 좌표·기하 정보를 내지 않는 단일 프레임 분류기이므로 실제 이탈 각도/거리를 모른다. `deviationSeverityThreshold=0.80`은 left/right 확신도를 이탈 강도의 대용값으로 쓰는 **잠정값**이며, 실기기 보행 테스트로 재보정이 필요하다.
+- **배터리 절약 모드의 소모량 차이는 실측하지 않았다** (T63). 이 환경에 실기기 배터리 프로파일링 도구가 없다. 카메라 캡처는 분류를 위해 프리뷰 여부와 무관하게 항상 실행되므로, 프리뷰를 켰을 때의 한계비용은 "GPU가 매 프레임 카메라 텍스처를 합성하는 비용"이라고 공학적으로 추론했을 뿐 수치화하지 않았다.
 
 ## Risks
 | Risk | Impact | Mitigation |

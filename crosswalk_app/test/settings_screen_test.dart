@@ -36,6 +36,8 @@ void main() {
     required ValueChanged<AppLanguage> onLanguageChanged,
     bool torchEnabled = false,
     Future<void> Function(bool enabled)? onTorchChanged,
+    bool powerSaveMode = true,
+    ValueChanged<bool>? onPowerSaveModeChanged,
   }) {
     return MaterialApp(
       home: SettingsScreen(
@@ -44,6 +46,8 @@ void main() {
         onLanguageChanged: onLanguageChanged,
         torchEnabled: torchEnabled,
         onTorchChanged: onTorchChanged ?? (_) async {},
+        powerSaveMode: powerSaveMode,
+        onPowerSaveModeChanged: onPowerSaveModeChanged ?? (_) {},
       ),
     );
   }
@@ -68,21 +72,59 @@ void main() {
       expect(find.text('0.5'), findsOneWidget);
       expect(find.text('진동 세기'), findsOneWidget);
       expect(find.text('500ms'), findsOneWidget);
-      // Two SwitchListTiles now exist: the disabled screen-reader
-      // placeholder (T39) and the T37 torch toggle (enabled, off by
-      // default) — disambiguate by `onChanged`.
+      // T62: 세 개의 SwitchListTile이 있다 — 배터리 절약 모드(T62, 켜짐
+      // 기본값), 화면 읽기 프로그램 최적화(비활성, T39), 손전등(T37, 꺼짐
+      // 기본값). onChanged 유무만으로는 배터리 절약과 손전등이 둘 다
+      // 활성이라 구분이 안 되므로 제목 텍스트로 특정한다.
       final switchTiles = tester.widgetList<SwitchListTile>(
         find.byType(SwitchListTile),
       );
-      expect(switchTiles.length, 2);
+      expect(switchTiles.length, 3);
+
       final screenReaderTile =
           switchTiles.firstWhere((t) => t.onChanged == null);
       expect(screenReaderTile.value, isFalse);
       expect(screenReaderTile.onChanged, isNull);
 
-      final torchTile = switchTiles.firstWhere((t) => t.onChanged != null);
+      final powerSaveTile = tester.widget<SwitchListTile>(
+        find.widgetWithText(SwitchListTile, '배터리 절약 모드'),
+      );
+      expect(powerSaveTile.value, isTrue);
+
+      final torchTile = tester.widget<SwitchListTile>(
+        find.widgetWithText(SwitchListTile, '손전등 켜기'),
+      );
       expect(torchTile.value, isFalse);
     });
+  });
+
+  group('SettingsScreen — 배터리 절약 모드 토글 (T62)', () {
+    testWidgets(
+      '기본값이 켜짐이고, 끄면 onPowerSaveModeChanged(false)를 호출한다',
+      (tester) async {
+        final feedback = FeedbackService();
+        bool? toggledTo;
+
+        await tester.pumpWidget(buildSettingsScreen(
+          feedback: feedback,
+          language: AppLanguage.ko,
+          onLanguageChanged: (_) {},
+          powerSaveMode: true,
+          onPowerSaveModeChanged: (enabled) => toggledTo = enabled,
+        ));
+        await tester.pumpAndSettle();
+
+        final tile = tester.widget<SwitchListTile>(
+          find.widgetWithText(SwitchListTile, '배터리 절약 모드'),
+        );
+        expect(tile.value, isTrue);
+
+        await tester.tap(find.byWidget(tile));
+        await tester.pumpAndSettle();
+
+        expect(toggledTo, isFalse);
+      },
+    );
   });
 
   group('SettingsScreen — low-light torch toggle (T37)', () {
@@ -103,10 +145,9 @@ void main() {
 
         expect(find.text('손전등 켜기'), findsOneWidget);
 
-        final switchTiles = tester.widgetList<SwitchListTile>(
-          find.byType(SwitchListTile),
+        final torchTile = tester.widget<SwitchListTile>(
+          find.widgetWithText(SwitchListTile, '손전등 켜기'),
         );
-        final torchTile = switchTiles.firstWhere((t) => t.onChanged != null);
         expect(torchTile.value, isFalse);
 
         // Claude Design import: the new slow/fast + weak/strong sub-labels
@@ -172,7 +213,8 @@ void main() {
   });
 
   group('SettingsScreen — build identifier (T45)', () {
-    testWidgets('shows the default "dev" identifier when BUILD_SHA is not '
+    testWidgets(
+        'shows the default "dev" identifier when BUILD_SHA is not '
         'injected', (tester) async {
       final feedback = FeedbackService();
 
@@ -201,7 +243,8 @@ void main() {
   });
 
   group('SettingsScreen — sliders', () {
-    testWidgets('dragging the TTS-rate slider updates FeedbackService.speechRate',
+    testWidgets(
+        'dragging the TTS-rate slider updates FeedbackService.speechRate',
         (tester) async {
       final feedback = FeedbackService();
 

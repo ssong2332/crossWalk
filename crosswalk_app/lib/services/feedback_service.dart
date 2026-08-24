@@ -5,6 +5,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:vibration/vibration.dart';
 import '../localization/app_strings.dart';
 import 'audio_policy.dart';
+import 'classifier.dart';
 
 class FeedbackService {
   final FlutterTts _tts = FlutterTts();
@@ -19,6 +20,15 @@ class FeedbackService {
   final VibrationPolicy vibrationPolicy = VibrationPolicy();
   DateTime? _lastAlertTime;
   String? _lastAlertClass;
+  bool? _lastAlertSevere;
+
+  // T63: 매 alert() 호출마다(메시지가 실제로 나갔는지와 무관하게) 갱신되는
+  // "직전 판정 클래스". 구간 전이(진입/이탈 완료/복귀)를 감지하려면 발화
+  // 여부와 무관하게 진짜 이전 프레임의 클래스를 알아야 한다 — _lastAlertClass는
+  // 쿨다운에 걸려 갱신이 안 될 수 있어 이 목적에 쓸 수 없다.
+  String? _lastRawClass;
+  DateTime? _lastPhaseAt;
+  DateTime? _lastRecoveryAt;
 
   // T38 fix: guards against isSpeaking/isVibrating being reset by a stale
   // await/timer from an earlier alert() call. decideMessage() bypasses
@@ -103,25 +113,91 @@ class FeedbackService {
     await _tts.awaitSpeakCompletion(true);
   }
 
-  // 쿨다운/클래스 변경/전방(front) 무음 처리 결정 로직만 분리한 순수 함수.
-  // 실제 시각을 인자로 받아 결정론적으로 테스트 가능하도록 함.
+  // T63: 쿨다운 키가 (클래스, 강도) 쌍으로 바뀌었다 — 방향이 그대로여도
+  // 강도가 바뀌면(약함<->심함) 즉시 재발화한다. 강도는 이 분류기가 내지
+  // 못하는 실제 이탈량의 근사치일 뿐이다(Classifier.deviationSeverityThreshold
+  // 문서 참조).
   @visibleForTesting
-  String? decideMessage(String detectedClass, DateTime now) {
-    if (detectedClass == 'front' || detectedClass == 'none' || detectedClass == 'approach') return null;
+  String? decideMessage(String detectedClass, double confidence, DateTime now) {
+    if (detectedClass != 'left' && detectedClass != 'right') return null;
 
+    final severe = confidence >= Classifier.deviationSeverityThreshold;
     if (_lastAlertTime != null &&
         _lastAlertClass == detectedClass &&
+        _lastAlertSevere == severe &&
         now.difference(_lastAlertTime!).inSeconds < _cooldownSeconds) {
       return null;
     }
 
     _lastAlertTime = now;
     _lastAlertClass = detectedClass;
+    _lastAlertSevere = severe;
 
     final strings = AppStrings.of(_language);
-    return detectedClass == 'left'
-        ? strings.leftDeviationMessage
-        : strings.rightDeviationMessage;
+    if (detectedClass == 'left') {
+      return severe
+          ? strings.leftDeviationMessageSevere
+          : strings.leftDeviationMessageMild;
+    }
+    return severe
+        ? strings.rightDeviationMessageSevere
+        : strings.rightDeviationMessageMild;
+  }
+
+  // T63: 구간이 바뀌었다는 1회성 사실 안내. "왼쪽/오른쪽으로 이동하세요"처럼
+  // 반복되는 경고가 아니므로 decideMessage와 분리했고, 클래스가 실제로
+  // 바뀐 프레임에서만 값을 낸다 — 매 프레임 재확인하는 것이 아니다.
+  // 3초 재쿨다운은 판정이 approach<->front 사이에서 떨릴 때(flicker) 같은
+  // 안내가 반복 발화되는 것을 막기 위함이다.
+  @visibleForTesting
+  String? decidePhaseMessage(
+    String previousClass,
+    String detectedClass,
+    DateTime now,
+  ) {
+    final entering = previousClass == 'approach' &&
+        (detectedClass == 'front' ||
+            detectedClass == 'left' ||
+            detectedClass == 'right');
+    final exiting = (previousClass == 'front' ||
+            previousClass == 'left' ||
+            previousClass == 'right') &&
+        detectedClass == 'none';
+    if (!entering && !exiting) return null;
+
+    if (_lastPhaseAt != null &&
+        now.difference(_lastPhaseAt!).inSeconds < _cooldownSeconds) {
+      return null;
+    }
+    _lastPhaseAt = now;
+
+    final strings = AppStrings.of(_language);
+    return entering
+        ? strings.enteredCrosswalkMessage
+        : strings.crossedCrosswalkMessage;
+  }
+
+  // T63: 이탈(left/right)에서 정상(front)으로 돌아왔을 때만 1회 발화한다.
+  // 처음부터 똑바로 가고 있을 때는 front가 항상 무음이므로(decideMessage가
+  // front에는 반응하지 않음) 이 함수를 거치지 않으면 "직진하세요"가 나갈
+  // 방법이 없다 — 회복 여부는 반드시 직전 클래스를 봐야 알 수 있다.
+  @visibleForTesting
+  String? decideRecoveryMessage(
+    String previousClass,
+    String detectedClass,
+    DateTime now,
+  ) {
+    final recovered = (previousClass == 'left' || previousClass == 'right') &&
+        detectedClass == 'front';
+    if (!recovered) return null;
+
+    if (_lastRecoveryAt != null &&
+        now.difference(_lastRecoveryAt!).inSeconds < _cooldownSeconds) {
+      return null;
+    }
+    _lastRecoveryAt = now;
+
+    return AppStrings.of(_language).recoveredMessage;
   }
 
   // T39: runtime setters used by SettingsScreen. Each applies immediately
@@ -220,7 +296,8 @@ class FeedbackService {
     try {
       await _tts.speak(message).timeout(_speakTimeout);
     } on TimeoutException {
-      debugPrint('FeedbackService._speak: timed out waiting for TTS completion');
+      debugPrint(
+          'FeedbackService._speak: timed out waiting for TTS completion');
     } catch (e) {
       // alert() fires this via unawaited(), so nothing else observes this
       // Future — any TTS engine error (not just a timeout) must be caught
@@ -268,12 +345,31 @@ class FeedbackService {
   // silently suppress vibration too. `unawaited` (dart:async) starts
   // speech without the vibration branch waiting on its completion; the
   // two feedback channels now run independently.
-  Future<void> alert(String detectedClass) async {
+  Future<void> alert(String detectedClass, double confidence) async {
     final now = DateTime.now();
 
+    // T63: 발화 여부와 무관하게 진짜 직전 클래스를 먼저 뽑아 둔다 —
+    // 아래에서 _lastRawClass를 덮어쓰기 전에 읽어야 전이를 감지할 수 있다.
+    final previous = _lastRawClass ?? '';
+    _lastRawClass = detectedClass;
+
+    // 구간 전이 안내(P1) — "횡단보도에 진입했습니다" / "횡단보도를 건넜습니다".
+    // 반복 경고가 아니라 1회성 사실이므로 이탈 경고보다 낮은 우선순위다.
+    final phaseMessage = decidePhaseMessage(previous, detectedClass, now);
+    if (phaseMessage != null) {
+      unawaited(_speak(phaseMessage, priority: FeedbackPriority.p1));
+    }
+
+    // 이탈에서 회복했을 때의 확인 안내(P0) — 이탈 경고와 같은 채널이므로
+    // 같은 우선순위를 준다. 처음부터 똑바로 가는 경우는 절대 나가지 않는다.
+    final recoveryMessage = decideRecoveryMessage(previous, detectedClass, now);
+    if (recoveryMessage != null) {
+      unawaited(_speak(recoveryMessage, priority: FeedbackPriority.p0));
+    }
+
     // 음성 — 이탈 경고는 P0다. 무음 예산·최소 간격에서 면제되며, 재생 중인
-    // 하위 등급 안내를 끊는다.
-    final message = decideMessage(detectedClass, now);
+    // 하위 등급 안내를 끊는다. T63: confidence를 강도 판정에 쓴다.
+    final message = decideMessage(detectedClass, confidence, now);
     if (message != null) {
       unawaited(_speak(message, priority: FeedbackPriority.p0));
     }
