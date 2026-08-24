@@ -489,10 +489,14 @@ class _CameraScreenState extends State<CameraScreen>
   // presentation changed, matching the imported design's dedicated error
   // state (icon circle, title, body, single 52dp CTA on a scrim
   // background).
+  // Claude Design 1a: 화면이 Stack에서 Column(계기판)으로 바뀌면서
+  // `Positioned.fill`을 쓸 수 없게 됐다 — Positioned는 Stack 자식일 때만
+  // 유효하고, Column 안에서는 ParentData 타입 불일치로 즉시 assert가 터진다.
+  // 오류 카드는 이제 Column의 Expanded 자식으로 화면을 채운다.
   Widget _buildErrorCard() {
-    return Positioned.fill(
+    return SizedBox.expand(
       child: ColoredBox(
-        color: Colors.black.withValues(alpha: 0.94),
+        color: _colorBg,
         child: Center(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 28),
@@ -752,6 +756,7 @@ class _CameraScreenState extends State<CameraScreen>
             // 화면에만 그리지 않는다.
             //
             // 형태 + 위치가 방향을 말하고, 색은 "이탈인가 아닌가"만 말한다.
+            if (!_hasError)
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -779,6 +784,8 @@ class _CameraScreenState extends State<CameraScreen>
             ),
 
             // ── 하단 판독부 ──────────────────────────────────────────────
+            // 오류 상태에서는 전용 오류 카드가 화면 전체를 채우므로 그리지 않는다.
+            if (!_hasError)
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
               child: Column(
@@ -872,7 +879,7 @@ class _CameraScreenState extends State<CameraScreen>
               ),
             ),
 
-            if (_hasError) _buildErrorCard(),
+            if (_hasError) Expanded(child: _buildErrorCard()),
           ],
         ),
       ),
