@@ -320,6 +320,48 @@ class _CameraScreenState extends State<CameraScreen>
   // left unchanged rather than surfaced as an error, since this is a
   // best-effort convenience feature, not a safety-critical path.
   // T63: 배터리 절약 모드 전환 — 플러그인 호출이 없으므로 동기 setState뿐이다.
+  // T64(사용자 스크린샷 지적, 2026-08-24): `CameraPreview`는 내부에서
+  // `AspectRatio(aspectRatio: 1/controller.value.aspectRatio, ...)`로
+  // 감싸여 있다(camera 0.11.2 lib/src/camera_preview.dart). `Positioned.fill`이
+  // 주는 타이트한 제약 안에서도 AspectRatio는 스트레치가 아니라 "그 안에 들어가는
+  // 가장 큰 사각형"을 고른다 — 화면 비율과 카메라 센서 비율이 다르면 레터/필러박스
+  // 여백이 생긴다. 스크림(0.86 불투명도)이 그 위를 덮긴 하지만, 카메라 화소가
+  // 실제로 있는 영역만 14%가 비쳐 보이고 여백은 배경색과 거의 같은 색이라 —
+  // 사각형 경계가 도드라져 보였다("너무 형식적으로 끊겨 있다").
+  //
+  // 화면을 항상 꽉 채우도록(BoxFit.cover와 동일한 효과) 이미 아스펙트비로
+  // 맞춰진 CameraPreview를 균일하게 확대한다. 유도:
+  //   camAspect = 1 / controller.aspectRatio  (CameraPreview가 세로 모드에서
+  //     실제로 쓰는 값 — 이 앱은 portraitUp으로 고정돼 있어 가로 분기는 타지 않는다)
+  //   boxAspect = 박스 너비 / 높이
+  //   camAspect >= boxAspect  -> 상하 레터박스 생김 -> scale = camAspect/boxAspect
+  //   camAspect <  boxAspect  -> 좌우 필러박스 생김 -> scale = boxAspect/camAspect
+  // 실기기로 시각 확인은 못 했다(이 환경엔 카메라 기기가 없다) — 계산 유도만
+  // 검증했고, 실기기에서 잘림·확대가 과하지 않은지 확인이 필요하다.
+  Widget _buildFullBleedPreview() {
+    final controller = _controller;
+    if (controller == null) return const SizedBox.shrink();
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!constraints.hasBoundedWidth || !constraints.hasBoundedHeight) {
+          return CameraPreview(controller);
+        }
+        final camAspect = 1 / controller.value.aspectRatio;
+        final boxAspect = constraints.maxWidth / constraints.maxHeight;
+        final scale = camAspect >= boxAspect
+            ? camAspect / boxAspect
+            : boxAspect / camAspect;
+        return ClipRect(
+          child: Transform.scale(
+            scale: scale,
+            child: Center(child: CameraPreview(controller)),
+          ),
+        );
+      },
+    );
+  }
+
   void _setPowerSaveMode(bool enabled) {
     if (mounted) setState(() => _powerSaveMode = enabled);
   }
@@ -682,46 +724,62 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
-  /// 목표 방향 가장자리 펄스. 접근성: `MediaQuery.disableAnimations`가 켜져
-  /// 있으면(모션 감소 설정) 애니메이션 대신 고정 밝기로 표시한다.
+  /// 목표 방향 가장자리 펄스 — 화면 전체 높이를 쓰는 은은한 번짐(ambient
+  /// glow)이다. 접근성: `MediaQuery.disableAnimations`가 켜져 있으면(모션 감소
+  /// 설정) 애니메이션 대신 고정 밝기로 표시한다.
+  ///
+  /// T64(사용자 지적, 2026-08-24 — "펄스가 전체적으로 보이도록, 지금은 너무
+  /// 형식적으로 끊겨 있어"): 초판은 상태 필드 영역(위·아래 여백 제외)에만
+  /// 갇힌 56~88px 고정폭 막대였다 — 화면 일부에만 걸쳐 있어 잘린 사각형처럼
+  /// 보였다. 이제 화면 전체 높이(SafeArea 밖, 최상위 Stack)에 걸쳐 그리고,
+  /// 폭도 화면 너비의 비율로 잡아(약함 32% / 심함 48%) 화면 크기가 달라져도
+  /// 비례한다. 3단 그라디언트(가장자리->중간->투명)로 경계를 더 부드럽게
+  /// 풀었다 — 2단 그라디언트는 중간 지점에서 밝기가 급격히 꺾여 보인다.
   Widget _buildEdgePulse(Color color, bool reducedMotion) {
     final edge = _pulseEdge;
     if (edge == null) return const SizedBox.shrink();
 
-    final width = _severe ? 88.0 : 56.0;
-    final peakAlpha = _severe ? 0.50 : 0.32;
-    final alignment =
-        edge == 'right' ? Alignment.centerRight : Alignment.centerLeft;
-    final gradientBegin = alignment;
-    final gradientEnd =
-        edge == 'right' ? Alignment.centerLeft : Alignment.centerRight;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth * (_severe ? 0.48 : 0.32);
+        final peakAlpha = _severe ? 0.42 : 0.26;
+        final alignment =
+            edge == 'right' ? Alignment.centerRight : Alignment.centerLeft;
+        final gradientBegin = alignment;
+        final gradientEnd =
+            edge == 'right' ? Alignment.centerLeft : Alignment.centerRight;
 
-    Widget bar(double alpha) => Align(
-          alignment: alignment,
-          child: IgnorePointer(
-            child: Container(
-              width: width,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: gradientBegin,
-                  end: gradientEnd,
-                  colors: [
-                    color.withValues(alpha: alpha),
-                    color.withValues(alpha: 0)
-                  ],
+        Widget bar(double alpha) => Align(
+              alignment: alignment,
+              child: IgnorePointer(
+                child: Container(
+                  width: width,
+                  height: double.infinity,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: gradientBegin,
+                      end: gradientEnd,
+                      stops: const [0.0, 0.55, 1.0],
+                      colors: [
+                        color.withValues(alpha: alpha),
+                        color.withValues(alpha: alpha * 0.35),
+                        color.withValues(alpha: 0),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
+            );
+
+        if (reducedMotion) return bar(peakAlpha * 0.7);
+
+        return AnimatedBuilder(
+          animation: _pulseController,
+          builder: (context, _) {
+            final t = Curves.easeInOut.transform(_pulseController.value);
+            return bar(peakAlpha * 0.35 + peakAlpha * 0.65 * t);
+          },
         );
-
-    if (reducedMotion) return bar(peakAlpha * 0.7);
-
-    return AnimatedBuilder(
-      animation: _pulseController,
-      builder: (context, _) {
-        final t = Curves.easeInOut.transform(_pulseController.value);
-        return bar(peakAlpha * 0.35 + peakAlpha * 0.65 * t);
       },
     );
   }
@@ -758,7 +816,7 @@ class _CameraScreenState extends State<CameraScreen>
       backgroundColor: _colorBg,
       body: Stack(
         children: [
-          if (showPreview) Positioned.fill(child: CameraPreview(_controller!)),
+          if (showPreview) Positioned.fill(child: _buildFullBleedPreview()),
           if (showPreview)
             Positioned.fill(
               child: IgnorePointer(
@@ -767,6 +825,9 @@ class _CameraScreenState extends State<CameraScreen>
                 ),
               ),
             ),
+          // T64: 펄스를 화면 전체 높이로 옮겼다 — 상태 필드 영역에만 갇혀
+          // 있던 초판은 화면 일부에서만 번져 잘린 사각형처럼 보였다.
+          Positioned.fill(child: _buildEdgePulse(color, reducedMotion)),
           SafeArea(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -840,24 +901,15 @@ class _CameraScreenState extends State<CameraScreen>
                                 ),
                               ),
                             )
-                          : Stack(
-                              children: [
-                                Positioned.fill(
-                                  child: RepaintBoundary(
-                                    child: CustomPaint(
-                                      size: Size.infinite,
-                                      painter: StateFieldPainter(
-                                        state: _fieldState,
-                                        color: color,
-                                        severe: _severe,
-                                      ),
-                                    ),
-                                  ),
+                          : RepaintBoundary(
+                              child: CustomPaint(
+                                size: Size.infinite,
+                                painter: StateFieldPainter(
+                                  state: _fieldState,
+                                  color: color,
+                                  severe: _severe,
                                 ),
-                                Positioned.fill(
-                                  child: _buildEdgePulse(color, reducedMotion),
-                                ),
-                              ],
+                              ),
                             ),
                     ),
                   ),
