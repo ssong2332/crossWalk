@@ -207,6 +207,51 @@ T55의 헤드 분리로 이것이 수치로 확인됐다 — 방향 head 91.2% v
 - Init order: doc says permission→model→TTS (`ARCHITECTURE.md:127-137`); code is TTS→permission→model (`camera_screen.dart:60-75`).
 - `export_onnx.py` described (`ARCHITECTURE.md:90`) — **correction**: an earlier pass of this doc claimed it was "absent from `train/`"; that was wrong. `train/export_onnx.py` exists (25 lines) as a standalone re-export script separate from `train_model.py`'s embedded exporter; it is the script whose settings (opset 12, `dynamo=False`) match the currently-shipped model's verified `ir_version=7`/`opset=12`. Full trace: `docs/Architecture.md` §11.1/§11.2.
 
+## 확장 가능성 (2026-08-24 — **확정 아님, 가능성만 기록**)
+
+사용자가 검토 중인 방향이다. **현재 빌드의 범위는 바뀌지 않았고**, 아래 어느 것도 착수 대상이 아니다.
+지금 기록하는 이유는 되돌릴 수 없는 결정(앱 식별자 등)을 내릴 때 이 가능성을 감안하기 위함이다.
+
+| 방향 | 상태 | 막고 있는 것 |
+|---|---|---|
+| 경로 안내 연동 (턴바이턴) | 방식은 **B안 선호** — 지도 SDK로 경로, 자체 비전으로 횡단 | 지도 SDK 선정·라이선스. 하드웨어와 무관 |
+| 신호등 인식 | T52에서 현 구조로 불가 판정 | 위를 보는 카메라 (Open Q #18) |
+| 보행 중 물체 인식 | 미착수 | 위를 보는 카메라 + **깊이 센서** (Open Q #18) |
+
+이 가능성 때문에 실제로 바뀐 결정 하나: **앱 식별자를 `io.github.ssong2332.crosswalk`가 아니라
+`io.github.ssong2332.walkguide`로 확정했다** (T59). applicationId는 출시 후 변경 불가이므로
+영구 식별자에 한 기능 이름을 박지 않았다. 표시 이름은 "횡단보도 안내"로 두었다 —
+지금 앱이 하는 일이 그것뿐이고, 표시 이름은 나중에 자유롭게 바꿀 수 있기 때문이다.
+
+### B안을 선호하는 근거
+
+경로 안내 자체는 이미 여럿 존재한다(네이버·카카오 지도 + TalkBack, Soundscape, BlindSquare 등).
+그것들이 공통적으로 못 하는 것은 **마지막 10미터**다 — 도심 GPS 오차 5~15m가 횡단보도 폭 4m보다
+크기 때문이다. 반면 이 프로젝트는 `approach` 상태에서 방향을 **91.5%**로 판정한다(T55 실측).
+**고유 가치가 정확히 GPS가 실패하는 지점에 있으므로**, 라우팅을 새로 만드는 것은
+남이 더 잘하는 것을 못하게 다시 만드는 일이 된다.
+
+### 확장 이전에 해결해야 할 공통 제약 — 오디오 채널
+
+시각장애인은 **청각으로 교통 상황을 파악한다.** 앱이 말하는 동안 그 채널이 점유된다.
+확장 후보를 모두 더하면 이탈 경고 + 경로 안내 + 신호등 + 물체 경고가 **같은 채널을 두고 경쟁**한다.
+
+따라서 물체 인식의 성패는 인식률이 아니라 **무엇을 말하지 않을지**를 정하는 데 달려 있다.
+무엇이 무엇을 끊을 수 있는지, 무음 구간을 언제 보장하는지, 어떤 것을 진동으로 대체하는지,
+사용자가 무엇을 끌 수 있는지 — 이 체계는 **하드웨어 없이 지금 설계할 수 있고**,
+없는 상태로 기능을 더하면 더할수록 앱이 나빠진다.
+
+### 물체 인식에 대한 예비 판단 (미검증, 착수 근거로 쓰지 말 것)
+
+- 흰지팡이가 이미 잘 찾는 지면 장애물(연석·볼라드·계단)을 카메라로 알리는 것은 가치가 낮다.
+  가치는 지팡이가 **못 찾는 것**(머리 높이 간판·나뭇가지·열린 문, 접근하는 자전거·킥보드)에 있다.
+- 그런데 현재 카메라는 가슴 높이에서 살짝 아래를 보므로 **머리 높이 장애물이 프레임 밖**이다.
+  지팡이가 놓치는 것을 카메라도 놓친다.
+- 2D 검출기는 거리를 알지 못한다("기둥이 있다"는 알아도 "2m 앞"은 모른다).
+  단안 깊이 추정은 야외에서 불안정하고, 크기 휴리스틱은 취약하다 -> 스테레오/ToF는 하드웨어다.
+- 보행 1.4 m/s에 현재 판정 확정까지 약 1초(1.4m 이동)다. 장애물 경고는 더 빨라야 하는데
+  검출기를 얹으면 프레임당 비용이 늘어 오히려 느려진다(**추정** 2~5배).
+
 ## Out of Scope (current build)
 - iOS build/signing (CI produces APK only). NOTE: iOS is now an in-scope target platform (Open Q #1 ANSWERED 2026-07-17), but no iOS build/signing pipeline exists yet — building it is tracked as T33, not part of the current build.
 - GPS/location, traffic-signal detection, obstacle detection.
