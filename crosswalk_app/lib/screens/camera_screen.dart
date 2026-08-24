@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
@@ -7,6 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../services/classifier.dart';
 import '../services/feedback_service.dart';
+import '../services/stripe_direction_estimator.dart';
 import '../localization/app_strings.dart';
 import 'settings_screen.dart';
 
@@ -396,7 +398,39 @@ class _CameraScreenState extends State<CameraScreen>
       }
     }
 
+    _logStripeDirectionDebug(image);
+
     _isProcessing = false;
+  }
+
+  // T66: 실기기 검증용 디버그 로그만 — 화면(화살표)에는 아직 연결하지 않는다.
+  // `StripeDirectionEstimator`는 합성 이상적 줄무늬 패턴으로만 검증됐고 실제
+  // 카메라 프레임 정확도는 미검증이다(이 환경에 카메라 기기가 없어 확인 불가).
+  // 사람이 눈으로 보는 기울기와 이 로그값을 실기기에서 나란히 비교해보기
+  // 위한 용도로만 쓴다. `kDebugMode` 게이트로 릴리스 빌드에는 출력되지
+  // 않으며, 화살표·안내 로직에는 어떤 영향도 주지 않는다.
+  int _stripeLogFrameCount = 0;
+
+  void _logStripeDirectionDebug(CameraImage image) {
+    if (!kDebugMode) return;
+    // 앱은 이 스트림 포맷을 강제한다(classifier.dart 주석 참고) — Y 플레인은
+    // 그레이스케일 휘도라 RGB 변환 없이 그대로 쓸 수 있다.
+    if (image.format.group != ImageFormatGroup.yuv420) return;
+
+    _stripeLogFrameCount++;
+    if (_stripeLogFrameCount % 10 != 0) return; // 10프레임마다 1회 — 성능 부담 완화
+
+    final plane = image.planes[0];
+    final estimate = StripeDirectionEstimator.estimate(
+      gray: plane.bytes,
+      width: image.width,
+      height: image.height,
+      rowStride: plane.bytesPerRow,
+    );
+    debugPrint(
+      '[T66 stripe-direction, 실기기 검증용, 화면 미연결] '
+      '${estimate ?? "무판정(우세 방향 없음)"}',
+    );
   }
 
   @override
