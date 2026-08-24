@@ -5,7 +5,7 @@
     <uses-feature android:name="android.hardware.camera" android:required="true"/>
 
     <application
-        android:label="crosswalk_app"
+        android:label="횡단보도 안내"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
