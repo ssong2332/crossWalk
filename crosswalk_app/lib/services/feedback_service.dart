@@ -4,9 +4,19 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:vibration/vibration.dart';
 import '../localization/app_strings.dart';
+import 'audio_policy.dart';
 
 class FeedbackService {
   final FlutterTts _tts = FlutterTts();
+
+  // T61: 오디오 우선순위 정책 (docs/AudioPolicy.md). 판정 로직은 플러그인에
+  // 의존하지 않는 순수 클래스로 분리해 두었다 — 이 파일은 "지금 말해도 되는가"를
+  // 물어보기만 한다. 이 파일의 경쟁 상태 보증(_speechGeneration, _vibrationTimer)은
+  // 그대로 유지된다.
+  @visibleForTesting
+  final AudioPolicy audioPolicy = AudioPolicy();
+  @visibleForTesting
+  final VibrationPolicy vibrationPolicy = VibrationPolicy();
   DateTime? _lastAlertTime;
   String? _lastAlertClass;
 
@@ -187,8 +197,25 @@ class FeedbackService {
   // generation is still finished so state stays consistent.
   static const _speakTimeout = Duration(seconds: 10);
 
-  Future<void> _speak(String message) async {
+  // T61: 우선순위 판정을 앞에 붙였다. 판정표·TTL·무음 예산은 AudioPolicy가
+  // 갖고 있고(docs/AudioPolicy.md), 여기서는 그 결정을 집행만 한다.
+  // 기존 generation 가드와 stop-before-speak 순서는 손대지 않았다.
+  Future<void> _speak(
+    String message, {
+    FeedbackPriority priority = FeedbackPriority.p3,
+  }) async {
+    final requestedAt = DateTime.now();
+    final action = audioPolicy.decide(priority, requestedAt);
+    if (action == SpeechAction.drop) return;
+    if (action == SpeechAction.queue) {
+      // 대기는 P1이 P0를 기다리는 한 칸뿐이다. 슬롯은 1개이며 TTL이 지나면 버린다.
+      audioPolicy.putPending(priority, message, requestedAt);
+      return;
+    }
+
     final generation = beginSpeechGeneration();
+    audioPolicy.markStarted(priority);
+    final start = DateTime.now();
     await _tts.stop();
     try {
       await _tts.speak(message).timeout(_speakTimeout);
@@ -201,7 +228,21 @@ class FeedbackService {
       debugPrint('FeedbackService._speak: TTS error: $e');
     } finally {
       finishSpeechGeneration(generation);
+      audioPolicy.markFinished(priority, start, DateTime.now());
+      _drainPending();
     }
+  }
+
+  /// 대기 슬롯에 남은 항목을 꺼내 발화한다. TTL이 지났으면 버린다 —
+  /// 늦게 도착한 안내는 정보가 아니라 오정보다.
+  void _drainPending() {
+    final pri = audioPolicy.pendingPriority;
+    final msg = audioPolicy.pendingMessage;
+    final at = audioPolicy.pendingAt;
+    if (pri == null || msg == null || at == null) return;
+    audioPolicy.clearPending();
+    if (audioPolicy.isExpired(pri, at, DateTime.now())) return;
+    unawaited(_speak(msg, priority: pri));
   }
 
   // Marks vibration as active and (re)schedules the timer that will clear
@@ -211,11 +252,11 @@ class FeedbackService {
   // 500ms window elapsed (e.g. a left->right class change bypasses the
   // cooldown).
   @visibleForTesting
-  void activateVibrationIndicator() {
+  void activateVibrationIndicator([int? durationMs]) {
     isVibrating.value = true;
     _vibrationTimer?.cancel();
     _vibrationTimer = Timer(
-      Duration(milliseconds: _vibrationDurationMs),
+      Duration(milliseconds: durationMs ?? _vibrationDurationMs),
       () => isVibrating.value = false,
     );
   }
@@ -228,20 +269,40 @@ class FeedbackService {
   // speech without the vibration branch waiting on its completion; the
   // two feedback channels now run independently.
   Future<void> alert(String detectedClass) async {
-    final message = decideMessage(detectedClass, DateTime.now());
-    if (message == null) return;
+    final now = DateTime.now();
 
-    unawaited(_speak(message));
+    // 음성 — 이탈 경고는 P0다. 무음 예산·최소 간격에서 면제되며, 재생 중인
+    // 하위 등급 안내를 끊는다.
+    final message = decideMessage(detectedClass, now);
+    if (message != null) {
+      unawaited(_speak(message, priority: FeedbackPriority.p0));
+    }
+
+    // 진동 — T61: 좌/우 패턴을 분리했다. 이전에는 두 방향이 같은 진동이라
+    // 방향 정보가 음성에만 존재했고, 도로 소음에 음성이 묻히면 방향이 통째로
+    // 사라졌다. `front`로 복귀할 때는 짧은 확인 진동 1회가 나간다.
+    // 음성이 쿨다운에 걸린 프레임에서도 진동 판단은 별도로 수행한다.
+    final pattern =
+        vibrationPolicy.decidePattern(detectedClass, now, _vibrationDurationMs);
+    if (pattern == null) return;
 
     if (await Vibration.hasVibrator() ?? false) {
-      Vibration.vibrate(duration: _vibrationDurationMs);
-      activateVibrationIndicator();
+      // 패턴 진동을 지원하지 않는 기기에서는 단일 진동으로 내려간다.
+      // 방향은 음성으로만 전달되지만, 아무 알림도 없는 것보다는 낫다.
+      final supportsPattern = await Vibration.hasCustomVibrationsSupport();
+      if (supportsPattern) {
+        Vibration.vibrate(pattern: pattern);
+      } else {
+        Vibration.vibrate(duration: _vibrationDurationMs);
+      }
+      final total = pattern.fold<int>(0, (a, b) => a + b);
+      activateVibrationIndicator(total > 0 ? total : _vibrationDurationMs);
     }
   }
 
   // 앱 초기화 실패 시 사용자에게 오류 상황을 음성으로 안내
   Future<void> announceError(String message) async {
-    await _speak(message);
+    await _speak(message, priority: FeedbackPriority.p3);
   }
 
   // T40: general-purpose TTS read-aloud, used by OnboardingScreen to speak
@@ -250,7 +311,7 @@ class FeedbackService {
   // generation guard, 10s timeout), so it participates in the same
   // isSpeaking state and race protections without duplicating that logic.
   Future<void> speak(String message) async {
-    await _speak(message);
+    await _speak(message, priority: FeedbackPriority.p3);
   }
 
   Future<void> dispose() async {

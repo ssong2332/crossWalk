@@ -79,8 +79,8 @@ class AudioPolicy {
     return total;
   }
 
-  /// docs/AudioPolicy.md §2 판정표. 부수효과 없음 — 테스트에서 직접 호출한다.
-  @visibleForTesting
+  /// docs/AudioPolicy.md §2 판정표. 부수효과가 없으므로 테스트에서 직접 호출해
+  /// 전수 검증할 수 있고, `FeedbackService._speak`도 이것만 보고 집행한다.
   SpeechAction decide(FeedbackPriority incoming, DateTime now) {
     final active = _active;
 
@@ -159,12 +159,16 @@ class AudioPolicy {
 /// 좌/우가 같은 패턴이던 것을 분리한다. 도로 소음에 음성이 묻혀도 방향이 전달되도록,
 /// 그리고 같은 방향이 지속될 때 음성 대신 진동만으로 알리기 위해서다.
 class VibrationPolicy {
-  /// 같은 방향이 계속될 때의 진동 간격. 1 -> 2 -> 4 -> 8초에서 고정.
-  static const repeatSteps = <int>[1, 2, 4, 8];
+  /// 같은 방향이 계속될 때 방향 패턴을 다시 내는 간격.
+  ///
+  /// 3초는 `feedback_service.dart`의 `_cooldownSeconds`와 같은 값이다 —
+  /// 음성 재발화와 같은 박자로 나가야 두 채널이 어긋나지 않는다.
+  /// 초판의 간격 점증(1->2->4->8초)은 제거했다: 진동이 8초 간격이면
+  /// 음성만 나가고 진동은 없는 구간이 생긴다.
+  static const repeatInterval = Duration(seconds: 3);
 
   String? _lastClass;
   DateTime? _lastVibratedAt;
-  int _repeatIndex = 0;
 
   String? get lastClass => _lastClass;
 
@@ -177,17 +181,14 @@ class VibrationPolicy {
 
     if (detectedClass == 'left' || detectedClass == 'right') {
       if (detectedClass != _lastClass) {
-        // 방향이 바뀌었다(또는 첫 경고). 간격을 초기화하고 즉시 알린다.
+        // 방향이 바뀌었다(또는 첫 경고). 쿨다운을 무시하고 즉시 알린다.
         _lastClass = detectedClass;
-        _repeatIndex = 0;
         _lastVibratedAt = now;
         return _directionPattern(detectedClass, shortMs, longMs);
       }
-      // 같은 방향 지속 — 간격이 찼을 때만 반복한다.
-      final waited = now.difference(_lastVibratedAt ?? now).inMilliseconds;
-      final need = repeatSteps[_repeatIndex.clamp(0, repeatSteps.length - 1)] * 1000;
-      if (waited < need) return null;
-      if (_repeatIndex < repeatSteps.length - 1) _repeatIndex++;
+      // 같은 방향 지속 — 3초마다 다시 낸다 (음성 재발화와 같은 박자).
+      final last = _lastVibratedAt;
+      if (last != null && now.difference(last) < repeatInterval) return null;
       _lastVibratedAt = now;
       return _directionPattern(detectedClass, shortMs, longMs);
     }
@@ -196,7 +197,6 @@ class VibrationPolicy {
       // 이탈에서 정상으로 돌아온 순간에만 짧은 확인 진동 1회.
       final returning = _lastClass == 'left' || _lastClass == 'right';
       _lastClass = 'front';
-      _repeatIndex = 0;
       if (!returning) return null;
       _lastVibratedAt = now;
       return <int>[0, 60];
@@ -204,7 +204,6 @@ class VibrationPolicy {
 
     // none / approach — 진동 없음. 다만 이탈 상태는 초기화한다.
     _lastClass = detectedClass;
-    _repeatIndex = 0;
     return null;
   }
 
@@ -219,6 +218,5 @@ class VibrationPolicy {
   void reset() {
     _lastClass = null;
     _lastVibratedAt = null;
-    _repeatIndex = 0;
   }
 }
