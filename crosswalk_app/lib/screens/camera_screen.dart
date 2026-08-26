@@ -398,27 +398,31 @@ class _CameraScreenState extends State<CameraScreen>
       }
     }
 
-    _logStripeDirectionDebug(image);
+    _updateStripeDirectionDebug(image);
 
     _isProcessing = false;
   }
 
-  // T66: 실기기 검증용 디버그 로그만 — 화면(화살표)에는 아직 연결하지 않는다.
-  // `StripeDirectionEstimator`는 합성 이상적 줄무늬 패턴으로만 검증됐고 실제
-  // 카메라 프레임 정확도는 미검증이다(이 환경에 카메라 기기가 없어 확인 불가).
-  // 사람이 눈으로 보는 기울기와 이 로그값을 실기기에서 나란히 비교해보기
-  // 위한 용도로만 쓴다. `kDebugMode` 게이트로 릴리스 빌드에는 출력되지
-  // 않으며, 화살표·안내 로직에는 어떤 영향도 주지 않는다.
-  int _stripeLogFrameCount = 0;
+  // T66: 실기기 검증용 실험적 표시 — 화살표·안내 로직에는 연결하지 않고,
+  // 화면 한쪽에 추정 각도만 작게 보여준다. `StripeDirectionEstimator`는
+  // 합성 이상적 줄무늬 패턴으로만 검증됐고 실제 카메라 프레임 정확도는
+  // 미검증이다(이 환경에 카메라 기기가 없어 확인 불가) — 사람이 눈으로
+  // 보는 기울기와 이 값을 실기기에서 나란히 비교해보기 위한 용도다.
+  //
+  // release APK에서도 보이도록 일부러 `kDebugMode`로 막지 않았다 — 사용자가
+  // 컴퓨터 연결 없이 GitHub Actions에서 받은 APK를 폰에 설치해 바로 볼 수
+  // 있어야 하기 때문(2026-08-24 요청). 콘솔 로그(`debugPrint`)만 기존처럼
+  // 디버그 빌드에서만 남긴다.
+  int _stripeDebugFrameCount = 0;
+  StripeDirectionEstimate? _stripeDebugEstimate;
 
-  void _logStripeDirectionDebug(CameraImage image) {
-    if (!kDebugMode) return;
+  void _updateStripeDirectionDebug(CameraImage image) {
     // 앱은 이 스트림 포맷을 강제한다(classifier.dart 주석 참고) — Y 플레인은
     // 그레이스케일 휘도라 RGB 변환 없이 그대로 쓸 수 있다.
     if (image.format.group != ImageFormatGroup.yuv420) return;
 
-    _stripeLogFrameCount++;
-    if (_stripeLogFrameCount % 10 != 0) return; // 10프레임마다 1회 — 성능 부담 완화
+    _stripeDebugFrameCount++;
+    if (_stripeDebugFrameCount % 10 != 0) return; // 10프레임마다 1회 — 성능 부담 완화
 
     final plane = image.planes[0];
     final estimate = StripeDirectionEstimator.estimate(
@@ -427,10 +431,15 @@ class _CameraScreenState extends State<CameraScreen>
       height: image.height,
       rowStride: plane.bytesPerRow,
     );
-    debugPrint(
-      '[T66 stripe-direction, 실기기 검증용, 화면 미연결] '
-      '${estimate ?? "무판정(우세 방향 없음)"}',
-    );
+
+    if (kDebugMode) {
+      debugPrint(
+        '[T66 stripe-direction, 실험적, 화면 미연결] '
+        '${estimate ?? "무판정(우세 방향 없음)"}',
+      );
+    }
+
+    if (mounted) setState(() => _stripeDebugEstimate = estimate);
   }
 
   @override
@@ -1036,6 +1045,40 @@ class _CameraScreenState extends State<CameraScreen>
                             ),
                           ),
                         ],
+                        // T66: 실험적 프로토타입 표시 — 화살표·안내와 무관.
+                        // 컴퓨터 연결 없이 release APK를 폰에 설치해도 바로
+                        // 볼 수 있게 화면에 직접 낸다(2026-08-24 요청). 정식
+                        // 기능처럼 보이지 않도록 점선 테두리 + "실험적" 라벨로
+                        // 구분한다.
+                        if (!dense && !_hasError)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 10),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                  color: _colorTextDim.withValues(alpha: 0.4),
+                                  width: 1,
+                                ),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 6),
+                                child: Text(
+                                  _stripeDebugEstimate == null
+                                      ? '실험적 — 줄무늬 각도: 무판정'
+                                      : '실험적 — 줄무늬 각도: '
+                                          '${_stripeDebugEstimate!.angleDegrees.toStringAsFixed(0)}도 '
+                                          '(신뢰 ${(_stripeDebugEstimate!.confidence * 100).toStringAsFixed(0)}%)',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: _colorTextDim.withValues(alpha: 0.8),
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
                         Padding(
                           padding: const EdgeInsets.only(top: 14),
                           child: Text(
