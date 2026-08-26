@@ -15,8 +15,33 @@ import 'dart:typed_data';
 /// (`test/stripe_direction_estimator_test.dart`). 실제 카메라 프레임(원근
 /// 왜곡, 그림자, 젖은 노면 반사, 차선 등 다른 흰 선, 저조도 노이즈)에서
 /// 얼마나 정확한지는 **미검증**이다 — 이 환경에 카메라 기기가 없다.
+///
+/// T66-3(2026-08-24, 사용자 실기기 관찰): `Classifier`가 "오른쪽으로 과하게
+/// 이탈"이라고 판정한 프레임에서도 이 추정치가 무판정으로 나오는 경우가
+/// 보고됐다. 두 시스템은 서로 다른 근거로 판단한다 — `Classifier`는 학습된
+/// 이미지 특징(좌표·각도 모름)으로 판정하고, 이 클래스는 실제 에지 기하로만
+/// 판단한다. 왜 무판정인지(에지 자체가 없음 / 우세 방향이 근수직이라
+/// 걸러짐 / 우세 방향이 흩어져 신뢰도 미달) 구분할 수 있도록
+/// [StripeDirectionDiagnostic]을 추가했다.
+enum StripeDirectionNullReason {
+  /// 성공 — [StripeDirectionDiagnostic.estimate]가 null이 아니다.
+  none,
+
+  /// 그라디언트 크기가 임계값을 넘는 에지 자체가 거의 없다(흐림·저대비·저조도).
+  noEdges,
+
+  /// 우세한 에지 방향은 뚜렷한데, 그 방향이 [maxTiltDegrees]보다 수직에
+  /// 가까워 배경 구조물(건물·가로등 등)로 보고 걸러냈다.
+  /// [StripeDirectionDiagnostic.rejectedAngleDegrees]에 걸러진 각도가 담긴다.
+  tooVertical,
+
+  /// 에지는 있지만 방향이 여러 각도로 흩어져 있어 우세 방향이라 할 만한
+  /// 것이 없다(신뢰도가 [minConfidence] 미만).
+  lowConfidence,
+}
+
 class StripeDirectionEstimate {
-  /// 수평(0도) 기준 기울기, 도 단위, 범위 (-maxTiltDegrees, +maxTiltDegrees].
+  /// 수평(0도) 기준 기울기, 도 단위, 범위 (-90, 90].
   final double angleDegrees;
 
   /// 추정 신뢰도 — 우세 각도 구간에 몰린 에지 가중치 비율(0~1). 절대적인
@@ -31,22 +56,32 @@ class StripeDirectionEstimate {
       'conf=${confidence.toStringAsFixed(2)})';
 }
 
+/// [StripeDirectionEstimator.diagnose]의 결과 — 성공/실패와 **실패 이유**를
+/// 함께 담는다. `estimate`가 null일 때 [reason]으로 어떤 종류의 무판정인지
+/// 구분할 수 있다.
+class StripeDirectionDiagnostic {
+  final StripeDirectionEstimate? estimate;
+  final StripeDirectionNullReason reason;
+
+  /// [reason]이 [StripeDirectionNullReason.tooVertical]일 때만 값이 있다 —
+  /// 필터링되기 전 실제 우세 각도(도 단위).
+  final double? rejectedAngleDegrees;
+
+  const StripeDirectionDiagnostic(
+    this.estimate,
+    this.reason, {
+    this.rejectedAngleDegrees,
+  });
+}
+
 class StripeDirectionEstimator {
   StripeDirectionEstimator._();
 
   /// 그레이스케일 버퍼(예: YUV420 카메라 프레임의 Y 플레인, 별도 RGB 변환
   /// 없이 그대로 쓸 수 있다)에서 우세 에지 방향을 추정한다.
   ///
-  /// [sampleStride]: 성능을 위한 다운샘플 간격(픽셀). 값이 클수록 빠르지만
-  /// 성긴 격자로 계산해 정밀도가 떨어진다. 실기기 프레임레이트 측정 없이
-  /// 고른 잠정값(4) — 실기기 프로파일링 후 조정 필요.
-  /// [gradientThreshold]: 이 미만의 그라디언트 크기는 에지로 치지 않는다
-  /// (평탄한 노면/하늘 등 노이즈 제외).
-  /// [maxTiltDegrees]: 이 각도보다 수직에 가까운 에지(가로등·건물 모서리 등
-  /// 도심 배경의 흔한 수직 구조물)는 횡단보도 줄무늬가 아니라고 보고 무시한다.
-  /// [minConfidence]: 우세 각도 구간의 집중도가 이 미만이면(뚜렷한 우세
-  /// 방향이 없으면) null을 반환한다 — 모르는 것을 아는 척하지 않는다
-  /// (Classifier의 threshold-미달 시 null 반환과 동일한 원칙).
+  /// 기존 호출부 호환을 위해 남겨둔 얇은 래퍼 — 진단 정보가 필요하면
+  /// [diagnose]를 쓴다.
   static StripeDirectionEstimate? estimate({
     required Uint8List gray,
     required int width,
@@ -57,7 +92,46 @@ class StripeDirectionEstimator {
     double maxTiltDegrees = 60.0,
     double minConfidence = 0.2,
   }) {
+    return diagnose(
+      gray: gray,
+      width: width,
+      height: height,
+      rowStride: rowStride,
+      sampleStride: sampleStride,
+      gradientThreshold: gradientThreshold,
+      maxTiltDegrees: maxTiltDegrees,
+      minConfidence: minConfidence,
+    ).estimate;
+  }
+
+  /// [estimate]와 같은 계산을 하되, 무판정일 때 **왜** 무판정인지
+  /// ([StripeDirectionNullReason])까지 함께 반환한다.
+  ///
+  /// [sampleStride]: 성능을 위한 다운샘플 간격(픽셀). 값이 클수록 빠르지만
+  /// 성긴 격자로 계산해 정밀도가 떨어진다. 실기기 프레임레이트 측정 없이
+  /// 고른 잠정값(4) — 실기기 프로파일링 후 조정 필요.
+  /// [gradientThreshold]: 이 미만의 그라디언트 크기는 에지로 치지 않는다
+  /// (평탄한 노면/하늘 등 노이즈 제외).
+  /// [maxTiltDegrees]: 이 각도보다 수직에 가까운 우세 에지(가로등·건물
+  /// 모서리 등 도심 배경의 흔한 수직 구조물)는 횡단보도 줄무늬가 아니라고
+  /// 보고 무시한다.
+  /// [minConfidence]: 우세 각도 구간의 집중도가 이 미만이면(뚜렷한 우세
+  /// 방향이 없으면) 무판정 처리한다 — 모르는 것을 아는 척하지 않는다
+  /// (Classifier의 threshold-미달 시 null 반환과 동일한 원칙).
+  static StripeDirectionDiagnostic diagnose({
+    required Uint8List gray,
+    required int width,
+    required int height,
+    required int rowStride,
+    int sampleStride = 4,
+    double gradientThreshold = 24.0,
+    double maxTiltDegrees = 60.0,
+    double minConfidence = 0.2,
+  }) {
     // 1도 단위 히스토그램, 인덱스 0..180 은 -90..+90도에 대응.
+    // T66-3: 각도 필터링 전에 **모든** 방향의 에지를 히스토그램에 담는다
+    // (이전엔 필터링된 방향은 아예 집계에서 빠져, "근수직이라 걸러짐"과
+    // "애초에 에지가 없음"을 구분할 수 없었다).
     final histogram = List<double>.filled(181, 0.0);
     double totalWeight = 0.0;
 
@@ -86,18 +160,49 @@ class StripeDirectionEstimator {
           angleDeg -= 180;
         }
 
-        if (angleDeg.abs() > maxTiltDegrees) continue; // 수직에 가까운 배경 구조물 제외
-
         final bin = (angleDeg + 90).round().clamp(0, 180);
         histogram[bin] += mag;
         totalWeight += mag;
       }
     }
 
-    if (totalWeight <= 0) return null;
+    if (totalWeight <= 0) {
+      return const StripeDirectionDiagnostic(
+        null,
+        StripeDirectionNullReason.noEdges,
+      );
+    }
 
-    int peakBin = 0;
-    for (int i = 1; i < histogram.length; i++) {
+    // maxTiltDegrees 안쪽(수평에 가까운) bin 범위. 원래 구현(T66)은 이
+    // 범위 밖의 에지를 아예 히스토그램에 넣지 않고 버렸다 — 그래서 "근수직이라
+    // 걸러짐"과 "애초에 에지가 없음"을 구분할 수 없었다(T66-3 CAVEAT). 여기서는
+    // 전부 담아두고, 판정 단계에서만 범위를 나눈다 — 판정 로직 자체는 원래와
+    // 동일한 수치를 낸다(범위 안에서만 우세 bin을 찾고, 그 범위의 총가중치로
+    // 신뢰도를 나눈다).
+    final lowBin = (90 - maxTiltDegrees).clamp(0, 180).round();
+    final highBin = (90 + maxTiltDegrees).clamp(0, 180).round();
+
+    double totalInRangeWeight = 0.0;
+    for (int i = lowBin; i <= highBin; i++) {
+      totalInRangeWeight += histogram[i];
+    }
+
+    if (totalInRangeWeight <= 0) {
+      // 범위 안에는 에지가 전혀 없다 — 전체 중 우세 방향(반드시 범위 밖)을
+      // 찾아 진단용으로 알려준다.
+      int globalPeakBin = 0;
+      for (int i = 1; i < histogram.length; i++) {
+        if (histogram[i] > histogram[globalPeakBin]) globalPeakBin = i;
+      }
+      return StripeDirectionDiagnostic(
+        null,
+        StripeDirectionNullReason.tooVertical,
+        rejectedAngleDegrees: (globalPeakBin - 90).toDouble(),
+      );
+    }
+
+    int peakBin = lowBin;
+    for (int i = lowBin + 1; i <= highBin; i++) {
       if (histogram[i] > histogram[peakBin]) peakBin = i;
     }
 
@@ -113,12 +218,26 @@ class StripeDirectionEstimator {
       windowWeightedSum += (i - 90) * w;
       windowWeight += w;
     }
-    if (windowWeight <= 0) return null;
+    if (windowWeight <= 0) {
+      return const StripeDirectionDiagnostic(
+        null,
+        StripeDirectionNullReason.noEdges,
+      );
+    }
 
     final angle = windowWeightedSum / windowWeight;
-    final confidence = windowWeight / totalWeight;
-    if (confidence < minConfidence) return null;
+    final confidence = windowWeight / totalInRangeWeight;
 
-    return StripeDirectionEstimate(angle, confidence);
+    if (confidence < minConfidence) {
+      return const StripeDirectionDiagnostic(
+        null,
+        StripeDirectionNullReason.lowConfidence,
+      );
+    }
+
+    return StripeDirectionDiagnostic(
+      StripeDirectionEstimate(angle, confidence),
+      StripeDirectionNullReason.none,
+    );
   }
 }

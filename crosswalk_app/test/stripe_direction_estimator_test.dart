@@ -124,6 +124,68 @@ void main() {
     });
   });
 
+  group('StripeDirectionEstimator.diagnose — T66-3 무판정 이유 구분', () {
+    test('에지가 없으면 noEdges를 반환한다', () {
+      final gray = _makeFlat(width, height, 128);
+      final d = StripeDirectionEstimator.diagnose(
+        gray: gray,
+        width: width,
+        height: height,
+        rowStride: width,
+      );
+      expect(d.estimate, isNull);
+      expect(d.reason, StripeDirectionNullReason.noEdges);
+      expect(d.rejectedAngleDegrees, isNull);
+    });
+
+    test('우세 방향이 근수직이면 tooVertical과 걸러진 각도를 반환한다', () {
+      final gray = _makeStripes(
+        width: width,
+        height: height,
+        angleDegrees: 80.0,
+      );
+      final d = StripeDirectionEstimator.diagnose(
+        gray: gray,
+        width: width,
+        height: height,
+        rowStride: width,
+        maxTiltDegrees: 60.0,
+      );
+      expect(d.estimate, isNull);
+      expect(d.reason, StripeDirectionNullReason.tooVertical);
+      expect(d.rejectedAngleDegrees, closeTo(80.0, 3.0));
+    });
+
+    test('우세 방향이 흩어져 있으면 lowConfidence를 반환한다', () {
+      final gray = _makeNoise(width, height, 42);
+      final d = StripeDirectionEstimator.diagnose(
+        gray: gray,
+        width: width,
+        height: height,
+        rowStride: width,
+      );
+      expect(d.estimate, isNull);
+      expect(d.reason, StripeDirectionNullReason.lowConfidence);
+    });
+
+    test('뚜렷한 각도가 있으면 reason은 none이고 estimate가 채워진다', () {
+      final gray = _makeStripes(
+        width: width,
+        height: height,
+        angleDegrees: 20.0,
+      );
+      final d = StripeDirectionEstimator.diagnose(
+        gray: gray,
+        width: width,
+        height: height,
+        rowStride: width,
+      );
+      expect(d.reason, StripeDirectionNullReason.none);
+      expect(d.estimate, isNotNull);
+      expect(d.estimate!.angleDegrees, closeTo(20.0, 3.0));
+    });
+  });
+
   group('StripeDirectionEstimator.estimate — rowStride 처리', () {
     test('rowStride가 width보다 큰 패딩된 버퍼도 정확히 읽는다', () {
       const stride = width + 16; // 카메라 프레임처럼 행 사이 패딩이 있는 경우

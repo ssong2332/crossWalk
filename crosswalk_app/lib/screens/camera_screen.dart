@@ -414,7 +414,7 @@ class _CameraScreenState extends State<CameraScreen>
   // 있어야 하기 때문(2026-08-24 요청). 콘솔 로그(`debugPrint`)만 기존처럼
   // 디버그 빌드에서만 남긴다.
   int _stripeDebugFrameCount = 0;
-  StripeDirectionEstimate? _stripeDebugEstimate;
+  StripeDirectionDiagnostic? _stripeDebugDiagnostic;
 
   void _updateStripeDirectionDebug(CameraImage image) {
     // 앱은 이 스트림 포맷을 강제한다(classifier.dart 주석 참고) — Y 플레인은
@@ -425,7 +425,9 @@ class _CameraScreenState extends State<CameraScreen>
     if (_stripeDebugFrameCount % 10 != 0) return; // 10프레임마다 1회 — 성능 부담 완화
 
     final plane = image.planes[0];
-    final estimate = StripeDirectionEstimator.estimate(
+    // T66-3: `estimate()` 대신 `diagnose()`를 써서 무판정일 때 이유(에지 없음
+    // / 근수직이라 걸러짐 / 우세 방향 없음)까지 화면에 보여준다.
+    final diagnostic = StripeDirectionEstimator.diagnose(
       gray: plane.bytes,
       width: image.width,
       height: image.height,
@@ -435,11 +437,35 @@ class _CameraScreenState extends State<CameraScreen>
     if (kDebugMode) {
       debugPrint(
         '[T66 stripe-direction, 실험적, 화면 미연결] '
-        '${estimate ?? "무판정(우세 방향 없음)"}',
+        '${diagnostic.estimate ?? diagnostic.reason} '
+        '${diagnostic.rejectedAngleDegrees != null ? "(걸러진 각도 ${diagnostic.rejectedAngleDegrees!.toStringAsFixed(0)}도)" : ""}',
       );
     }
 
-    if (mounted) setState(() => _stripeDebugEstimate = estimate);
+    if (mounted) setState(() => _stripeDebugDiagnostic = diagnostic);
+  }
+
+  String _stripeDebugText() {
+    final d = _stripeDebugDiagnostic;
+    if (d == null) return '실험적 — 줄무늬 각도: 계산 전';
+    final estimate = d.estimate;
+    if (estimate != null) {
+      return '실험적 — 줄무늬 각도: '
+          '${estimate.angleDegrees.toStringAsFixed(0)}도 '
+          '(신뢰 ${(estimate.confidence * 100).toStringAsFixed(0)}%)';
+    }
+    switch (d.reason) {
+      case StripeDirectionNullReason.noEdges:
+        return '실험적 — 무판정: 뚜렷한 에지 없음(흐림/저대비/저조도)';
+      case StripeDirectionNullReason.tooVertical:
+        final rejected = d.rejectedAngleDegrees;
+        return '실험적 — 무판정: 우세 방향이 근수직이라 배경으로 간주해 제외'
+            '${rejected != null ? " (걸러진 각도 ${rejected.toStringAsFixed(0)}도)" : ""}';
+      case StripeDirectionNullReason.lowConfidence:
+        return '실험적 — 무판정: 우세 방향 없음(방향이 흩어짐)';
+      case StripeDirectionNullReason.none:
+        return '실험적 — 줄무늬 각도: 계산 전';
+    }
   }
 
   @override
@@ -1065,11 +1091,7 @@ class _CameraScreenState extends State<CameraScreen>
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 10, vertical: 6),
                                 child: Text(
-                                  _stripeDebugEstimate == null
-                                      ? '실험적 — 줄무늬 각도: 무판정'
-                                      : '실험적 — 줄무늬 각도: '
-                                          '${_stripeDebugEstimate!.angleDegrees.toStringAsFixed(0)}도 '
-                                          '(신뢰 ${(_stripeDebugEstimate!.confidence * 100).toStringAsFixed(0)}%)',
+                                  _stripeDebugText(),
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     color: _colorTextDim.withValues(alpha: 0.8),
