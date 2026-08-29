@@ -91,6 +91,7 @@ class StripeDirectionEstimator {
     double gradientThreshold = 24.0,
     double maxTiltDegrees = 60.0,
     double minConfidence = 0.2,
+    int angleWindowDegrees = 10,
   }) {
     return diagnose(
       gray: gray,
@@ -101,6 +102,7 @@ class StripeDirectionEstimator {
       gradientThreshold: gradientThreshold,
       maxTiltDegrees: maxTiltDegrees,
       minConfidence: minConfidence,
+      angleWindowDegrees: angleWindowDegrees,
     ).estimate;
   }
 
@@ -118,6 +120,18 @@ class StripeDirectionEstimator {
   /// [minConfidence]: 우세 각도 구간의 집중도가 이 미만이면(뚜렷한 우세
   /// 방향이 없으면) 무판정 처리한다 — 모르는 것을 아는 척하지 않는다
   /// (Classifier의 threshold-미달 시 null 반환과 동일한 원칙).
+  /// [angleWindowDegrees]: 우세 각도 주변 몇 도까지를 "같은 방향"으로 묶어
+  /// 신뢰도를 계산할지. **T66-4에서 3 → 10으로 올렸다.** 실제 횡단보도는
+  /// (1) 원근 때문에 화면 위/아래에서 줄무늬 각도가 다르고 (2) 페인트가
+  /// 갈라져 에지 방향이 넓게 퍼진다 — ±3도로는 그 퍼짐을 담지 못해
+  /// 신뢰도가 임계값 밑으로 떨어져 계속 `lowConfidence` 무판정이 났다
+  /// (2026-08-24 사용자 실기기 사진 3장에서 재현).
+  ///
+  /// 값 선정 근거(파이썬으로 이 알고리즘을 그대로 재현해 실측):
+  /// 원근+균열 조건에서 ±3도는 신뢰도 0.12~0.17로 무판정, ±10도는
+  /// 0.25~0.62로 통과. ±12도 이상으로 더 넓히면 **무작위 노이즈까지
+  /// 0.21로 통과해 오탐**이 생기므로 10이 상한이다(노이즈 4개 시드에서
+  /// ±10도는 0.172~0.182로 전부 거부됨).
   static StripeDirectionDiagnostic diagnose({
     required Uint8List gray,
     required int width,
@@ -127,6 +141,7 @@ class StripeDirectionEstimator {
     double gradientThreshold = 24.0,
     double maxTiltDegrees = 60.0,
     double minConfidence = 0.2,
+    int angleWindowDegrees = 10,
   }) {
     // 1도 단위 히스토그램, 인덱스 0..180 은 -90..+90도에 대응.
     // T66-3: 각도 필터링 전에 **모든** 방향의 에지를 히스토그램에 담는다
@@ -206,9 +221,9 @@ class StripeDirectionEstimator {
       if (histogram[i] > histogram[peakBin]) peakBin = i;
     }
 
-    // 우세 각도 주변 ±3도 창 안의 가중 평균으로 각도를 정련하고,
-    // 그 창에 몰린 비율을 신뢰도로 쓴다(단일 1도 bin만 보면 노이즈에 민감).
-    const window = 3;
+    // 우세 각도 주변 창 안의 가중 평균으로 각도를 정련하고, 그 창에 몰린
+    // 비율을 신뢰도로 쓴다(단일 1도 bin만 보면 노이즈에 민감).
+    final window = angleWindowDegrees;
     double windowWeightedSum = 0.0;
     double windowWeight = 0.0;
     for (int i = math.max(0, peakBin - window);

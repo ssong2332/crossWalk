@@ -46,8 +46,56 @@ Uint8List _makeNoise(int width, int height, int seed) {
   var state = seed;
   for (int i = 0; i < buf.length; i++) {
     // 간단한 선형 합동 난수 — 외부 패키지 의존 없이 결정적 노이즈 생성.
+    //
+    // T66-4: 이전에는 `state % 256`으로 **하위 8비트**를 썼는데, LCG는
+    // 하위 비트의 주기가 짧아 그게 곧 규칙적인 패턴이 된다 — 즉 "무작위
+    // 노이즈"가 아니라 약한 방향성을 가진 무늬였다. 창을 ±3도로 좁게
+    // 잡았을 땐 그 구조가 신뢰도에 안 잡혀 문제가 드러나지 않았지만,
+    // ±10도로 넓히자 4개 시드 중 3개가 방향으로 **오탐**됐다(파이썬으로
+    // 같은 알고리즘을 돌려 실측: conf 0.216/0.249/0.222 > 임계값 0.2).
+    // 상위 비트를 쓰면 그 구조가 사라진다(같은 조건에서 0.152~0.177로
+    // 전부 정상 거부).
     state = (state * 1103515245 + 12345) & 0x7fffffff;
-    buf[i] = state % 256;
+    buf[i] = (state >> 16) & 0xFF;
+  }
+  return buf;
+}
+
+/// T66-4 회귀 방지용: **실제 카메라 조건**에 가까운 줄무늬를 만든다 —
+/// (1) 원근 왜곡(아래로 갈수록 줄 간격이 넓어지고 각도가 달라짐),
+/// (2) 갈라진 페인트를 흉내 낸 잡음.
+///
+/// 이상적인 평행 줄무늬(`_makeStripes`)만으로 검증했을 때 이 조건에서
+/// 계속 무판정(`lowConfidence`)이 나는 문제를 놓쳤다(2026-08-24 사용자
+/// 실기기 사진 3장에서 발견). 이 생성기가 그 상황을 테스트로 고정한다.
+Uint8List _makePerspectiveStripes({
+  required int width,
+  required int height,
+  required double angleDegrees,
+  double period = 24,
+  double vanishY = -120,
+  double crackAmplitude = 0,
+  int seed = 7,
+}) {
+  final buf = Uint8List(width * height);
+  final rad = angleDegrees * math.pi / 180;
+  final sinE = math.sin(rad);
+  final cosE = math.cos(rad);
+  var state = seed;
+  for (int y = 0; y < height; y++) {
+    for (int x = 0; x < width; x++) {
+      final p = -x * sinE + y * cosE;
+      // 소실점 기준 원근 압축 — 위쪽은 촘촘, 아래쪽은 성기게.
+      final phase = (p / (y - vanishY)) * 3000.0 / period;
+      var value = 128 + 110 * math.sin(2 * math.pi * phase);
+      if (crackAmplitude > 0) {
+        state = (state * 1103515245 + 12345) & 0x7fffffff;
+        // -1..1 범위의 결정적 잡음.
+        final n = (state % 2000) / 1000.0 - 1.0;
+        value += n * crackAmplitude;
+      }
+      buf[y * width + x] = value.round().clamp(0, 255);
+    }
   }
   return buf;
 }
@@ -183,6 +231,90 @@ void main() {
       expect(d.reason, StripeDirectionNullReason.none);
       expect(d.estimate, isNotNull);
       expect(d.estimate!.angleDegrees, closeTo(20.0, 3.0));
+    });
+  });
+
+  group('StripeDirectionEstimator — T66-4 원근·균열 조건 (실기기 회귀)', () {
+    // 사용자 실기기 사진 3장에서 "심하게 이탈" 판정인데도 각도가 계속
+    // 무판정으로 나온 상황. 원인은 필터가 아니라 신뢰도 창(±3도)이 원근
+    // 왜곡과 갈라진 페인트로 퍼진 에지 방향을 담지 못한 것이었다.
+    test('원근 왜곡만 있어도 무판정이 아니어야 한다', () {
+      final gray = _makePerspectiveStripes(
+        width: width,
+        height: height,
+        angleDegrees: 20,
+      );
+      final d = StripeDirectionEstimator.diagnose(
+        gray: gray,
+        width: width,
+        height: height,
+        rowStride: width,
+      );
+      expect(
+        d.reason,
+        StripeDirectionNullReason.none,
+        reason: '원근이 있는 실제 횡단보도에서 무판정이 나면 안 된다',
+      );
+      expect(d.estimate, isNotNull);
+    });
+
+    test('원근 + 갈라진 페인트 조건에서도 무판정이 아니어야 한다', () {
+      for (final crack in [30.0, 50.0]) {
+        final gray = _makePerspectiveStripes(
+          width: width,
+          height: height,
+          angleDegrees: 20,
+          crackAmplitude: crack,
+        );
+        final d = StripeDirectionEstimator.diagnose(
+          gray: gray,
+          width: width,
+          height: height,
+          rowStride: width,
+        );
+        expect(
+          d.reason,
+          StripeDirectionNullReason.none,
+          reason: '균열강도 $crack에서 무판정이 나면 안 된다',
+        );
+      }
+    });
+
+    test('창을 ±3도로 되돌리면 무판정이 재현된다 (원인 고정)', () {
+      // 이 테스트는 "왜 10인가"의 근거를 코드로 남긴다 — 창을 좁히면
+      // 실제로 무판정이 나므로, 누군가 값을 되돌리면 여기서 드러난다.
+      final gray = _makePerspectiveStripes(
+        width: width,
+        height: height,
+        angleDegrees: 20,
+        crackAmplitude: 50,
+      );
+      final d = StripeDirectionEstimator.diagnose(
+        gray: gray,
+        width: width,
+        height: height,
+        rowStride: width,
+        angleWindowDegrees: 3,
+      );
+      expect(d.reason, StripeDirectionNullReason.lowConfidence);
+    });
+
+    test('창을 넓혀도 무작위 노이즈는 여전히 걸러진다 (오탐 방지)', () {
+      // ±12도 이상으로 넓히면 노이즈까지 통과해버린다 — 10이 상한인 이유.
+      for (final seed in [42, 1, 99, 2024]) {
+        final gray = _makeNoise(width, height, seed);
+        final d = StripeDirectionEstimator.diagnose(
+          gray: gray,
+          width: width,
+          height: height,
+          rowStride: width,
+        );
+        expect(
+          d.estimate,
+          isNull,
+          reason: 'seed $seed 노이즈가 방향으로 오탐되면 안 된다',
+        );
+      }
     });
   });
 
