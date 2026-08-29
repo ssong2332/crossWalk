@@ -8,6 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../services/classifier.dart';
 import '../services/feedback_service.dart';
+import '../services/angle_estimator.dart';
 import '../services/stripe_direction_estimator.dart';
 import '../localization/app_strings.dart';
 import 'settings_screen.dart';
@@ -42,6 +43,9 @@ class _CameraScreenState extends State<CameraScreen>
     with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   CameraController? _controller;
   final Classifier _classifier = Classifier();
+  // T70: 학습된 각도 회귀 모델. 분류기와 별도 세션이며, 횡단보도가
+  // 보이는 상태에서만 돌린다(none이면 각도라는 개념 자체가 없다).
+  final AngleEstimator _angleEstimator = AngleEstimator();
 
   // Reviewer fix (T40 follow-up): uses widget.feedback (normally the single
   // FeedbackService instance owned by CrosswalkApp and shared via
@@ -199,7 +203,7 @@ class _CameraScreenState extends State<CameraScreen>
       // T67: 카메라가 새로 뜨면 이전 세션의 각도는 더 이상 유효하지 않다
       // (앱 재개 등으로 전혀 다른 장면일 수 있다). 스무딩 상태를 비워
       // 낡은 각도로 화살표가 잘못 돌아가는 것을 막는다.
-      _stripeAngleSmoother.reset();
+      _angleSmoother.reset();
 
       setState(() {
         _hasError = false;
@@ -241,6 +245,13 @@ class _CameraScreenState extends State<CameraScreen>
 
         setState(() => _statusLabel = _strings.loadingModel);
         await _classifier.init();
+        // 각도 모델 초기화 실패는 치명적이지 않다 — 각도만 못 쓰고
+        // 화살표는 기존 좌/우 표시로 동작한다. 앱 전체를 막지 않는다.
+        try {
+          await _angleEstimator.init();
+        } catch (e) {
+          debugPrint('[T70] 각도 모델 초기화 실패(각도 없이 계속 진행): $e');
+        }
 
         setState(() => _statusLabel = _strings.connectingCamera);
         final cameras = await availableCameras();
@@ -404,63 +415,65 @@ class _CameraScreenState extends State<CameraScreen>
       }
     }
 
-    _updateStripeDirectionDebug(image);
+    _updateAngleEstimate(image);
 
     _isProcessing = false;
   }
 
-  // T66: 실기기 검증용 실험적 표시 — 화살표·안내 로직에는 연결하지 않고,
-  // 화면 한쪽에 추정 각도만 작게 보여준다. `StripeDirectionEstimator`는
-  // 합성 이상적 줄무늬 패턴으로만 검증됐고 실제 카메라 프레임 정확도는
-  // 미검증이다(이 환경에 카메라 기기가 없어 확인 불가) — 사람이 눈으로
-  // 보는 기울기와 이 값을 실기기에서 나란히 비교해보기 위한 용도다.
+  // T70: 화살표가 따라갈 각도. **학습된 회귀 모델**(`AngleEstimator`)이 낸다.
   //
-  // release APK에서도 보이도록 일부러 `kDebugMode`로 막지 않았다 — 사용자가
-  // 컴퓨터 연결 없이 GitHub Actions에서 받은 APK를 폰에 설치해 바로 볼 수
-  // 있어야 하기 때문(2026-08-24 요청). 콘솔 로그(`debugPrint`)만 기존처럼
-  // 디버그 빌드에서만 남긴다.
-  int _stripeDebugFrameCount = 0;
-  StripeDirectionDiagnostic? _stripeDebugDiagnostic;
+  // T66~T67에서 쓰던 고전 CV(`StripeDirectionEstimator`)를 대체했다 —
+  // 사람 라벨 405장 기준 실측에서 고전 CV는 평균 오차 34.5도로 학습 없는
+  // "항상 0도"(32.4도)보다도 나빴고, 학습 모델은 13.4도로 61% 줄였다
+  // (docs/Tasks.md T67-2 / T69).
+  int _angleFrameCount = 0;
+  double? _lastRawAngle;
 
-  // T67: 화살표 회전에 실제로 쓰는 각도. raw 추정치를 그대로 쓰면 화살표가
-  // 떨리고, 한 프레임 무판정에도 깜빡이므로 스무딩·히스테리시스를 거친다.
-  final StripeAngleSmoother _stripeAngleSmoother = StripeAngleSmoother();
+  // raw 추정치를 그대로 쓰면 화살표가 떨리고 한 프레임 실패에도 깜빡이므로
+  // 스무딩·히스테리시스를 거친다(T67에서 만든 것을 그대로 재사용).
+  // 회귀 모델은 신뢰도를 내지 않으므로 신뢰도 게이트는 쓰지 않는다 —
+  // 대신 "횡단보도가 보이는 상태인지"를 분류기 결과로 판단한다(아래).
+  final StripeAngleSmoother _angleSmoother =
+      StripeAngleSmoother(minConfidence: 0.0);
   double? _arrowStripeAngle;
 
-  void _updateStripeDirectionDebug(CameraImage image) {
-    // 앱은 이 스트림 포맷을 강제한다(classifier.dart 주석 참고) — Y 플레인은
-    // 그레이스케일 휘도라 RGB 변환 없이 그대로 쓸 수 있다.
-    if (image.format.group != ImageFormatGroup.yuv420) return;
+  void _updateAngleEstimate(CameraImage image) {
+    if (!_angleEstimator.isReady) return;
 
-    _stripeDebugFrameCount++;
-    if (_stripeDebugFrameCount % 10 != 0) return; // 10프레임마다 1회 — 성능 부담 완화
+    _angleFrameCount++;
+    // 10프레임마다 1회(약 3Hz). **분류기와 겹치지 않게 3번째 프레임에 건다** —
+    // `Classifier`의 스로틀은 5프레임 주기(5,10,15...)라 0으로 두면 매번 같은
+    // 프레임에서 두 모델이 연달아 돌아 프레임 콜백이 길게 막힌다.
+    if (_angleFrameCount % 10 != 3) return;
 
-    final plane = image.planes[0];
-    // T66-3: `estimate()` 대신 `diagnose()`를 써서 무판정일 때 이유(에지 없음
-    // / 근수직이라 걸러짐 / 우세 방향 없음)까지 화면에 보여준다.
-    final diagnostic = StripeDirectionEstimator.diagnose(
-      gray: plane.bytes,
-      width: image.width,
-      height: image.height,
-      rowStride: plane.bytesPerRow,
-    );
+    // 횡단보도가 안 보이는 상태(none)에서는 각도라는 개념 자체가 없다.
+    // 모델은 그래도 숫자를 내지만 그건 의미 없는 값이므로 받지 않는다.
+    final hasCrosswalk = _guidanceLabel == 'front' ||
+        _guidanceLabel == 'left' ||
+        _guidanceLabel == 'right' ||
+        _guidanceLabel == 'approach';
 
-    if (kDebugMode) {
-      debugPrint(
-        '[T66 stripe-direction, 실험적, 화면 미연결] '
-        '${diagnostic.estimate ?? diagnostic.reason} '
-        '${diagnostic.rejectedAngleDegrees != null ? "(걸러진 각도 ${diagnostic.rejectedAngleDegrees!.toStringAsFixed(0)}도)" : ""}',
-      );
+    double? raw;
+    if (hasCrosswalk && !_noCall) {
+      // 학습 라벨이 EXIF 보정된 화면(세로) 방향 기준이라, 센서 버퍼를 그대로
+      // 넣으면 약 90도 계통 오차가 난다. sensorOrientation만큼 시계방향
+      // 회전을 적용해 맞춘다(angle_estimator.dart의 sensorCoord).
+      final rot = _controller?.description.sensorOrientation ?? 90;
+      raw = _angleEstimator.estimate(image, rot);
     }
 
-    // T67: 화살표가 따라갈 각도를 갱신한다. 신뢰도 게이트와 무판정
-    // 히스테리시스는 StripeAngleSmoother가 담당한다.
-    final arrowAngle = _stripeAngleSmoother.add(diagnostic.estimate);
+    if (kDebugMode) {
+      debugPrint('[T70 angle] label=$_guidanceLabel raw=$raw');
+    }
+
+    final smoothed = _angleSmoother.add(
+      raw == null ? null : StripeDirectionEstimate(raw, 1.0),
+    );
 
     if (mounted) {
       setState(() {
-        _stripeDebugDiagnostic = diagnostic;
-        _arrowStripeAngle = arrowAngle;
+        _lastRawAngle = raw;
+        _arrowStripeAngle = smoothed;
       });
     }
   }
@@ -522,27 +535,15 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
+  /// T70: 실기기 검증용 표시. 모델이 낸 각도를 그대로 보여준다 —
+  /// 화살표 방향이 실제 횡단보도와 맞는지, 그리고 **회전 보정이 맞는지**
+  /// (틀리면 약 90도 계통 오차가 난다)를 사람이 바로 확인할 수 있게 한다.
   String _stripeDebugText() {
-    final d = _stripeDebugDiagnostic;
-    if (d == null) return '실험적 — 줄무늬 각도: 계산 전';
-    final estimate = d.estimate;
-    if (estimate != null) {
-      return '실험적 — 줄무늬 각도: '
-          '${estimate.angleDegrees.toStringAsFixed(0)}도 '
-          '(신뢰 ${(estimate.confidence * 100).toStringAsFixed(0)}%)';
-    }
-    switch (d.reason) {
-      case StripeDirectionNullReason.noEdges:
-        return '실험적 — 무판정: 뚜렷한 에지 없음(흐림/저대비/저조도)';
-      case StripeDirectionNullReason.tooVertical:
-        final rejected = d.rejectedAngleDegrees;
-        return '실험적 — 무판정: 우세 방향이 근수직이라 배경으로 간주해 제외'
-            '${rejected != null ? " (걸러진 각도 ${rejected.toStringAsFixed(0)}도)" : ""}';
-      case StripeDirectionNullReason.lowConfidence:
-        return '실험적 — 무판정: 우세 방향 없음(방향이 흩어짐)';
-      case StripeDirectionNullReason.none:
-        return '실험적 — 줄무늬 각도: 계산 전';
-    }
+    if (!_angleEstimator.isReady) return '각도 모델 준비 중';
+    final raw = _lastRawAngle;
+    if (raw == null) return '각도: 횡단보도 미검출';
+    final shown = _arrowStripeAngle ?? raw;
+    return '각도 ${shown.toStringAsFixed(0)}도 (원시 ${raw.toStringAsFixed(0)}도)';
   }
 
   @override
@@ -564,6 +565,7 @@ class _CameraScreenState extends State<CameraScreen>
     _pulseController.dispose();
     _controller?.dispose();
     _classifier.dispose();
+    _angleEstimator.dispose();
     // Reviewer fix (T40 follow-up): only dispose the instance this screen
     // created itself. A shared instance is owned by CrosswalkApp (see
     // main.dart) and must outlive this screen — e.g. across
