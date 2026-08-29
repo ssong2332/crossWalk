@@ -12,6 +12,8 @@
 // source under the pub cache (see each mock's comment for the exact file),
 // not guessed — matching this repo's established verification discipline
 // (see docs/Tasks.md T24/T25 notes).
+import 'dart:math' as math;
+
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -325,6 +327,106 @@ void main() {
       const painter =
           StateFieldPainter(state: 'left', color: Color(0xFFF2B14A));
       expect(painter.severe, isFalse);
+    });
+
+    // T67: 줄무늬 각도가 바뀌면 화살표 회전이 달라지므로 반드시 다시 그려야
+    // 한다 — 빠뜨리면 화살표가 첫 각도에 멈춰 있게 된다.
+    test('줄무늬 각도만 바뀌어도 다시 그린다', () {
+      const a = StateFieldPainter(
+        state: 'left',
+        color: Color(0xFFF2B14A),
+        stripeAngleDegrees: 10,
+      );
+      const b = StateFieldPainter(
+        state: 'left',
+        color: Color(0xFFF2B14A),
+        stripeAngleDegrees: 25,
+      );
+      expect(b.shouldRepaint(a), isTrue);
+    });
+
+    test('각도가 있다가 무판정(null)이 되어도 다시 그린다', () {
+      const withAngle = StateFieldPainter(
+        state: 'right',
+        color: Color(0xFFF2B14A),
+        stripeAngleDegrees: 10,
+      );
+      const withoutAngle =
+          StateFieldPainter(state: 'right', color: Color(0xFFF2B14A));
+      expect(withoutAngle.shouldRepaint(withAngle), isTrue);
+    });
+
+    test('줄무늬 각도 기본값은 null이다 (모르면 회전하지 않는다)', () {
+      const painter =
+          StateFieldPainter(state: 'front', color: Color(0xFFA8CDE8));
+      expect(painter.stripeAngleDegrees, isNull);
+    });
+  });
+
+  // T67: 화살표가 감지된 횡단보도 방향을 따라가는 조건.
+  group('StateFieldPainter — 줄무늬 각도 추적 조건', () {
+    test('각도를 알면 front/left/right에서 화살표가 회전한다', () {
+      for (final state in ['front', 'left', 'right']) {
+        final painter = StateFieldPainter(
+          state: state,
+          color: const Color(0xFFF2B14A),
+          stripeAngleDegrees: 20,
+        );
+        expect(painter.tracksStripeForTest, isTrue, reason: 'state=$state');
+      }
+    });
+
+    test('각도를 모르면 어떤 상태에서도 회전하지 않는다', () {
+      for (final state in ['front', 'left', 'right']) {
+        final painter = StateFieldPainter(
+          state: state,
+          color: const Color(0xFFF2B14A),
+        );
+        expect(painter.tracksStripeForTest, isFalse, reason: 'state=$state');
+      }
+    });
+
+    test('화살표가 아닌 상태(approach/none/nocall)는 각도가 있어도 회전하지 않는다', () {
+      for (final state in ['approach', 'none', 'nocall']) {
+        final painter = StateFieldPainter(
+          state: state,
+          color: const Color(0xFFCBD1D6),
+          stripeAngleDegrees: 20,
+        );
+        expect(painter.tracksStripeForTest, isFalse, reason: 'state=$state');
+      }
+    });
+
+    // 기하 검증: 줄무늬는 진행 방향과 수직이므로 회전각 = θ − π/2.
+    // θ=0(줄무늬가 화면에서 수평)이면 위쪽(−π/2)을 가리켜야 하고, 이는
+    // 각도를 모를 때의 'front' 화살표 방향과 정확히 일치해야 한다.
+    test('각도 0도는 위쪽(-π/2)을 가리킨다 — 기존 front 화살표와 일치', () {
+      const painter = StateFieldPainter(
+        state: 'front',
+        color: Color(0xFFA8CDE8),
+        stripeAngleDegrees: 0,
+      );
+      expect(painter.stripeRotationForTest, closeTo(-math.pi / 2, 1e-9));
+    });
+
+    test('양수 각도는 시계방향으로, 음수 각도는 반시계방향으로 돈다', () {
+      const right = StateFieldPainter(
+        state: 'front',
+        color: Color(0xFFA8CDE8),
+        stripeAngleDegrees: 30,
+      );
+      const left = StateFieldPainter(
+        state: 'front',
+        color: Color(0xFFA8CDE8),
+        stripeAngleDegrees: -30,
+      );
+      expect(right.stripeRotationForTest, greaterThan(-math.pi / 2));
+      expect(left.stripeRotationForTest, lessThan(-math.pi / 2));
+      // 30도 회전은 정확히 π/6 라디안만큼 벌어져야 한다.
+      expect(
+        right.stripeRotationForTest - (-math.pi / 2),
+        closeTo(math.pi / 6, 1e-9),
+      );
     });
   });
 }
