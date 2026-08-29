@@ -74,8 +74,8 @@ CACHE_SIZE = 288
 
 N_FOLDS = 5
 BATCH_SIZE = 32
-EPOCHS_FROZEN = 8
-EPOCHS_FINETUNE = 12
+EPOCHS_FROZEN = 10
+EPOCHS_FINETUNE = 25
 LR_FROZEN = 1e-3
 LR_FINETUNE = 1e-4
 MAX_ROT_DEG = 15.0
@@ -284,13 +284,22 @@ def run_epoch(model, loader, device, criterion, optimizer=None):
 
 
 def predict(model, items, device):
+    """좌우반전 TTA로 예측한다.
+
+    반전하면 정답 각도의 부호가 뒤집히므로(실측 확정), 반전 입력의 예측을
+    다시 부호 반전해 원본 예측과 평균낸다. 좌/우 어느 쪽으로도 치우치지
+    않게 만들어 계통 편향을 줄인다.
+    """
     model.eval()
     loader = DataLoader(AngleDataset(items, train=False),
                         batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
     preds = []
     with torch.no_grad():
         for x, _ in loader:
-            preds += (model(x.to(device)).cpu().numpy().ravel() * ANGLE_SCALE).tolist()
+            x = x.to(device)
+            a = model(x).cpu().numpy().ravel()
+            b = -model(torch.flip(x, dims=[3])).cpu().numpy().ravel()
+            preds += ((a + b) / 2 * ANGLE_SCALE).tolist()
     return preds
 
 
@@ -345,8 +354,11 @@ def main():
         for p in model.parameters():
             p.requires_grad = True
         opt = optim.Adam(model.parameters(), lr=LR_FINETUNE)
+        # 코사인 감쇠 — 후반부에 학습률을 낮춰 손실이 튀지 않고 수렴하게 한다.
+        sched = optim.lr_scheduler.CosineAnnealingLR(opt, T_max=EPOCHS_FINETUNE)
         for e in range(EPOCHS_FINETUNE):
             loss = run_epoch(model, tr_loader, device, criterion, opt)
+            sched.step()
             print(f"  finetune {e + 1}/{EPOCHS_FINETUNE} loss {loss:.4f}", flush=True)
 
         preds = predict(model, te, device)
@@ -374,6 +386,16 @@ def main():
         by[c].append(abs(p - g))
     for c in sorted(by):
         report(f"    {c}", by[c])
+
+    # 진단용: 예측값을 그대로 저장해 나중에 분석할 수 있게 한다
+    # (큰 각도를 평균 쪽으로 축소 예측하는지 등).
+    pred_csv = REPO / "train" / "angle_cv_predictions.csv"
+    with open(pred_csv, "w", encoding="utf-8", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["class", "gt_deg", "pred_deg", "abs_err"])
+        for c, g, p_ in zip(all_cls, all_gt, all_pred):
+            w.writerow([c, f"{g:.2f}", f"{p_:.2f}", f"{abs(p_ - g):.2f}"])
+    print(f"\n예측값 저장: {pred_csv}")
 
     torch.save(model.state_dict(), MODEL_OUT)
     print(f"\n마지막 fold 모델 저장: {MODEL_OUT}")
