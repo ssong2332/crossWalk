@@ -34,3 +34,7 @@ crosswalk_app/android/key.properties
 .idea/
 .vscode/
 *.iml
+
+# T69: 각도 회귀 학습용 EXIF 보정 캐시 및 학습 로그 (재생성 가능)
+train/angle_cache/
+train/angle_train_log.txt
