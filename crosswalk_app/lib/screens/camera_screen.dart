@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
@@ -196,11 +196,17 @@ class _CameraScreenState extends State<CameraScreen>
     _isInitializing = true;
 
     try {
+      // T67: 카메라가 새로 뜨면 이전 세션의 각도는 더 이상 유효하지 않다
+      // (앱 재개 등으로 전혀 다른 장면일 수 있다). 스무딩 상태를 비워
+      // 낡은 각도로 화살표가 잘못 돌아가는 것을 막는다.
+      _stripeAngleSmoother.reset();
+
       setState(() {
         _hasError = false;
         _permissionPermanentlyDenied = false;
         _torchEnabled = false;
         _statusLabel = _strings.initializing;
+        _arrowStripeAngle = null;
       });
 
       try {
@@ -416,6 +422,11 @@ class _CameraScreenState extends State<CameraScreen>
   int _stripeDebugFrameCount = 0;
   StripeDirectionDiagnostic? _stripeDebugDiagnostic;
 
+  // T67: 화살표 회전에 실제로 쓰는 각도. raw 추정치를 그대로 쓰면 화살표가
+  // 떨리고, 한 프레임 무판정에도 깜빡이므로 스무딩·히스테리시스를 거친다.
+  final StripeAngleSmoother _stripeAngleSmoother = StripeAngleSmoother();
+  double? _arrowStripeAngle;
+
   void _updateStripeDirectionDebug(CameraImage image) {
     // 앱은 이 스트림 포맷을 강제한다(classifier.dart 주석 참고) — Y 플레인은
     // 그레이스케일 휘도라 RGB 변환 없이 그대로 쓸 수 있다.
@@ -442,7 +453,73 @@ class _CameraScreenState extends State<CameraScreen>
       );
     }
 
-    if (mounted) setState(() => _stripeDebugDiagnostic = diagnostic);
+    // T67: 화살표가 따라갈 각도를 갱신한다. 신뢰도 게이트와 무판정
+    // 히스테리시스는 StripeAngleSmoother가 담당한다.
+    final arrowAngle = _stripeAngleSmoother.add(diagnostic.estimate);
+
+    if (mounted) {
+      setState(() {
+        _stripeDebugDiagnostic = diagnostic;
+        _arrowStripeAngle = arrowAngle;
+      });
+    }
+  }
+
+  /// T67: 상태 필드(화살표). 각도를 아는 동안에는 화살표가 감지된 횡단보도
+  /// 방향을 따라 **부드럽게 회전**한다.
+  ///
+  /// 회전을 `TweenAnimationBuilder`로 보간하는 이유: 각도 추정은 10프레임마다
+  /// 한 번(약 3Hz)만 갱신되므로, 값을 그대로 그리면 화살표가 뚝뚝 끊겨
+  /// 움직인다. 목표 각도까지 애니메이션으로 이어 그려야 "횡단보도와 실시간
+  /// 동기화"처럼 보인다.
+  ///
+  /// 접근성: `MediaQuery.disableAnimations`(모션 감소)가 켜져 있으면 보간을
+  /// 끄고 즉시 목표 각도로 그린다 — 화살표가 가리키는 정보 자체는 그대로
+  /// 유지되고 움직임만 사라진다.
+  Widget _buildStateField(Color color, bool reducedMotion) {
+    final angle = _arrowStripeAngle;
+
+    if (angle == null) {
+      // 각도 무판정 — 기존 고정 화살표로 되돌아간다.
+      return CustomPaint(
+        size: Size.infinite,
+        painter: StateFieldPainter(
+          state: _fieldState,
+          color: color,
+          severe: _severe,
+        ),
+      );
+    }
+
+    if (reducedMotion) {
+      return CustomPaint(
+        size: Size.infinite,
+        painter: StateFieldPainter(
+          state: _fieldState,
+          color: color,
+          severe: _severe,
+          stripeAngleDegrees: angle,
+        ),
+      );
+    }
+
+    return TweenAnimationBuilder<double>(
+      // `end`만 준다 — TweenAnimationBuilder는 end가 바뀔 때마다 **현재
+      // 그려지고 있는 값**에서 새 end까지 이어서 보간한다. begin을 함께
+      // 주면 매번 그 값에서 다시 시작해버려 오히려 튄다.
+      tween: Tween<double>(end: angle),
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+      builder: (context, animatedAngle, _) => CustomPaint(
+        size: Size.infinite,
+        painter: StateFieldPainter(
+          state: _fieldState,
+          color: color,
+          severe: _severe,
+          stripeAngleDegrees: animatedAngle,
+        ),
+      ),
+    );
   }
 
   String _stripeDebugText() {
@@ -961,14 +1038,7 @@ class _CameraScreenState extends State<CameraScreen>
                               ),
                             )
                           : RepaintBoundary(
-                              child: CustomPaint(
-                                size: Size.infinite,
-                                painter: StateFieldPainter(
-                                  state: _fieldState,
-                                  color: color,
-                                  severe: _severe,
-                                ),
-                              ),
+                              child: _buildStateField(color, reducedMotion),
                             ),
                     ),
                   ),
@@ -1138,6 +1208,7 @@ class StateFieldPainter extends CustomPainter {
     required this.state,
     required this.color,
     this.severe = false,
+    this.stripeAngleDegrees,
   });
 
   /// 'front' | 'left' | 'right' | 'approach' | 'none' | 'nocall' | 'error'
@@ -1148,7 +1219,36 @@ class StateFieldPainter extends CustomPainter {
   /// 않기 위한 비-색 겹침(redundancy). left/right가 아니면 무시된다.
   final bool severe;
 
+  /// T67: 실시간으로 추정한 횡단보도 줄무늬 기울기(도, 수평 기준).
+  ///
+  /// 값이 있으면 화살표가 **실제 감지된 횡단보도가 뻗은 방향**(진행 방향)을
+  /// 가리키도록 회전한다. null이면(무판정·저신뢰) 회전하지 않고 기존의 고정
+  /// 화살표로 되돌아간다 — 모르는 각도를 지어내지 않는다.
+  ///
+  /// 기하: 줄무늬는 진행 방향과 **수직**이다. 줄무늬 선의 방향이
+  /// (cos θ, sin θ)이므로 진행 방향은 (sin θ, −cos θ)이고, 캔버스 회전각은
+  /// atan2(−cos θ, sin θ) = θ − π/2 가 된다. θ=0(줄무늬가 화면에서 수평)일 때
+  /// −π/2(위쪽) — 기존 'front' 화살표와 정확히 일치한다.
+  final double? stripeAngleDegrees;
+
   static const _pi = 3.1415926535897932;
+
+  /// 화살표가 실제로 회전 가능한 상태인지 — left/right/front에서만,
+  /// 그리고 각도를 알 때만.
+  bool get _tracksStripe =>
+      stripeAngleDegrees != null &&
+      (state == 'front' || state == 'left' || state == 'right');
+
+  /// 추정 각도를 캔버스 회전각(라디안)으로 바꾼다.
+  double get _stripeRotation => stripeAngleDegrees! * _pi / 180 - _pi / 2;
+
+  /// 캔버스에 실제로 그려진 픽셀을 검사하기는 어려우므로, 회전 조건과
+  /// 회전각 계산을 테스트에서 직접 확인할 수 있게 노출한다.
+  @visibleForTesting
+  bool get tracksStripeForTest => _tracksStripe;
+
+  @visibleForTesting
+  double get stripeRotationForTest => _stripeRotation;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1163,22 +1263,26 @@ class StateFieldPainter extends CustomPainter {
     final unit = (state == 'left' || state == 'right') && severe
         ? baseUnit * 1.2
         : baseUnit;
+    // T67: 각도를 알면 세 상태 모두 화살표가 **감지된 횡단보도가 뻗은
+    // 방향**을 가리킨다(실시간 동기화). 좌/우 이탈 정보는 사라지지 않는다 —
+    // 화살표의 **위치**(좌 0.30 / 우 0.70), 색, 문구, 가장자리 펄스, 음성,
+    // 진동이 그대로 전달하므로 색각이상에서도 중복 채널이 유지된다.
     switch (state) {
       case 'front':
         _arrow(canvas, stroke, Offset(size.width / 2, size.height / 2), unit,
-            -_pi / 2);
+            _tracksStripe ? _stripeRotation : -_pi / 2);
         break;
-      // T63(2026-08-24, 사용자 확정): 화살표는 이제 **가야 할 방향**이 아니라
-      // **현재 이탈 방향**을 가리킨다. 목표 방향은 반대편 가장자리 펄스로
-      // 전달한다(CameraScreen._buildEdgePulse). 위치도 그 방향 쪽으로
-      // 옮겨 "지금 이쪽으로 쏠려 있다"는 느낌을 강화한다.
+      // T63(2026-08-24, 사용자 확정): 각도를 모를 때의 화살표는 **가야 할
+      // 방향**이 아니라 **현재 이탈 방향**을 가리킨다. 목표 방향은 반대편
+      // 가장자리 펄스로 전달한다(CameraScreen._buildEdgePulse). 위치도 그
+      // 방향 쪽으로 옮겨 "지금 이쪽으로 쏠려 있다"는 느낌을 강화한다.
       case 'left':
         _arrow(canvas, stroke, Offset(size.width * 0.30, size.height / 2), unit,
-            _pi);
+            _tracksStripe ? _stripeRotation : _pi);
         break;
       case 'right':
         _arrow(canvas, stroke, Offset(size.width * 0.70, size.height / 2), unit,
-            0);
+            _tracksStripe ? _stripeRotation : 0);
         break;
       case 'approach':
         _thresholdBar(canvas, stroke, size, unit);
@@ -1267,6 +1371,7 @@ class StateFieldPainter extends CustomPainter {
   bool shouldRepaint(covariant StateFieldPainter oldDelegate) {
     return oldDelegate.state != state ||
         oldDelegate.color != color ||
-        oldDelegate.severe != severe;
+        oldDelegate.severe != severe ||
+        oldDelegate.stripeAngleDegrees != stripeAngleDegrees;
   }
 }
