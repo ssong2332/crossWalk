@@ -92,6 +92,13 @@ void main() {
   });
 
   group('AngleEstimator — 상수 동기화', () {
+    // T70-2: 학습(train_angle.py)은 CACHE_SIZE=288로 리사이즈한 뒤
+    // IMG_SIZE=224로 중앙 크롭한다. 앱이 이 비율을 안 맞추면 화각이 넓어져
+    // 물체가 학습 때보다 작게 보이고, 실측상 오차가 커진다.
+    test('cropRatio는 학습의 224/288과 같아야 한다', () {
+      expect(AngleEstimator.cropRatio, closeTo(224.0 / 288.0, 1e-12));
+    });
+
     test('angleScale은 학습 스크립트의 ANGLE_SCALE(90.0)과 같아야 한다', () {
       // train/train_angle.py의 ANGLE_SCALE과 어긋나면 각도가 배율만큼
       // 조용히 틀어진다(에러 없음).
