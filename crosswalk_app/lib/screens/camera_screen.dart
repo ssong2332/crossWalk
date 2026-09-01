@@ -434,7 +434,7 @@ class _CameraScreenState extends State<CameraScreen>
   // 회귀 모델은 신뢰도를 내지 않으므로 신뢰도 게이트는 쓰지 않는다 —
   // 대신 "횡단보도가 보이는 상태인지"를 분류기 결과로 판단한다(아래).
   final StripeAngleSmoother _angleSmoother =
-      StripeAngleSmoother(minConfidence: 0.0);
+      StripeAngleSmoother(minConfidence: 0.0, smoothingFactor: 0.6);
   double? _arrowStripeAngle;
 
   void _updateAngleEstimate(CameraImage image) {
