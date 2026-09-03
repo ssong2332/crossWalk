@@ -1266,24 +1266,29 @@ class StateFieldPainter extends CustomPainter {
         ? baseUnit * 1.2
         : baseUnit;
     // T67: 각도를 알면 세 상태 모두 화살표가 **감지된 횡단보도가 뻗은
-    // 방향**을 가리킨다(실시간 동기화). 좌/우 이탈 정보는 사라지지 않는다 —
-    // 화살표의 **위치**(좌 0.30 / 우 0.70), 색, 문구, 가장자리 펄스, 음성,
-    // 진동이 그대로 전달하므로 색각이상에서도 중복 채널이 유지된다.
+    // 방향**을 가리킨다(실시간 동기화).
+    //
+    // T72(2026-09-04, 사용자 지시): 화살표를 **세 상태 모두 화면 중앙**에
+    // 고정하고 방향(회전)만 바꾼다. 이전에는 이탈 방향으로 위치를 옮겼으나
+    // (좌 0.30 / 우 0.70), 사용자가 위치 이동 없이 방향만 바뀌기를 요청했다.
+    // 위치라는 채널 하나가 빠지는 대신, 이탈 정보는 색·문구·가장자리
+    // 펄스(`CameraScreen._buildEdgePulse`)·음성·진동이 계속 전달하므로
+    // 색각이상에서도 중복 채널은 유지된다.
+    final center = Offset(size.width / 2, size.height / 2);
     switch (state) {
       case 'front':
-        _arrow(canvas, stroke, Offset(size.width / 2, size.height / 2), unit,
+        _arrow(canvas, stroke, center, unit,
             _tracksStripe ? _stripeRotation : -_pi / 2);
         break;
       // T63(2026-08-24, 사용자 확정): 각도를 모를 때의 화살표는 **가야 할
       // 방향**이 아니라 **현재 이탈 방향**을 가리킨다. 목표 방향은 반대편
-      // 가장자리 펄스로 전달한다(CameraScreen._buildEdgePulse). 위치도 그
-      // 방향 쪽으로 옮겨 "지금 이쪽으로 쏠려 있다"는 느낌을 강화한다.
+      // 가장자리 펄스로 전달한다(CameraScreen._buildEdgePulse).
       case 'left':
-        _arrow(canvas, stroke, Offset(size.width * 0.30, size.height / 2), unit,
+        _arrow(canvas, stroke, center, unit,
             _tracksStripe ? _stripeRotation : _pi);
         break;
       case 'right':
-        _arrow(canvas, stroke, Offset(size.width * 0.70, size.height / 2), unit,
+        _arrow(canvas, stroke, center, unit,
             _tracksStripe ? _stripeRotation : 0);
         break;
       case 'approach':

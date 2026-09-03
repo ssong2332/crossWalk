@@ -263,6 +263,37 @@ void main() {
     );
   });
 
+  // T72(2026-09-04, 사용자 지시): 화살표는 상태와 무관하게 **항상 화면
+  // 중앙**에 그리고 방향(회전)만 바꾼다. 이전에는 left를 0.30, right를 0.70
+  // 위치로 옮겼다. 위치는 캔버스에 그려진 픽셀이라 위젯 테스트로는 잡히지
+  // 않으므로, `Canvas.translate` 호출을 기록하는 대역 캔버스로 직접 확인한다.
+  group('StateFieldPainter — 화살표는 세 상태 모두 중앙에 그린다 (T72)', () {
+    const size = Size(300, 200);
+    const center = Offset(150, 100);
+
+    Offset arrowOriginFor(String state, {double? angle}) {
+      final canvas = _TranslateRecordingCanvas();
+      StateFieldPainter(
+        state: state,
+        color: const Color(0xFFF2B14A),
+        stripeAngleDegrees: angle,
+      ).paint(canvas, size);
+      expect(canvas.translations, hasLength(1),
+          reason: '$state는 화살표를 정확히 한 번 그려야 한다');
+      return canvas.translations.single;
+    }
+
+    for (final state in ['front', 'left', 'right']) {
+      test('$state — 각도를 모를 때도 중앙', () {
+        expect(arrowOriginFor(state), equals(center));
+      });
+
+      test('$state — 각도를 알 때도 중앙 (회전만 바뀐다)', () {
+        expect(arrowOriginFor(state, angle: 40), equals(center));
+      });
+    }
+  });
+
   // StateFieldPainter는 위젯 트리에 의존하지 않는 순수 CustomPainter이므로
   // 다시 그릴 조건을 직접 검증할 수 있다.
   group('StateFieldPainter — shouldRepaint', () {
@@ -294,7 +325,7 @@ void main() {
     });
 
     test(
-      'left와 right는 같은 색을 쓴다 — 방향은 색이 아니라 형태와 위치로 '
+      'left와 right는 같은 색을 쓴다 — 방향은 색이 아니라 화살표 회전으로 '
       '전달되므로 색각이상에서도 구분된다',
       () {
         const left = StateFieldPainter(state: 'left', color: Color(0xFFF2B14A));
@@ -302,7 +333,8 @@ void main() {
             StateFieldPainter(state: 'right', color: Color(0xFFF2B14A));
 
         expect(left.color, equals(right.color));
-        // 같은 색이지만 상태가 다르므로 다시 그려야 한다 (형태·위치가 다름).
+        // 같은 색이지만 상태가 다르므로 다시 그려야 한다 (회전각이 다름).
+        // T72 이후 위치는 세 상태 모두 중앙으로 같다.
         expect(right.shouldRepaint(left), isTrue);
       },
     );
@@ -429,4 +461,33 @@ void main() {
       );
     });
   });
+}
+
+/// `Canvas.translate` 호출만 기록하는 대역 캔버스.
+///
+/// `StateFieldPainter._arrow`는 `save -> translate(중심) -> rotate -> drawLine
+/// x3 -> restore` 순서로 그린다. 화살표의 **위치**는 이 translate 인자에
+/// 그대로 담기므로, 픽셀을 렌더링하지 않고도 중앙 고정을 검증할 수 있다.
+/// 나머지 Canvas 멤버는 noSuchMethod로 조용히 무시한다 — 이 테스트가 보는
+/// 것은 위치뿐이다.
+class _TranslateRecordingCanvas implements Canvas {
+  final List<Offset> translations = <Offset>[];
+
+  @override
+  void translate(double dx, double dy) => translations.add(Offset(dx, dy));
+
+  @override
+  void save() {}
+
+  @override
+  void restore() {}
+
+  @override
+  void rotate(double radians) {}
+
+  @override
+  void drawLine(Offset p1, Offset p2, Paint paint) {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
 }
