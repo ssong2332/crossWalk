@@ -103,7 +103,7 @@ void main() {
       expect(sum, closeTo(1.0, 1e-6));
     });
 
-    test('thresholds 0.5/0.55/0.50 are reachable given a sufficiently skewed logit vector', () {
+    test('thresholds 0.40/0.55 are reachable given a sufficiently skewed logit vector', () {
       final classifier = Classifier();
 
       // T51: 5-class order is ['none','approach','front','left','right'],
@@ -176,6 +176,34 @@ void main() {
     });
   });
 
+  // T73(2026-09-04): 임계값은 누수 없는 5-fold CV 확률을 격자 탐색해 **실측
+  // 으로** 정한 값이다(그 전에는 T51 이래 "재학습 후 확정" 잠정값이었다).
+  // 상수가 조용히 바뀌면 판정 성향 전체가 달라지는데 에러는 나지 않으므로
+  // 값 자체를 테스트로 고정한다.
+  group('Classifier — 임계값 상수 (T73 실측값)', () {
+    test('front/none/approach는 0.40, 이탈은 0.55다', () {
+      expect(Classifier.thresholdsForTest['front'], 0.40);
+      expect(Classifier.thresholdsForTest['none'], 0.40);
+      expect(Classifier.thresholdsForTest['approach'], 0.40);
+      expect(Classifier.thresholdsForTest['deviation'], 0.55);
+    });
+
+    test('이탈 임계값은 나머지보다 높다 — 경고는 더 엄격하게 낸다', () {
+      final t = Classifier.thresholdsForTest;
+      expect(t['deviation']!, greaterThan(t['front']!));
+      expect(t['deviation']!, greaterThan(t['none']!));
+      expect(t['deviation']!, greaterThan(t['approach']!));
+    });
+
+    test('모든 임계값은 5-class 무작위(0.20)보다 충분히 높다', () {
+      // 0.20은 5지선다의 우연 수준. T73에서 0.30까지 낮추는 안을 실측했으나
+      // 우연의 1.5배에 불과해 기각하고 0.40에서 멈췄다.
+      for (final v in Classifier.thresholdsForTest.values) {
+        expect(v, greaterThanOrEqualTo(0.40));
+      }
+    });
+  });
+
   group('Classifier.decideFromLogits — threshold gating', () {
     test('returns null when confidence is below the applicable threshold', () {
       final classifier = Classifier();
@@ -183,13 +211,13 @@ void main() {
       // Near-uniform/ambiguous logits -> near-uniform probabilities -> no
       // class clears its threshold.
       // T51: 5 elements now. Max averaged prob here is ~0.202, below every
-      // threshold (front 0.50 / none 0.50 / approach 0.50 / dev 0.55).
+      // threshold (T73: front 0.40 / none 0.40 / approach 0.40 / dev 0.55).
       final result = classifier.decideFromLogits([0.01, 0.0, 0.01, 0.0, -0.01]);
 
       expect(result, isNull);
     });
 
-    test('returns "none" when its confidence clears the 0.50 none threshold', () {
+    test('returns "none" when its confidence clears the 0.40 none threshold', () {
       final classifier = Classifier();
 
       // Strongly skewed toward "none" (index 0 under the T51 5-class order).
@@ -202,11 +230,11 @@ void main() {
       expect(result!.label, 'none');
     });
 
-    // T51: `approach` (index 1) is a new class with its own provisional
-    // 0.50 threshold. Verifies the switch in decideFromLogits actually maps
+    // T51: `approach` (index 1) is a new class with its own threshold
+    // (T73: 0.40). Verifies the switch in decideFromLogits actually maps
     // it — a missing branch would silently fall through to the 0.55
     // deviation threshold.
-    test('returns "approach" when its confidence clears the 0.50 threshold', () {
+    test('returns "approach" when its confidence clears the 0.40 threshold', () {
       final classifier = Classifier();
 
       ClassificationResult? result;
