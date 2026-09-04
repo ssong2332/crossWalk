@@ -112,10 +112,22 @@ def main():
         "angle_scale": ANGLE_SCALE,
         "img_size": IMG_SIZE,
         "input_orientation": "display_portrait_exif_corrected",
-        "output": "walking_direction_degrees (screen-up=0, clockwise+)",
+        # T75: 이 값은 **순수 기하 각도가 아니다.** 사용자가 라벨링할 때
+        # 횡단보도 내 좌우 위치에 따라 위험 가중을 더했다 — 가장자리에서
+        # 바깥으로 향할수록 각도를 크게 줬다(실측: 위치 한 단계당 +7.3도,
+        # R^2 0.204). 즉 "가야 할 방향"이자 "얼마나 급히 고쳐야 하는가"를
+        # 함께 담은 **보정량**이다. 사진과 대조해 기하학적으로 검증할 수 없다.
+        "output": "correction_magnitude_degrees "
+                  "(screen-up=0, clockwise+, risk-weighted by lateral position)",
         "sha256": digest,
-        "cv_mean_abs_err_deg": 13.4,
-        "cv_median_abs_err_deg": 7.5,
+        # v2 라벨(604장) 기준, 누수 없는 5-fold CV.
+        # 주의: v1(558장)의 12.2도와 직접 비교하면 안 된다 — v2는 라벨 각도
+        # 자체가 작아 기준선(항상 0도)도 31.2 -> 16.5도로 내려갔다.
+        # 상대오차로 보면 v1 0.391 / v2 0.457이다.
+        "label_set": "v2_604_risk_weighted",
+        "cv_mean_abs_err_deg": 7.5,
+        "cv_median_abs_err_deg": 4.8,
+        "cv_baseline_always_zero_deg": 16.5,
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"메타 저장: {META_OUT}  (sha256 {digest[:16]}...)")
     print("\n앱 통합 시 주의: 이 모델에는 **화면 방향으로 회전된** 프레임을 넣어야 한다.")
