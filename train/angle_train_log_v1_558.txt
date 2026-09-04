@@ -1,0 +1,218 @@
+==============================================================================
+T69: 진행 방향 각도 회귀 학습 (누수 없는 세션 기반 5-fold CV)
+==============================================================================
+라벨 558장 로드
+세션 144개, 근사중복 클러스터 557개
+[검사 통과] 세션 144개 / 근사중복 클러스터 557개 — 모두 단일 fold에 귀속
+  fold별 장수: [112, 112, 112, 111, 111]
+[캐시] 신규 153장 생성, 총 558장 (EXIF 보정 적용)
+device: cpu
+
+[fold 0] train 446 / test 112
+  frozen  1/10 loss 0.3990
+  frozen  2/10 loss 0.3779
+  frozen  3/10 loss 0.3072
+  frozen  4/10 loss 0.3192
+  frozen  5/10 loss 0.3068
+  frozen  6/10 loss 0.3095
+  frozen  7/10 loss 0.3063
+  frozen  8/10 loss 0.2975
+  frozen  9/10 loss 0.3086
+  frozen  10/10 loss 0.2861
+  finetune 1/25 loss 0.2708
+  finetune 2/25 loss 0.2173
+  finetune 3/25 loss 0.1916
+  finetune 4/25 loss 0.1680
+  finetune 5/25 loss 0.1585
+  finetune 6/25 loss 0.1517
+  finetune 7/25 loss 0.1336
+  finetune 8/25 loss 0.1291
+  finetune 9/25 loss 0.1122
+  finetune 10/25 loss 0.1247
+  finetune 11/25 loss 0.1159
+  finetune 12/25 loss 0.1242
+  finetune 13/25 loss 0.1198
+  finetune 14/25 loss 0.1123
+  finetune 15/25 loss 0.1001
+  finetune 16/25 loss 0.0972
+  finetune 17/25 loss 0.1016
+  finetune 18/25 loss 0.1045
+  finetune 19/25 loss 0.1032
+  finetune 20/25 loss 0.0980
+  finetune 21/25 loss 0.0998
+  finetune 22/25 loss 0.0861
+  finetune 23/25 loss 0.0957
+  finetune 24/25 loss 0.1077
+  finetune 25/25 loss 0.0908
+  -> fold 0 평균오차 13.3도
+
+[fold 1] train 446 / test 112
+  frozen  1/10 loss 0.4019
+  frozen  2/10 loss 0.3291
+  frozen  3/10 loss 0.3240
+  frozen  4/10 loss 0.3047
+  frozen  5/10 loss 0.3132
+  frozen  6/10 loss 0.3180
+  frozen  7/10 loss 0.2938
+  frozen  8/10 loss 0.3103
+  frozen  9/10 loss 0.2889
+  frozen  10/10 loss 0.3035
+  finetune 1/25 loss 0.2800
+  finetune 2/25 loss 0.2321
+  finetune 3/25 loss 0.1900
+  finetune 4/25 loss 0.1707
+  finetune 5/25 loss 0.1831
+  finetune 6/25 loss 0.1559
+  finetune 7/25 loss 0.1396
+  finetune 8/25 loss 0.1519
+  finetune 9/25 loss 0.1449
+  finetune 10/25 loss 0.1372
+  finetune 11/25 loss 0.1172
+  finetune 12/25 loss 0.1150
+  finetune 13/25 loss 0.1164
+  finetune 14/25 loss 0.1210
+  finetune 15/25 loss 0.1094
+  finetune 16/25 loss 0.1144
+  finetune 17/25 loss 0.1040
+  finetune 18/25 loss 0.0991
+  finetune 19/25 loss 0.0986
+  finetune 20/25 loss 0.0991
+  finetune 21/25 loss 0.0979
+  finetune 22/25 loss 0.1043
+  finetune 23/25 loss 0.1001
+  finetune 24/25 loss 0.0986
+  finetune 25/25 loss 0.0967
+  -> fold 1 평균오차 11.3도
+
+[fold 2] train 446 / test 112
+  frozen  1/10 loss 0.4097
+  frozen  2/10 loss 0.3629
+  frozen  3/10 loss 0.3312
+  frozen  4/10 loss 0.3125
+  frozen  5/10 loss 0.2867
+  frozen  6/10 loss 0.3004
+  frozen  7/10 loss 0.2942
+  frozen  8/10 loss 0.3047
+  frozen  9/10 loss 0.2816
+  frozen  10/10 loss 0.2922
+  finetune 1/25 loss 0.2652
+  finetune 2/25 loss 0.2182
+  finetune 3/25 loss 0.1976
+  finetune 4/25 loss 0.1808
+  finetune 5/25 loss 0.1613
+  finetune 6/25 loss 0.1468
+  finetune 7/25 loss 0.1385
+  finetune 8/25 loss 0.1436
+  finetune 9/25 loss 0.1390
+  finetune 10/25 loss 0.1173
+  finetune 11/25 loss 0.1124
+  finetune 12/25 loss 0.1112
+  finetune 13/25 loss 0.1034
+  finetune 14/25 loss 0.0997
+  finetune 15/25 loss 0.1104
+  finetune 16/25 loss 0.0976
+  finetune 17/25 loss 0.1065
+  finetune 18/25 loss 0.1064
+  finetune 19/25 loss 0.1036
+  finetune 20/25 loss 0.1043
+  finetune 21/25 loss 0.0916
+  finetune 22/25 loss 0.1005
+  finetune 23/25 loss 0.1021
+  finetune 24/25 loss 0.0951
+  finetune 25/25 loss 0.0985
+  -> fold 2 평균오차 10.9도
+
+[fold 3] train 447 / test 111
+  frozen  1/10 loss 0.3643
+  frozen  2/10 loss 0.3537
+  frozen  3/10 loss 0.3252
+  frozen  4/10 loss 0.3221
+  frozen  5/10 loss 0.3255
+  frozen  6/10 loss 0.2959
+  frozen  7/10 loss 0.2938
+  frozen  8/10 loss 0.3015
+  frozen  9/10 loss 0.2876
+  frozen  10/10 loss 0.3025
+  finetune 1/25 loss 0.2489
+  finetune 2/25 loss 0.2275
+  finetune 3/25 loss 0.1921
+  finetune 4/25 loss 0.1680
+  finetune 5/25 loss 0.1546
+  finetune 6/25 loss 0.1415
+  finetune 7/25 loss 0.1405
+  finetune 8/25 loss 0.1218
+  finetune 9/25 loss 0.1248
+  finetune 10/25 loss 0.1271
+  finetune 11/25 loss 0.1133
+  finetune 12/25 loss 0.1207
+  finetune 13/25 loss 0.1037
+  finetune 14/25 loss 0.1057
+  finetune 15/25 loss 0.1071
+  finetune 16/25 loss 0.0955
+  finetune 17/25 loss 0.1049
+  finetune 18/25 loss 0.1075
+  finetune 19/25 loss 0.0937
+  finetune 20/25 loss 0.0872
+  finetune 21/25 loss 0.0902
+  finetune 22/25 loss 0.1005
+  finetune 23/25 loss 0.1011
+  finetune 24/25 loss 0.0916
+  finetune 25/25 loss 0.0984
+  -> fold 3 평균오차 11.5도
+
+[fold 4] train 447 / test 111
+  frozen  1/10 loss 0.3993
+  frozen  2/10 loss 0.3380
+  frozen  3/10 loss 0.3265
+  frozen  4/10 loss 0.3374
+  frozen  5/10 loss 0.3113
+  frozen  6/10 loss 0.2858
+  frozen  7/10 loss 0.2678
+  frozen  8/10 loss 0.2890
+  frozen  9/10 loss 0.2677
+  frozen  10/10 loss 0.2832
+  finetune 1/25 loss 0.2542
+  finetune 2/25 loss 0.2446
+  finetune 3/25 loss 0.1941
+  finetune 4/25 loss 0.1954
+  finetune 5/25 loss 0.1620
+  finetune 6/25 loss 0.1678
+  finetune 7/25 loss 0.1285
+  finetune 8/25 loss 0.1488
+  finetune 9/25 loss 0.1404
+  finetune 10/25 loss 0.1362
+  finetune 11/25 loss 0.1291
+  finetune 12/25 loss 0.1199
+  finetune 13/25 loss 0.1129
+  finetune 14/25 loss 0.1076
+  finetune 15/25 loss 0.1081
+  finetune 16/25 loss 0.1149
+  finetune 17/25 loss 0.1131
+  finetune 18/25 loss 0.1036
+  finetune 19/25 loss 0.1029
+  finetune 20/25 loss 0.0967
+  finetune 21/25 loss 0.0974
+  finetune 22/25 loss 0.0971
+  finetune 23/25 loss 0.1000
+  finetune 24/25 loss 0.0963
+  finetune 25/25 loss 0.1017
+  -> fold 4 평균오차 13.9도
+
+==============================================================================
+결과 (누수 없는 교차검증, 전체 홀드아웃 예측)
+==============================================================================
+  학습 모델                  n=558  평균  12.2도  중앙   7.7도  ±10도내  57%  ±15도내  69%  ±20도내  79%
+  기준선: 항상 0도             n=558  평균  31.2도  중앙  36.2도  ±10도내  37%  ±15도내  40%  ±20도내  42%
+  기준선: 항상 평균(-4도)        n=558  평균  31.3도  중앙  35.7도  ±10도내  36%  ±15도내  41%  ±20도내  42%
+  기존 고전 CV           n=387  평균  34.5도  중앙  35.9도  ±10도내  37%  ±15도내  39%  ±20도내  40%   (별도 측정)
+
+  클래스별 (학습 모델):
+      1_approach         n=133  평균  11.8도  중앙   9.3도  ±10도내  53%  ±15도내  67%  ±20도내  79%
+      2_front            n=172  평균   4.3도  중앙   3.4도  ±10도내  93%  ±15도내  98%  ±20도내  99%
+      3_left             n=104  평균  20.7도  중앙  16.7도  ±10도내  26%  ±15도내  45%  ±20도내  58%
+      4_right            n=149  평균  15.7도  중앙  12.5도  ±10도내  42%  ±15도내  54%  ±20도내  70%
+
+예측값 저장: C:\vibecoding\crossWalk\train\angle_cv_predictions.csv
+
+마지막 fold 모델 저장: C:\vibecoding\crossWalk\model\crosswalk_angle.pt
+주의: 이 저장본은 fold 4 학습분이라 배포용이 아니다. 배포 모델은 전체 데이터로 다시 학습해야 한다.
