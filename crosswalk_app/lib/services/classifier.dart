@@ -59,12 +59,41 @@ class Classifier {
   // 0.65는 front 판정을 과도하게 "무판정(None)" 처리함 (recall 78.6%→57.1% 하락,
   // train/eval_model.py로 실측). 0.65→0.5로 낮춰 재측정 시 recall 89.3%,
   // precision 96.2% 유지 확인 (0.3~0.5 구간 동일한 결과).
-  static const _frontThreshold = 0.5;
-  static const _noneThreshold = 0.50;
-  // T51 신설. **재학습 전 잠정값이다.** approach는 feedback_service.dart에서
-  // none과 동일하게 침묵 처리되므로, none과 같은 값(0.50)에서 출발한다.
-  // 확정값은 5-class 재학습 후 train/eval_model.py 진단 결과로 정한다.
-  static const _approachThreshold = 0.50;
+  //
+  // T73(2026-09-04): 0.50 -> 0.40. T51 이래 "재학습 후 확정"으로 남아 있던
+  // 잠정값을, 누수 없는 5-fold CV 확률로 격자 탐색해 **실측으로** 정했다.
+  // 이탈 임계값(_deviationThreshold)은 건드리지 않았다 — 그래서 좌/우 이탈
+  // recall과 front 오경보가 변하지 않는다. 낮춘 것은 "확신이 애매해 침묵하던"
+  // 경우를 정상 판정으로 돌리는 효과뿐이다.
+  //
+  // 배포 중인 637장 모델 기준 실측 (train/groupkfold_5class_out_637baseline):
+  //   front recall   77.7% -> 82.3%   none recall 83.0% -> 84.3%
+  //   left/right recall  변화 없음     front 오경보  7.7% -> 7.7% (변화 없음)
+  //   무판정          6.7% ->  4.4%
+  //   위험 오도(이탈인데 "직진")  7/202 -> 8/202  (1장 증가)
+  // 811장 모델에서도 같은 방향으로 개선된다(front 79.1% -> 82.6%, 무판정
+  // 5.3% -> 3.0%). 같은 장소 2초 간격 157쌍의 판정 변동률도 21.0% -> 18.5%로
+  // 줄어 T72에서 사용자가 보고한 흔들림에도 소폭 도움이 된다.
+  //
+  // 0.30까지 낮추면 지표는 조금 더 좋지만(front 83.1%, 무판정 2.2%) 5-class
+  // 에서 0.30은 무작위(0.20)의 1.5배에 불과해 "직진"이라 말하기엔 근거가
+  // 약하다고 보고 0.40에서 멈췄다.
+  static const _frontThreshold = 0.40;
+  static const _noneThreshold = 0.40;
+  // T51 신설. approach는 feedback_service.dart에서 none과 동일하게 침묵
+  // 처리되므로 none과 같은 값에서 출발했고, T73의 격자 탐색에서도 none과
+  // 같은 0.40이 최적이었다.
+  static const _approachThreshold = 0.40;
+
+  /// T73: 실측으로 정한 값이므로 테스트로 고정한다. 이 상수가 조용히
+  /// 바뀌면 판정 성향 전체가 달라지는데 에러는 나지 않는다.
+  @visibleForTesting
+  static const thresholdsForTest = {
+    'front': _frontThreshold,
+    'none': _noneThreshold,
+    'approach': _approachThreshold,
+    'deviation': _deviationThreshold,
+  };
 
   // 10 → 5: 약 6fps@30fps, 이탈 감지 지연 단축
   static const _throttleFrames = 5;
