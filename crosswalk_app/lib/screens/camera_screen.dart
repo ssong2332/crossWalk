@@ -535,15 +535,22 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
-  /// T70: 실기기 검증용 표시. 모델이 낸 각도를 그대로 보여준다 —
-  /// 화살표 방향이 실제 횡단보도와 맞는지, 그리고 **회전 보정이 맞는지**
+  /// T70: 실기기 검증용 표시. 모델이 낸 값을 그대로 보여준다 —
+  /// 화살표가 실제로 움직이는지, 그리고 **회전 보정이 맞는지**
   /// (틀리면 약 90도 계통 오차가 난다)를 사람이 바로 확인할 수 있게 한다.
+  ///
+  /// T75(2026-09-04): 문구를 "각도"에서 **"보정"** 으로 바꿨다. 이 값은
+  /// 횡단보도가 실제로 몇 도 기울었는지를 재는 **측정값이 아니다** —
+  /// 라벨링 시 횡단보도 내 좌우 위치에 따른 위험 가중이 더해져 있어
+  /// (실측: 위치 한 단계당 +7.3도), 가장자리에서 바깥으로 향할수록 값이
+  /// 실제 기하 각도보다 크게 나온다. "각도"라고 쓰면 사용자가 이를 실제
+  /// 방향으로 읽어 오도된다. 자세한 근거는 docs/Tasks.md T74.
   String _stripeDebugText() {
-    if (!_angleEstimator.isReady) return '각도 모델 준비 중';
+    if (!_angleEstimator.isReady) return '보정 모델 준비 중';
     final raw = _lastRawAngle;
-    if (raw == null) return '각도: 횡단보도 미검출';
+    if (raw == null) return '보정: 횡단보도 미검출';
     final shown = _arrowStripeAngle ?? raw;
-    return '각도 ${shown.toStringAsFixed(0)}도 (원시 ${raw.toStringAsFixed(0)}도)';
+    return '보정 ${shown.toStringAsFixed(0)} (원시 ${raw.toStringAsFixed(0)})';
   }
 
   @override
