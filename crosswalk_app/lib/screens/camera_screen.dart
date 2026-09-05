@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart';
@@ -9,6 +10,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../services/classifier.dart';
 import '../services/feedback_service.dart';
 import '../services/angle_estimator.dart';
+import '../services/ground_projection.dart';
 import '../services/stripe_direction_estimator.dart';
 import '../localization/app_strings.dart';
 import 'settings_screen.dart';
@@ -40,7 +42,7 @@ class CameraScreen extends StatefulWidget {
 }
 
 class _CameraScreenState extends State<CameraScreen>
-    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
+    with WidgetsBindingObserver, TickerProviderStateMixin {
   CameraController? _controller;
   final Classifier _classifier = Classifier();
   // T70: 학습된 각도 회귀 모델. 분류기와 별도 세션이며, 횡단보도가
@@ -169,6 +171,10 @@ class _CameraScreenState extends State<CameraScreen>
   // 대체했다.
   late final AnimationController _pulseController;
 
+  /// T78: 지면 화살표 위로 빛이 앞으로 흐르는 애니메이션의 구동원.
+  /// 방향 정보를 바꾸지 않고 "앞으로 가라"는 인상만 더한다.
+  late final AnimationController _flowController;
+
   @override
   void initState() {
     super.initState();
@@ -191,6 +197,14 @@ class _CameraScreenState extends State<CameraScreen>
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
+    );
+    // 여기서 바로 repeat()하지 않는다 — 반복 애니메이션은 계속 프레임을
+    // 예약하므로 (a) 화살표가 없을 때도 배터리를 쓰고 (b) 위젯 테스트의
+    // pumpAndSettle()이 영원히 끝나지 않는다(CI 실측: 8개 실패).
+    // 지면 화살표를 실제로 그리는 동안에만 _setFlowAnimating으로 돌린다.
+    _flowController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
     );
     _initCamera();
   }
@@ -489,8 +503,30 @@ class _CameraScreenState extends State<CameraScreen>
   /// 접근성: `MediaQuery.disableAnimations`(모션 감소)가 켜져 있으면 보간을
   /// 끄고 즉시 목표 각도로 그린다 — 화살표가 가리키는 정보 자체는 그대로
   /// 유지되고 움직임만 사라진다.
+  /// T78: 흐름 애니메이션을 지면 화살표가 그려지는 동안에만 돌린다.
+  ///
+  /// build 중에 컨트롤러를 건드리면 그 프레임 안에서 다시 build가 예약되므로,
+  /// 프레임이 끝난 뒤로 미룬다.
+  void _setFlowAnimating(bool animate) {
+    if (animate == _flowController.isAnimating) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (animate) {
+        if (!_flowController.isAnimating) _flowController.repeat();
+      } else {
+        if (_flowController.isAnimating) _flowController.stop();
+      }
+    });
+  }
+
   Widget _buildStateField(Color color, bool reducedMotion) {
     final angle = _arrowStripeAngle;
+    // 지면 화살표를 실제로 그리는 상태에서만 흐름이 의미가 있다.
+    final drawsGroundArrow = angle != null &&
+        (_fieldState == 'front' ||
+            _fieldState == 'left' ||
+            _fieldState == 'right');
+    _setFlowAnimating(drawsGroundArrow && !reducedMotion);
 
     if (angle == null) {
       // 각도 무판정 — 기존 고정 화살표로 되돌아간다.
@@ -523,13 +559,20 @@ class _CameraScreenState extends State<CameraScreen>
       tween: Tween<double>(end: angle),
       duration: const Duration(milliseconds: 220),
       curve: Curves.easeOut,
-      builder: (context, animatedAngle, _) => CustomPaint(
-        size: Size.infinite,
-        painter: StateFieldPainter(
-          state: _fieldState,
-          color: color,
-          severe: _severe,
-          stripeAngleDegrees: animatedAngle,
+      builder: (context, animatedAngle, _) => AnimatedBuilder(
+        // T78: 방향 보간(위)과 흐름 애니메이션(아래)은 주기가 서로 다르므로
+        // 컨트롤러를 나눠 둔다. 흐름은 정보를 바꾸지 않는 장식이라
+        // 방향 보간이 끝난 뒤에도 계속 돈다.
+        animation: _flowController,
+        builder: (context, _) => CustomPaint(
+          size: Size.infinite,
+          painter: StateFieldPainter(
+            state: _fieldState,
+            color: color,
+            severe: _severe,
+            stripeAngleDegrees: animatedAngle,
+            flowPhase: drawsGroundArrow ? _flowController.value : null,
+          ),
         ),
       ),
     );
@@ -570,6 +613,7 @@ class _CameraScreenState extends State<CameraScreen>
     WidgetsBinding.instance.removeObserver(this);
     WakelockPlus.disable();
     _pulseController.dispose();
+    _flowController.dispose();
     _controller?.dispose();
     _classifier.dispose();
     _angleEstimator.dispose();
@@ -1218,6 +1262,8 @@ class StateFieldPainter extends CustomPainter {
     required this.color,
     this.severe = false,
     this.stripeAngleDegrees,
+    this.flowPhase,
+    this.projection = const GroundProjection(),
   });
 
   /// 'front' | 'left' | 'right' | 'approach' | 'none' | 'nocall' | 'error'
@@ -1240,7 +1286,19 @@ class StateFieldPainter extends CustomPainter {
   /// −π/2(위쪽) — 기존 'front' 화살표와 정확히 일치한다.
   final double? stripeAngleDegrees;
 
+  /// T78: 0~1을 반복하는 애니메이션 위상. 화살표 몸통을 따라 밝은 띠가
+  /// **앞으로 흐르도록** 만든다. null이면 움직임 없이 균일하게 그린다
+  /// (모션 감소 설정이 켜졌을 때) — 방향 정보 자체는 그대로 유지된다.
+  final double? flowPhase;
+
+  /// T78: 지면 투영 파라미터. 테스트에서 다른 카메라 가정을 넣을 수 있게
+  /// 주입 가능하게 둔다.
+  final GroundProjection projection;
+
   static const _pi = 3.1415926535897932;
+
+  /// 몸통을 몇 조각으로 나눠 그릴지 — 조각마다 밝기를 달리해 흐름을 만든다.
+  static const _shaftSlices = 14;
 
   /// 화살표가 실제로 회전 가능한 상태인지 — left/right/front에서만,
   /// 그리고 각도를 알 때만.
@@ -1281,6 +1339,14 @@ class StateFieldPainter extends CustomPainter {
     // 위치라는 채널 하나가 빠지는 대신, 이탈 정보는 색·문구·가장자리
     // 펄스(`CameraScreen._buildEdgePulse`)·음성·진동이 계속 전달하므로
     // 색각이상에서도 중복 채널은 유지된다.
+    //
+    // T78(2026-09-05, 사용자 지시): 각도를 알면 화살표를 **지면에 눕혀**
+    // 그린다. 평면 회전은 원근이 없어 장면과 어긋나 보이기 때문이다
+    // (같은 yaw의 지면 직선은 소실점 하나로 모여야 횡단보도와 나란해진다).
+    // 투영이 불가능한 경우(수평선 위로 넘어가는 등)에는 아래 기존 평면
+    // 화살표로 그대로 되돌아간다 — 모르는 것을 지어내지 않는다.
+    if (_paintGroundArrow(canvas, size)) return;
+
     final center = Offset(size.width / 2, size.height / 2);
     switch (state) {
       case 'front':
@@ -1307,6 +1373,66 @@ class StateFieldPainter extends CustomPainter {
       default:
         _dashedCircle(canvas, stroke, size, unit);
     }
+  }
+
+  /// T78: 지면에 누운 화살표를 그린다. 그렸으면 true.
+  ///
+  /// 각도를 모르거나(무판정) 상태가 front/left/right가 아니면 그리지 않고,
+  /// 투영이 실패해도 그리지 않는다 — 두 경우 모두 호출자가 기존 평면
+  /// 화살표로 되돌아간다.
+  bool _paintGroundArrow(Canvas canvas, Size size) {
+    if (!_tracksStripe) return false;
+    if (size.width <= 0 || size.height <= 0) return false;
+
+    final yaw = projection.yawForScreenAngle(stripeAngleDegrees!, size);
+    // T63과 같은 취지 — 심한 이탈은 색뿐 아니라 굵기로도 구분한다.
+    final widthScale =
+        (state == 'left' || state == 'right') && severe ? 1.35 : 1.0;
+
+    final slices = projection.shaftSlices(yaw, size, _shaftSlices,
+        widthScale: widthScale);
+    final head = projection.headPolygon(yaw, size, widthScale: widthScale);
+    if (slices == null || head == null) return false;
+
+    for (var i = 0; i < slices.length; i++) {
+      final t = (i + 0.5) / slices.length;
+      canvas.drawPath(
+        _polygonPath(slices[i]),
+        Paint()
+          ..style = PaintingStyle.fill
+          ..color = color.withValues(alpha: _shaftAlpha(t)),
+      );
+    }
+    canvas.drawPath(
+      _polygonPath(head),
+      Paint()
+        ..style = PaintingStyle.fill
+        ..color = color.withValues(alpha: 0.95),
+    );
+    return true;
+  }
+
+  /// 몸통 조각의 불투명도. [flowPhase]가 있으면 그 위치에 밝은 띠가 생기고,
+  /// 위상이 커질수록 띠가 꼬리 -> 머리 방향으로 움직인다.
+  double _shaftAlpha(double t) {
+    const base = 0.68;
+    final phase = flowPhase;
+    if (phase == null) return 0.86;
+    var d = (t - phase) % 1.0;
+    if (d < 0) d += 1.0;
+    // 1.0 근처는 다시 0에 가까우므로 양쪽을 더해 띠가 끊기지 않게 한다.
+    final glow = math.exp(-(d * d) / 0.02) +
+        math.exp(-((d - 1.0) * (d - 1.0)) / 0.02);
+    final a = base + 0.30 * glow;
+    return a > 1.0 ? 1.0 : a;
+  }
+
+  Path _polygonPath(List<Offset> pts) {
+    final path = Path()..moveTo(pts.first.dx, pts.first.dy);
+    for (final p in pts.skip(1)) {
+      path.lineTo(p.dx, p.dy);
+    }
+    return path..close();
   }
 
   void _arrow(Canvas canvas, Paint p, Offset c, double unit, double rot) {
@@ -1386,6 +1512,7 @@ class StateFieldPainter extends CustomPainter {
     return oldDelegate.state != state ||
         oldDelegate.color != color ||
         oldDelegate.severe != severe ||
-        oldDelegate.stripeAngleDegrees != stripeAngleDegrees;
+        oldDelegate.stripeAngleDegrees != stripeAngleDegrees ||
+        oldDelegate.flowPhase != flowPhase;
   }
 }
