@@ -1,8 +1,78 @@
-C:\vibecoding\crossWalk\train\train_model.py:237: UserWarning: # 'dynamic_axes' is not recommended when dynamo=True, and may lead to 'torch._dynamo.exc.UserError: Constraints violated.' Supply the 'dynamic_shapes' argument instead if export is unsuccessful.
+Device: cpu
+
+[1] 데이터 준비 중...
+[train] {'0_none': 199, '1_approach': 113, '2_front': 144, '3_left': 99, '4_right': 135}
+[val] {'0_none': 24, '1_approach': 14, '2_front': 18, '3_left': 12, '4_right': 16}
+[test] {'0_none': 26, '1_approach': 15, '2_front': 19, '3_left': 13, '4_right': 18}
+
+[2] DataLoader 구성 중...
+클래스 매핑(class_to_idx): {'0_none': 0, '1_approach': 1, '2_front': 2, '3_left': 3, '4_right': 4}
+기대 순서(CLASS_DIRS): ['0_none', '1_approach', '2_front', '3_left', '4_right']
+의미 라벨(LABELS, classifier.dart의 _labels와 동일해야 함): ['none', 'approach', 'front', 'left', 'right']
+
+[3] 모델 구성 중...
+
+[4] 학습 시작...
+클래스별 train 개수: {'0_none': 199, '1_approach': 113, '2_front': 144, '3_left': 99, '4_right': 135}
+클래스 가중치 (max_count/count): {'0_none': 1.0, '1_approach': 1.761061946902655, '2_front': 1.3819444444444444, '3_left': 2.01010101010101, '4_right': 1.474074074074074}
+
+=== 1차 학습 (backbone frozen) ===
+Epoch 01 | train loss=1.2231 acc=0.4884 | val loss=1.4587 acc=0.2738
+Epoch 02 | train loss=0.8102 acc=0.6971 | val loss=1.1782 acc=0.5833
+Epoch 03 | train loss=0.7140 acc=0.7174 | val loss=1.0996 acc=0.5238
+Epoch 04 | train loss=0.5856 acc=0.7710 | val loss=0.8044 acc=0.6786
+Epoch 05 | train loss=0.4793 acc=0.8333 | val loss=0.6675 acc=0.7143
+Epoch 06 | train loss=0.5069 acc=0.8159 | val loss=0.6766 acc=0.7619
+Epoch 07 | train loss=0.4386 acc=0.8377 | val loss=0.4753 acc=0.8452
+Epoch 08 | train loss=0.4247 acc=0.8594 | val loss=0.6448 acc=0.7024
+Epoch 09 | train loss=0.3944 acc=0.8652 | val loss=0.5509 acc=0.7976
+Epoch 10 | train loss=0.3967 acc=0.8507 | val loss=0.8530 acc=0.6667
+
+=== 2차 학습 (fine-tuning) ===
+Epoch 01 | train loss=0.2822 acc=0.9058 | val loss=0.5596 acc=0.8095
+  -> Best model saved (val_acc=0.8095)
+Epoch 02 | train loss=0.2280 acc=0.9304 | val loss=0.6371 acc=0.8095
+Epoch 03 | train loss=0.1791 acc=0.9478 | val loss=0.5638 acc=0.8333
+  -> Best model saved (val_acc=0.8333)
+Epoch 04 | train loss=0.1508 acc=0.9580 | val loss=0.5420 acc=0.8333
+Epoch 05 | train loss=0.1332 acc=0.9623 | val loss=0.4856 acc=0.8571
+  -> Best model saved (val_acc=0.8571)
+Epoch 06 | train loss=0.1203 acc=0.9652 | val loss=0.4922 acc=0.8810
+  -> Best model saved (val_acc=0.8810)
+Epoch 07 | train loss=0.1144 acc=0.9667 | val loss=0.4935 acc=0.8571
+Epoch 08 | train loss=0.1237 acc=0.9638 | val loss=0.4733 acc=0.8810
+Epoch 09 | train loss=0.0922 acc=0.9710 | val loss=0.4659 acc=0.8810
+Epoch 10 | train loss=0.1211 acc=0.9623 | val loss=0.4634 acc=0.8810
+
+[5] 최적 모델 로드 후 평가...
+
+=== Test Set 평가 ===
+              precision    recall  f1-score   support
+
+      0_none       0.96      0.92      0.94        26
+  1_approach       0.81      0.87      0.84        15
+     2_front       1.00      0.89      0.94        19
+      3_left       0.85      0.85      0.85        13
+     4_right       0.90      1.00      0.95        18
+
+    accuracy                           0.91        91
+   macro avg       0.90      0.91      0.90        91
+weighted avg       0.92      0.91      0.91        91
+
+혼동행렬 저장: C:\vibecoding\crossWalk\model\confusion_matrix.png
+
+[6] ONNX 변환...
+C:\vibecoding\crossWalk\train\train_model.py:285: UserWarning: # 'dynamic_axes' is not recommended when dynamo=True, and may lead to 'torch._dynamo.exc.UserError: Constraints violated.' Supply the 'dynamic_shapes' argument instead if export is unsuccessful.
   torch.onnx.export(
-W0821 15:37:54.443000 26412 site-packages\torch\onnx\_internal\exporter\_compat.py:133] Setting ONNX exporter to use operator set version 18 because the requested opset_version 17 is a lower version than we have implementations for. Automatic version conversion will be performed, which may not be successful at converting to the requested version. If version conversion is unsuccessful, the opset version of the exported model will be kept at 18. Please consider setting opset_version >=18 to leverage latest ONNX features
+W0905 09:05:21.524000 44712 site-packages\torch\onnx\_internal\exporter\_compat.py:133] Setting ONNX exporter to use operator set version 18 because the requested opset_version 17 is a lower version than we have implementations for. Automatic version conversion will be performed, which may not be successful at converting to the requested version. If version conversion is unsuccessful, the opset version of the exported model will be kept at 18. Please consider setting opset_version >=18 to leverage latest ONNX features
+[torch.onnx] Obtain model graph for `MobileNetV3([...]` with `torch.export.export(..., strict=False)`...
+[torch.onnx] Obtain model graph for `MobileNetV3([...]` with `torch.export.export(..., strict=False)`... ✅
+[torch.onnx] Run decompositions...
 C:\Python\Python313\Lib\copyreg.py:99: FutureWarning: `isinstance(treespec, LeafSpec)` is deprecated, use `isinstance(treespec, TreeSpec) and treespec.is_leaf()` instead.
   return cls.__new__(cls, *args)
+[torch.onnx] Run decompositions... ✅
+[torch.onnx] Translate the graph into ONNX...
+[torch.onnx] Translate the graph into ONNX... ✅
 The model version conversion is not supported by the onnxscript version converter and fallback is enabled. The model will be converted using the onnx C API (target version: 17).
 Failed to convert the model to the target version 17 using the ONNX C API. The model was not modified
 Traceback (most recent call last):
@@ -22,72 +92,6 @@ Traceback (most recent call last):
   File "C:\Python\Python313\Lib\site-packages\onnx\version_converter.py", line 39, in convert_version
     converted_model_str = C.convert_version(model_str, target_version)
 RuntimeError: D:\a\onnx\onnx\onnx/version_converter/adapters/axes_input_to_attribute.h:68: adapt: Assertion `node->hasAttribute(kaxes)` failed: No initializer or constant input to node found
-Device: cpu
-
-[1] 데이터 준비 중...
-[train] {'front': 265, 'left': 101, 'right': 124, 'none': 183}
-[val] {'front': 33, 'left': 12, 'right': 15, 'none': 22}
-[test] {'front': 34, 'left': 14, 'right': 16, 'none': 24}
-
-[2] DataLoader 구성 중...
-클래스 매핑: {'front': 0, 'left': 1, 'none': 2, 'right': 3}
-
-[3] 모델 구성 중...
-
-[4] 학습 시작...
-클래스별 train 개수: {'front': 265, 'left': 101, 'right': 124, 'none': 183}
-클래스 가중치 (front_count/count): {'front': 1.0, 'left': 2.623762376237624, 'right': 2.1370967741935485, 'none': 1.4480874316939891}
-
-=== 1차 학습 (backbone frozen) ===
-Epoch 01 | train loss=0.9494 acc=0.5602 | val loss=1.0818 acc=0.5000
-Epoch 02 | train loss=0.6150 acc=0.7415 | val loss=0.9362 acc=0.6220
-Epoch 03 | train loss=0.5407 acc=0.7741 | val loss=0.8662 acc=0.6585
-Epoch 04 | train loss=0.4529 acc=0.8083 | val loss=0.5113 acc=0.7927
-Epoch 05 | train loss=0.4817 acc=0.8187 | val loss=0.5214 acc=0.8049
-Epoch 06 | train loss=0.4663 acc=0.8083 | val loss=0.4624 acc=0.8171
-Epoch 07 | train loss=0.3531 acc=0.8678 | val loss=0.4801 acc=0.8537
-Epoch 08 | train loss=0.3287 acc=0.8633 | val loss=0.4465 acc=0.8171
-Epoch 09 | train loss=0.4287 acc=0.8351 | val loss=0.3885 acc=0.8659
-Epoch 10 | train loss=0.3824 acc=0.8440 | val loss=0.3078 acc=0.8902
-
-=== 2차 학습 (fine-tuning) ===
-Epoch 01 | train loss=0.2484 acc=0.8975 | val loss=0.3455 acc=0.8659
-  -> Best model saved (val_acc=0.8659)
-Epoch 02 | train loss=0.1826 acc=0.9168 | val loss=0.2783 acc=0.8659
-Epoch 03 | train loss=0.1381 acc=0.9391 | val loss=0.2679 acc=0.8902
-  -> Best model saved (val_acc=0.8902)
-Epoch 04 | train loss=0.1411 acc=0.9435 | val loss=0.2772 acc=0.8902
-Epoch 05 | train loss=0.1021 acc=0.9584 | val loss=0.2813 acc=0.8902
-Epoch 06 | train loss=0.1070 acc=0.9539 | val loss=0.2763 acc=0.9024
-  -> Best model saved (val_acc=0.9024)
-Epoch 07 | train loss=0.0800 acc=0.9807 | val loss=0.2581 acc=0.9024
-Epoch 08 | train loss=0.0873 acc=0.9629 | val loss=0.2323 acc=0.9024
-Epoch 09 | train loss=0.1012 acc=0.9584 | val loss=0.2247 acc=0.9024
-Epoch 10 | train loss=0.0913 acc=0.9658 | val loss=0.2222 acc=0.9024
-
-[5] 최적 모델 로드 후 평가...
-
-=== Test Set 평가 ===
-              precision    recall  f1-score   support
-
-       front       1.00      0.91      0.95        34
-        left       0.82      1.00      0.90        14
-        none       1.00      1.00      1.00        24
-       right       0.94      0.94      0.94        16
-
-    accuracy                           0.95        88
-   macro avg       0.94      0.96      0.95        88
-weighted avg       0.96      0.95      0.96        88
-
-혼동행렬 저장: C:\vibecoding\crossWalk\model\confusion_matrix.png
-
-[6] ONNX 변환...
-[torch.onnx] Obtain model graph for `MobileNetV3([...]` with `torch.export.export(..., strict=False)`...
-[torch.onnx] Obtain model graph for `MobileNetV3([...]` with `torch.export.export(..., strict=False)`... ✅
-[torch.onnx] Run decompositions...
-[torch.onnx] Run decompositions... ✅
-[torch.onnx] Translate the graph into ONNX...
-[torch.onnx] Translate the graph into ONNX... ✅
 [torch.onnx] Optimize the ONNX graph...
 [torch.onnx] Optimize the ONNX graph... ✅
 ONNX 모델 저장: C:\vibecoding\crossWalk\model\crosswalk_model.onnx
