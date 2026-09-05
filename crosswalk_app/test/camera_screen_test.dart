@@ -20,6 +20,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wakelock_plus_platform_interface/messages.g.dart';
 import 'package:crosswalk_app/screens/camera_screen.dart';
+import 'package:crosswalk_app/services/ground_projection.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -271,12 +272,11 @@ void main() {
     const size = Size(300, 200);
     const center = Offset(150, 100);
 
-    Offset arrowOriginFor(String state, {double? angle}) {
-      final canvas = _TranslateRecordingCanvas();
+    Offset arrowOriginFor(String state) {
+      final canvas = _RecordingCanvas();
       StateFieldPainter(
         state: state,
         color: const Color(0xFFF2B14A),
-        stripeAngleDegrees: angle,
       ).paint(canvas, size);
       expect(canvas.translations, hasLength(1),
           reason: '$state는 화살표를 정확히 한 번 그려야 한다');
@@ -284,14 +284,114 @@ void main() {
     }
 
     for (final state in ['front', 'left', 'right']) {
-      test('$state — 각도를 모를 때도 중앙', () {
+      test('$state — 각도를 모를 때 평면 화살표는 중앙', () {
         expect(arrowOriginFor(state), equals(center));
       });
+    }
+  });
 
-      test('$state — 각도를 알 때도 중앙 (회전만 바뀐다)', () {
-        expect(arrowOriginFor(state, angle: 40), equals(center));
+  // T78(2026-09-05, 사용자 지시): 각도를 알면 화살표를 **지면에 눕혀** 그린다.
+  // 평면 회전은 원근이 없어 장면과 어긋나 보이기 때문이다. 지면 화살표는
+  // 캔버스를 옮겨 그리지 않고 절대 좌표로 그리므로, `translate` 대신 실제로
+  // 그려진 경로의 경계로 위치·방향을 확인한다.
+  group('StateFieldPainter — 각도를 알면 지면 투영 화살표 (T78)', () {
+    // 지면 화살표가 화면 안에 들어오는 세로 비율(실제 카메라 화면과 유사).
+    const tall = Size(300, 600);
+    const projection = GroundProjection();
+
+    Rect groundBoundsFor(String state, double angle) {
+      final canvas = _RecordingCanvas();
+      StateFieldPainter(
+        state: state,
+        color: const Color(0xFFF2B14A),
+        stripeAngleDegrees: angle,
+      ).paint(canvas, tall);
+      expect(canvas.translations, isEmpty,
+          reason: '지면 화살표는 캔버스를 회전·이동시키지 않는다');
+      expect(canvas.paths, isNotEmpty,
+          reason: '$state/$angle도에서 지면 화살표가 그려지지 않았다');
+      var r = canvas.paths.first.getBounds();
+      for (final p in canvas.paths.skip(1)) {
+        r = r.expandToInclude(p.getBounds());
+      }
+      return r;
+    }
+
+    for (final state in ['front', 'left', 'right']) {
+      test('$state — 각도 0이면 지면 화살표가 화면 중앙선 위에 놓인다', () {
+        expect(groundBoundsFor(state, 0).center.dx, closeTo(150, 0.5));
       });
     }
+
+    test('각도 부호대로 기운다 — +는 오른쪽, -는 왼쪽', () {
+      expect(groundBoundsFor('front', 35).center.dx, greaterThan(150));
+      expect(groundBoundsFor('front', -35).center.dx, lessThan(150));
+    });
+
+    test('지면 화살표는 수평선 아래에만 그려진다', () {
+      final horizon = projection.horizonY(tall);
+      for (final angle in <double>[-40, -15, 0, 15, 40]) {
+        expect(groundBoundsFor('front', angle).top, greaterThan(horizon),
+            reason: '$angle도에서 화살표가 수평선 위로 올라갔다');
+      }
+    });
+
+    test('심한 이탈은 더 굵게 그린다 (색 말고도 구분되도록)', () {
+      Rect boundsWith({required bool severe}) {
+        final canvas = _RecordingCanvas();
+        StateFieldPainter(
+          state: 'right',
+          color: const Color(0xFFF2B14A),
+          severe: severe,
+          stripeAngleDegrees: 0,
+        ).paint(canvas, tall);
+        var r = canvas.paths.first.getBounds();
+        for (final p in canvas.paths.skip(1)) {
+          r = r.expandToInclude(p.getBounds());
+        }
+        return r;
+      }
+
+      expect(boundsWith(severe: true).width,
+          greaterThan(boundsWith(severe: false).width));
+    });
+
+    test('approach/none은 각도가 있어도 지면 화살표를 그리지 않는다', () {
+      for (final state in ['approach', 'none', 'nocall']) {
+        final canvas = _RecordingCanvas();
+        StateFieldPainter(
+          state: state,
+          color: const Color(0xFFF2B14A),
+          stripeAngleDegrees: 20,
+        ).paint(canvas, tall);
+        expect(canvas.paths, isEmpty,
+            reason: '$state는 화살표 상태가 아니다');
+      }
+    });
+
+    test('흐름 애니메이션은 방향을 바꾸지 않는다 — 위상만 달라진다', () {
+      Rect boundsAtPhase(double? phase) {
+        final canvas = _RecordingCanvas();
+        StateFieldPainter(
+          state: 'front',
+          color: const Color(0xFFF2B14A),
+          stripeAngleDegrees: 20,
+          flowPhase: phase,
+        ).paint(canvas, tall);
+        var r = canvas.paths.first.getBounds();
+        for (final p in canvas.paths.skip(1)) {
+          r = r.expandToInclude(p.getBounds());
+        }
+        return r;
+      }
+
+      final still = boundsAtPhase(null);
+      for (final phase in <double>[0.0, 0.25, 0.5, 0.75]) {
+        final moving = boundsAtPhase(phase);
+        expect(moving.center.dx, closeTo(still.center.dx, 0.01));
+        expect(moving.center.dy, closeTo(still.center.dy, 0.01));
+      }
+    });
   });
 
   // StateFieldPainter는 위젯 트리에 의존하지 않는 순수 CustomPainter이므로
@@ -470,11 +570,20 @@ void main() {
 /// 그대로 담기므로, 픽셀을 렌더링하지 않고도 중앙 고정을 검증할 수 있다.
 /// 나머지 Canvas 멤버는 noSuchMethod로 조용히 무시한다 — 이 테스트가 보는
 /// 것은 위치뿐이다.
-class _TranslateRecordingCanvas implements Canvas {
+/// 픽셀을 렌더링하지 않고 **무엇을 어디에 그렸는지만** 기록하는 대역 캔버스.
+///
+/// 화살표 위치는 캔버스에 그려진 픽셀이라 위젯 테스트로는 잡히지 않는다.
+/// T72(평면 화살표)는 `translate` 호출로, T78(지면 투영 화살표)은 `drawPath`로
+/// 그리므로 둘 다 기록해 각각의 기하를 검증한다.
+class _RecordingCanvas implements Canvas {
   final List<Offset> translations = <Offset>[];
+  final List<Path> paths = <Path>[];
 
   @override
   void translate(double dx, double dy) => translations.add(Offset(dx, dy));
+
+  @override
+  void drawPath(Path path, Paint paint) => paths.add(path);
 
   @override
   void save() {}
