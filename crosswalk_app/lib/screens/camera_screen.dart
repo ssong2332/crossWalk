@@ -198,10 +198,14 @@ class _CameraScreenState extends State<CameraScreen>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
+    // 여기서 바로 repeat()하지 않는다 — 반복 애니메이션은 계속 프레임을
+    // 예약하므로 (a) 화살표가 없을 때도 배터리를 쓰고 (b) 위젯 테스트의
+    // pumpAndSettle()이 영원히 끝나지 않는다(CI 실측: 8개 실패).
+    // 지면 화살표를 실제로 그리는 동안에만 _setFlowAnimating으로 돌린다.
     _flowController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1600),
-    )..repeat();
+    );
     _initCamera();
   }
 
@@ -499,8 +503,30 @@ class _CameraScreenState extends State<CameraScreen>
   /// 접근성: `MediaQuery.disableAnimations`(모션 감소)가 켜져 있으면 보간을
   /// 끄고 즉시 목표 각도로 그린다 — 화살표가 가리키는 정보 자체는 그대로
   /// 유지되고 움직임만 사라진다.
+  /// T78: 흐름 애니메이션을 지면 화살표가 그려지는 동안에만 돌린다.
+  ///
+  /// build 중에 컨트롤러를 건드리면 그 프레임 안에서 다시 build가 예약되므로,
+  /// 프레임이 끝난 뒤로 미룬다.
+  void _setFlowAnimating(bool animate) {
+    if (animate == _flowController.isAnimating) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (animate) {
+        if (!_flowController.isAnimating) _flowController.repeat();
+      } else {
+        if (_flowController.isAnimating) _flowController.stop();
+      }
+    });
+  }
+
   Widget _buildStateField(Color color, bool reducedMotion) {
     final angle = _arrowStripeAngle;
+    // 지면 화살표를 실제로 그리는 상태에서만 흐름이 의미가 있다.
+    final drawsGroundArrow = angle != null &&
+        (_fieldState == 'front' ||
+            _fieldState == 'left' ||
+            _fieldState == 'right');
+    _setFlowAnimating(drawsGroundArrow && !reducedMotion);
 
     if (angle == null) {
       // 각도 무판정 — 기존 고정 화살표로 되돌아간다.
@@ -545,7 +571,7 @@ class _CameraScreenState extends State<CameraScreen>
             color: color,
             severe: _severe,
             stripeAngleDegrees: animatedAngle,
-            flowPhase: _flowController.value,
+            flowPhase: drawsGroundArrow ? _flowController.value : null,
           ),
         ),
       ),
