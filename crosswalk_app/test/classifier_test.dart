@@ -13,6 +13,7 @@ import 'package:camera/camera.dart';
 import 'package:camera_platform_interface/camera_platform_interface.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
 import 'package:crosswalk_app/services/classifier.dart';
 
 /// Builds a BGRA8888 [CameraImage] with exactly two pixels wide/high, laid
@@ -313,6 +314,62 @@ void main() {
       final wrongHash = sha256.convert(Uint8List.fromList([9, 9, 9, 9, 9])).toString();
 
       expect(classifier.hashMatches(bytes, '$wrongHash\r\n'), isFalse);
+    });
+  });
+
+  // T77(2026-09-05): interpolation을 지정하지 않으면 image 4.8.0의 기본값인
+  // Interpolation.nearest가 쓰여 앨리어싱이 생긴다(실측: 전체 정확도 88.2% ->
+  // 95.1%, 좌우 반대 방향 지시 2건 -> 0건). average로 바꾼 것이 조용히
+  // 되돌아가지 않도록 잠근다.
+  //
+  // 검증 방법: 1픽셀 폭 흑백 세로줄 무늬(고주파)를 정확히 절반으로 축소한다.
+  // average는 출력 픽셀마다 원본 2개 열(흑+백)을 실제로 평균내 회색이 나오고,
+  // nearest는 한 열만 골라 읽어 순수 흑/백이 번갈아 나온다 — 두 결과가
+  // 확연히 달라 회귀를 놓치지 않는다.
+  group('Classifier.resizeForModelInput — 보간 방식 (T77)', () {
+    img.Image checkerboardStripes(int width, int height) {
+      final im = img.Image(width: width, height: height);
+      for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+          final v = x.isEven ? 0 : 255;
+          im.setPixelRgb(x, y, v, v, v);
+        }
+      }
+      return im;
+    }
+
+    test('원본 픽셀 영역을 실제로 평균낸다 — 결과가 회색이다', () {
+      final classifier = Classifier();
+      // 448 -> 224는 정확히 2배 축소이므로, 출력 열마다 흑백 한 쌍씩
+      // 정확히 겹쳐 평균이 항상 127.5 근처가 된다.
+      final src = checkerboardStripes(448, 448);
+
+      final resized = classifier.resizeForModelInput(src);
+
+      expect(resized.width, 224);
+      expect(resized.height, 224);
+      for (final x in [0, 50, 111, 150, 223]) {
+        final p = resized.getPixel(x, 112);
+        expect(p.r, closeTo(127.5, 5),
+            reason: 'x=$x — nearest였다면 0 또는 255였을 것');
+        expect(p.r, p.g);
+        expect(p.g, p.b);
+      }
+    });
+
+    test('nearest였다면 나왔을 순수 흑/백이 더 이상 나오지 않는다', () {
+      final classifier = Classifier();
+      final src = checkerboardStripes(448, 448);
+
+      final resized = classifier.resizeForModelInput(src);
+
+      var pureCount = 0;
+      for (int x = 0; x < resized.width; x++) {
+        final v = resized.getPixel(x, 112).r;
+        if (v < 10 || v > 245) pureCount++;
+      }
+      expect(pureCount, 0,
+          reason: '단 한 열이라도 순수 흑/백이면 nearest로 되돌아간 것이다');
     });
   });
 
