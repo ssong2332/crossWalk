@@ -239,8 +239,7 @@ class Classifier {
         return null;
       }
 
-      final resized =
-          img.copyResize(decoded, width: _inputSize, height: _inputSize);
+      final resized = resizeForModelInput(decoded);
 
       // NCHW 포맷 [1, 3, 224, 224] + ImageNet 정규화
       const mean = [0.485, 0.456, 0.406];
@@ -275,6 +274,32 @@ class Classifier {
     final exps = logits.map((l) => math.exp(l - maxLogit)).toList();
     final sumExps = exps.fold<double>(0.0, (a, b) => a + b);
     return exps.map((e) => e / sumExps).toList();
+  }
+
+  /// T77(2026-09-05): interpolation을 지정하지 않으면 image 4.8.0의 기본값인
+  /// Interpolation.nearest가 쓰인다(`copy_resize.dart:25`) — 1280폭을 224로
+  /// 줄이며 점 하나씩만 찍어 읽어 횡단보도 줄무늬가 앨리어싱으로 뭉개진다.
+  /// 학습 입력(`train/build_cache.py`)은 `transforms.Resize` =
+  /// BILINEAR(평균 기반 안티에일리어싱)라서 앱 추론과 학습 입력이 어긋나 있었다.
+  ///
+  /// `Interpolation.average`는 원본 픽셀 영역을 실제로 평균낸다
+  /// (`copy_resize.dart:111-144`, average 분기 직접 확인).
+  /// 실측(배포 ONNX, 865장, T73 임계값 0.40/0.55, `train/resize_mismatch_check.py`):
+  /// 전체 정확도 nearest 88.2% -> average 95.1%, front 76.8% -> 87.3%,
+  /// 무판정 4.4% -> 0.9%. 판정이 갈린 88/865장 중 직진인데 이탈이라 오경보
+  /// nearest 16건 -> average 1건, 좌우 **반대 방향** 지시 nearest 2건 ->
+  /// average 0건. `Interpolation.linear`는 이웃 4점만 섞어 5.7배 축소에서
+  /// 안티에일리어싱이 되지 않으므로 부적합(같은 스크립트로 실측, average와
+  /// bilinear는 거의 같고 nearest만 크게 처짐).
+  ///
+  /// `_preprocessCamera`에서 분리해 실제 카메라 스트림 없이 보간 방식을
+  /// 단위 테스트할 수 있게 했다(T29의 `convertBGRA8888`과 같은 취지).
+  @visibleForTesting
+  img.Image resizeForModelInput(img.Image decoded) {
+    return img.copyResize(decoded,
+        width: _inputSize,
+        height: _inputSize,
+        interpolation: img.Interpolation.average);
   }
 
   /// (T29) iOS BGRA8888 is a single plane. `image.planes[0].bytes` is a
