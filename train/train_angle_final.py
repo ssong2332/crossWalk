@@ -4,14 +4,18 @@
 가중치는 마지막 fold 학습분이라 배포용이 아니다. 이 스크립트는 라벨 **전량**으로
 한 번 더 학습해 배포 모델을 만든다.
 
-교차검증으로 이미 측정된 성능(정직하게 병기):
-    전체 405장   평균 13.4도 / 중앙 7.5도 / ±15도내 67%
-    2_front      평균  4.1도 / ±10도내 95%
-    1_approach   평균 10.5도
-    4_right      평균 17.4도
-    3_left       평균 24.5도
-    방향(부호) 정확도 left 98% / right 98%
-비교: 기존 고전 CV 34.5도, "항상 0도" 32.4도.
+교차검증으로 이미 측정된 성능 — T83(v3 라벨 720장) 기준, 정직하게 병기:
+    전체 720장   평균 10.0도 / 중앙 6.5도 / ±15도내 78%
+    2_front      평균  4.2도 / ±10도내 92%
+    1_approach   평균  9.5도
+    4_right      평균 11.4도
+    3_left       평균 15.6도  <- 여전히 가장 나쁘다(±10도내 46%)
+비교: 기존 고전 CV 34.5도, "항상 0도" 29.9도.
+로그: train/angle_cv_v3_weighted.log
+
+주의: 위 수치를 v2 시절 값(전체 405장 13.4도 등)과 직접 비교하면 안 된다.
+    v3는 라벨 정의가 바뀌어 각도 자체가 커졌고 기준선도 함께 올랐다.
+    같은 자로 잰 비교는 위 meta의 주석을 볼 것.
 
 알려진 한계 — 큰 각도를 과소평가한다:
     회귀직선 기울기 0.709 (1.0이 이상적). ±60도를 넘는 정답에서는 축소율
@@ -112,22 +116,29 @@ def main():
         "angle_scale": ANGLE_SCALE,
         "img_size": IMG_SIZE,
         "input_orientation": "display_portrait_exif_corrected",
-        # T75: 이 값은 **순수 기하 각도가 아니다.** 사용자가 라벨링할 때
-        # 횡단보도 내 좌우 위치에 따라 위험 가중을 더했다 — 가장자리에서
-        # 바깥으로 향할수록 각도를 크게 줬다(실측: 위치 한 단계당 +7.3도,
-        # R^2 0.204). 즉 "가야 할 방향"이자 "얼마나 급히 고쳐야 하는가"를
-        # 함께 담은 **보정량**이다. 사진과 대조해 기하학적으로 검증할 수 없다.
+        # T83(v3): 이 값은 여전히 **순수 기하 각도가 아니다.** 다만 v2와
+        # 달리 가중이 사람 손이 아니라 **재현 가능한 공식**으로 들어간다:
+        #   최종 = 기하각도 + sign(기하각도) * 3.0 * max(위험단계, 0)
+        # (`apply_risk_weighting.py`, 위치 라벨은 `label_position.py`)
+        # 그래서 기하 성분만 떼어 사진과 대조해 검증할 수 있다 —
+        # `angle_labels_weighted.csv`의 geometric_deg 열이 그 값이다.
         "output": "correction_magnitude_degrees "
                   "(screen-up=0, clockwise+, risk-weighted by lateral position)",
         "sha256": digest,
-        # v2 라벨(604장) 기준, 누수 없는 5-fold CV.
-        # 주의: v1(558장)의 12.2도와 직접 비교하면 안 된다 — v2는 라벨 각도
-        # 자체가 작아 기준선(항상 0도)도 31.2 -> 16.5도로 내려갔다.
-        # 상대오차로 보면 v1 0.391 / v2 0.457이다.
-        "label_set": "v2_604_risk_weighted",
-        "cv_mean_abs_err_deg": 7.5,
-        "cv_median_abs_err_deg": 4.8,
-        "cv_baseline_always_zero_deg": 16.5,
+        # v3 라벨(720장, 순수기하 + 공식 위험가중) 기준, 누수 없는 5-fold CV.
+        # 로그: train/angle_cv_v3_weighted.log
+        # 주의: v2의 7.5도와 직접 비교하면 안 된다 — 라벨 정의가 바뀌어
+        # 기준선(항상 0도)이 16.5 -> 29.9도로 올랐다. 같은 자로 재려면
+        # v2 배포 모델을 v3 라벨로 평가한 값과 비교해야 한다
+        # (`train/screenshot_probe_0908.py` 실측: 3_left 30.2도 / 4_right 21.6도
+        #  -> 이 모델 15.6도 / 11.4도).
+        "label_set": "v3_720_geometric_plus_formula_risk_w3",
+        "cv_mean_abs_err_deg": 10.0,
+        "cv_median_abs_err_deg": 6.5,
+        "cv_baseline_always_zero_deg": 29.9,
+        "cv_mean_abs_err_by_class_deg": {
+            "1_approach": 9.5, "2_front": 4.2, "3_left": 15.6, "4_right": 11.4,
+        },
     }, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"메타 저장: {META_OUT}  (sha256 {digest[:16]}...)")
     print("\n앱 통합 시 주의: 이 모델에는 **화면 방향으로 회전된** 프레임을 넣어야 한다.")
