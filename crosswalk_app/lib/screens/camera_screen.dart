@@ -857,9 +857,16 @@ class _CameraScreenState extends State<CameraScreen>
   // T63: 이 분류기는 좌표·기하 정보를 내지 않으므로 "얼마나 벗어났는지"를
   // 직접 재지 못한다. left/right 확신도를 이탈 정도의 **근사치**로 쓴다
   // (Classifier.deviationSeverityThreshold 문서 참조, 잠정값).
+  //
+  // T82(2026-09-08): 신뢰도를 매 프레임 그대로 비교하던 것을
+  // `FeedbackService.isSevere`(= SeverityLatch를 거친 값)로 바꿨다. 사용자가
+  // "가만히 서 있는데 '크게 벗어남'과 '이탈'이 번갈아 나온다"고 보고했고,
+  // 이 getter가 색·문구·가장자리 펄스·화살표 굵기를 전부 좌우하므로 화면이
+  // 매 프레임 흔들렸다. 음성과 같은 값을 읽으므로 화면과 소리가 서로 다른
+  // 강도를 말하는 일도 없어진다.
   bool get _severe =>
       (_guidanceLabel == 'left' || _guidanceLabel == 'right') &&
-      _confidence >= Classifier.deviationSeverityThreshold;
+      _feedback.isSevere;
 
   Color get _fieldColor {
     switch (_fieldState) {

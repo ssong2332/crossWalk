@@ -6,6 +6,7 @@ import 'package:vibration/vibration.dart';
 import '../localization/app_strings.dart';
 import 'audio_policy.dart';
 import 'classifier.dart';
+import 'severity_latch.dart';
 
 class FeedbackService {
   final FlutterTts _tts = FlutterTts();
@@ -18,6 +19,16 @@ class FeedbackService {
   final AudioPolicy audioPolicy = AudioPolicy();
   @visibleForTesting
   final VibrationPolicy vibrationPolicy = VibrationPolicy();
+
+  /// T82: 이탈 강도가 프레임마다 뒤집혀 음성·진동이 반복되는 것을 막는다.
+  /// 화면(`camera_screen.dart`의 `_severe`)도 같은 값을 읽어, 문구·색과
+  /// 소리가 서로 다른 강도를 말하는 일이 없게 한다.
+  @visibleForTesting
+  final SeverityLatch severityLatch = SeverityLatch();
+
+  /// 화면 표시용 — 지금 보고 중인 이탈 강도.
+  bool get isSevere => severityLatch.isSevere;
+
   DateTime? _lastAlertTime;
   String? _lastAlertClass;
   bool? _lastAlertSevere;
@@ -27,6 +38,12 @@ class FeedbackService {
   // 여부와 무관하게 진짜 이전 프레임의 클래스를 알아야 한다 — _lastAlertClass는
   // 쿨다운에 걸려 갱신이 안 될 수 있어 이 목적에 쓸 수 없다.
   String? _lastRawClass;
+
+  /// T82: [severityLatch]를 언제 초기화할지 판단하기 위한 직전 이탈 방향.
+  /// `_lastRawClass`는 `alert()`가 `decideMessage()`를 부르기 전에 이미
+  /// 현재 클래스로 덮어써서 이 목적에 쓸 수 없다.
+  String? _lastSeverityClass;
+
   DateTime? _lastPhaseAt;
   DateTime? _lastRecoveryAt;
 
@@ -117,11 +134,35 @@ class FeedbackService {
   // 강도가 바뀌면(약함<->심함) 즉시 재발화한다. 강도는 이 분류기가 내지
   // 못하는 실제 이탈량의 근사치일 뿐이다(Classifier.deviationSeverityThreshold
   // 문서 참조).
+  //
+  // T82(2026-09-08): 그 "강도"를 **신뢰도와 직접 비교하지 않고**
+  // [SeverityLatch]를 거친 값으로 바꿨다. 사용자가 실기기에서 "가만히 서
+  // 있는데 '크게 벗어남'과 '이탈'이 번갈아 나오고 그때마다 음성·진동이 다시
+  // 나온다"고 보고했는데, 원인이 바로 이 쿨다운 키였다 — 신뢰도가 0.80 근처를
+  // 오가면 강도가 뒤집히고, 쿨다운이 무효화되어 즉시 재발화한다.
+  // 실측(같은 세션 5초 이내 연속쌍 46쌍): 같은 방향인데 강도가 뒤집힌 경우가
+  // 11쌍(23.9%)이고 변화폭이 0.98->0.68처럼 컸다. 래치를 거치면 그 변화가
+  // 2초 이상 유지될 때만 강도가 바뀌므로, 튀었다 되돌아오는 경우는 쿨다운을
+  // 무효화하지 못한다. 진짜로 악화된 경우(2초 이상 유지)는 종전대로 즉시
+  // 재발화한다 — 안전 쪽 동작은 유지된다.
   @visibleForTesting
   String? decideMessage(String detectedClass, double confidence, DateTime now) {
-    if (detectedClass != 'left' && detectedClass != 'right') return null;
+    if (detectedClass != 'left' && detectedClass != 'right') {
+      severityLatch.reset();
+      _lastSeverityClass = null;
+      return null;
+    }
+    // 방향이 바뀌면 강도는 처음부터 다시 판단한다(왼쪽에서 심했다고 오른쪽도
+    // 심한 것은 아니다). `_lastRawClass`는 alert()가 decideMessage를 부르기
+    // **전에** 이미 현재 클래스로 덮어쓰므로 여기서는 쓸 수 없다 — 이 목적의
+    // 전용 필드를 따로 둔다.
+    if (_lastSeverityClass != null && _lastSeverityClass != detectedClass) {
+      severityLatch.reset();
+    }
+    _lastSeverityClass = detectedClass;
 
-    final severe = confidence >= Classifier.deviationSeverityThreshold;
+    final severe = severityLatch.update(
+        confidence >= Classifier.deviationSeverityThreshold, now);
     if (_lastAlertTime != null &&
         _lastAlertClass == detectedClass &&
         _lastAlertSevere == severe &&

@@ -150,20 +150,86 @@ void main() {
     // T63: 강도가 바뀌면(약함<->심함) 방향이 그대로여도 쿨다운을 무시하고
     // 즉시 재발화한다 — 갑자기 심해진 이탈을 3초 동안 못 알리면 안 된다.
     test(
-        'bypasses cooldown immediately when severity changes for the '
-        'same class', () {
+        'bypasses cooldown when severity change persists past the latch '
+        'dwell (T82)', () {
       final service = FeedbackService();
       final t0 = DateTime(2026, 1, 1, 12, 0, 0);
 
       final first = service.decideMessage('left', mild, t0);
       expect(first, leftMild);
 
-      final second = service.decideMessage(
+      // T82: 강도 변화는 이제 즉시가 아니라 SeverityLatch의 dwell(2초)만큼
+      // 유지되어야 인정된다. 그 전까지는 쿨다운이 그대로 걸린다.
+      final tooSoon = service.decideMessage(
         'left',
         severe,
         t0.add(const Duration(milliseconds: 1)),
       );
-      expect(second, leftSevere);
+      expect(tooSoon, isNull,
+          reason: '1ms 만에 뒤집힌 강도는 아직 인정하지 않는다');
+
+      // 같은 강도가 dwell을 넘겨 유지되면 그때 반영되고, 쿨다운을 무효화해
+      // 즉시 발화한다(악화 알림은 늦지 않아야 한다).
+      //
+      // 2500ms인 이유: 대기 시계는 강도가 처음 뒤집힌 t0+1ms부터 도므로
+      // t0+2000ms에는 아직 1999ms밖에 안 됐다. 그리고 2500ms는 쿨다운(3초)
+      // **안**이라, 여기서 발화한다면 그건 쿨다운 만료가 아니라 강도 변화가
+      // 쿨다운을 무효화한 것임이 분명해진다.
+      final confirmed = service.decideMessage(
+        'left',
+        severe,
+        t0.add(const Duration(milliseconds: 2500)),
+      );
+      expect(confirmed, leftSevere);
+    });
+
+    // T82(2026-09-08, 사용자 실기기 보고): "가만히 서 있는데 '크게 벗어남'과
+    // '이탈'이 번갈아 나오고 그때마다 음성·진동이 다시 나온다."
+    // 원인은 쿨다운 키가 (클래스, 강도)라서 강도가 뒤집히면 쿨다운이
+    // 무효화되는 것이었다. 실측: 같은 방향 연속쌍 46쌍 중 11쌍(23.9%)에서
+    // 강도가 뒤집혔고 변화폭이 0.98->0.68처럼 컸다.
+    test('튀었다 되돌아오는 강도 변화는 재발화시키지 않는다 (T82)', () {
+      final service = FeedbackService();
+      var t = DateTime(2026, 1, 1, 12, 0, 0);
+
+      expect(service.decideMessage('left', mild, t), leftMild);
+
+      // 신뢰도가 크게 튀지만 dwell(2초) 안에 되돌아온다 — 실기기에서 관찰된
+      // 패턴 그대로. 쿨다운(3초) 안에서는 한 번도 다시 말하면 안 된다.
+      for (final conf in [severe, mild, severe, mild, severe]) {
+        t = t.add(const Duration(milliseconds: 500));
+        expect(service.decideMessage('left', conf, t), isNull,
+            reason: 't=$t conf=$conf 에서 재발화했다');
+      }
+    });
+
+    test('방향이 바뀌면 강도는 처음부터 다시 판단한다 (T82)', () {
+      final service = FeedbackService();
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+
+      // 왼쪽에서 심함을 확정시킨다.
+      service.decideMessage('left', severe, t0);
+      service.decideMessage('left', severe, t0.add(const Duration(seconds: 2)));
+      expect(service.isSevere, isTrue);
+
+      // 오른쪽으로 바뀌면 래치가 초기화되어 약함부터 시작한다.
+      final right = service.decideMessage(
+          'right', severe, t0.add(const Duration(seconds: 3)));
+      expect(right, rightMild,
+          reason: '왼쪽에서 심했다고 오른쪽도 심한 것은 아니다');
+      expect(service.isSevere, isFalse);
+    });
+
+    test('이탈이 아닌 상태로 가면 강도가 초기화된다 (T82)', () {
+      final service = FeedbackService();
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+
+      service.decideMessage('left', severe, t0);
+      service.decideMessage('left', severe, t0.add(const Duration(seconds: 2)));
+      expect(service.isSevere, isTrue);
+
+      service.decideMessage('front', 0.9, t0.add(const Duration(seconds: 3)));
+      expect(service.isSevere, isFalse);
     });
   });
 
