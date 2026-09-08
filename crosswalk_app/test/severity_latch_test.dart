@@ -35,8 +35,11 @@ void main() {
       final latch = SeverityLatch(dwell: dwell);
       latch.update(false, t0); // 첫 관측(약함)으로 시작
       expect(latch.update(true, t0.add(const Duration(seconds: 1))), isFalse);
-      expect(
-          latch.update(true, t0.add(const Duration(milliseconds: 2999))), isTrue,
+      // 대기 시계는 변화가 처음 관측된 t0+1s부터 돈다. t0+2999ms에는 아직
+      // 1999ms뿐이라 반영되지 않고, t0+3s에 정확히 2초를 채워 반영된다.
+      expect(latch.update(true, t0.add(const Duration(milliseconds: 2999))),
+          isFalse);
+      expect(latch.update(true, t0.add(const Duration(seconds: 3))), isTrue,
           reason: '변화 시점(t0+1s)부터 2초가 지났으므로 반영된다');
     });
 
