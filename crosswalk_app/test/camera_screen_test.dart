@@ -290,6 +290,57 @@ void main() {
     }
   });
 
+  // T79(2026-09-07, 사용자 지시로 T63 결정을 뒤집음): 각도를 모르거나 각도가
+  // 경고와 모순될 때의 평면 화살표도 **가야 할 방향**을 가리킨다.
+  //
+  // T63에서는 이 화살표가 현재 이탈 방향을 가리켰다(왼쪽 이탈 -> 왼쪽). 그런데
+  // T78의 지면 화살표는 라벨 규약대로 가야 할 방향을 가리키므로, 각도 유무에
+  // 따라 같은 상태에서 화살표가 180도 뒤집혔고 문구("오른쪽으로")와도 어긋났다.
+  group('StateFieldPainter — 평면 화살표는 가야 할 방향을 가리킨다 (T79)', () {
+    const size = Size(300, 200);
+
+    double rotationFor(String state, {double? angle}) {
+      final canvas = _RecordingCanvas();
+      StateFieldPainter(
+        state: state,
+        color: const Color(0xFFF2B14A),
+        stripeAngleDegrees: angle,
+      ).paint(canvas, size);
+      expect(canvas.rotations, hasLength(1),
+          reason: '$state는 평면 화살표를 정확히 한 번 그려야 한다');
+      return canvas.rotations.single;
+    }
+
+    // _arrow는 +x 방향(오른쪽)으로 그린 뒤 rot만큼 돌린다:
+    // 0 = 오른쪽, π = 왼쪽, -π/2 = 위쪽.
+    test('왼쪽으로 이탈하면 화살표는 오른쪽을 가리킨다', () {
+      expect(rotationFor('left'), closeTo(0, 1e-9));
+    });
+
+    test('오른쪽으로 이탈하면 화살표는 왼쪽을 가리킨다', () {
+      expect(rotationFor('right'), closeTo(math.pi, 1e-9));
+    });
+
+    test('직진이면 화살표는 위쪽을 가리킨다', () {
+      expect(rotationFor('front'), closeTo(-math.pi / 2, 1e-9));
+    });
+
+    test('각도가 경고와 모순이어도 같은 방향을 가리킨다', () {
+      // 왼쪽 이탈인데 각도는 음수(모순) -> 각도를 버리고 오른쪽을 가리킨다.
+      expect(rotationFor('left', angle: -20), closeTo(0, 1e-9));
+      expect(rotationFor('right', angle: 20), closeTo(math.pi, 1e-9));
+      // 사용자 스크린샷 사례: 왼쪽 이탈인데 보정 -2로 거의 직진이던 경우.
+      expect(rotationFor('left', angle: -2), closeTo(0, 1e-9));
+    });
+
+    test('가장자리 펄스와 같은 방향이다 — 두 채널이 어긋나지 않는다', () {
+      // _pulseEdge: state가 'left'면 목표는 오른쪽이므로 오른쪽 가장자리.
+      // 화살표도 오른쪽(rot 0)을 가리켜야 같은 이야기를 한다.
+      expect(rotationFor('left'), closeTo(0, 1e-9));
+      expect(rotationFor('right'), closeTo(math.pi, 1e-9));
+    });
+  });
+
   // T78(2026-09-05, 사용자 지시): 각도를 알면 화살표를 **지면에 눕혀** 그린다.
   // 평면 회전은 원근이 없어 장면과 어긋나 보이기 때문이다. 지면 화살표는
   // 캔버스를 옮겨 그리지 않고 절대 좌표로 그리므로, `translate` 대신 실제로
@@ -317,11 +368,19 @@ void main() {
       return r;
     }
 
-    for (final state in ['front', 'left', 'right']) {
-      test('$state — 각도 0이면 지면 화살표가 화면 중앙선 위에 놓인다', () {
-        expect(groundBoundsFor(state, 0).center.dx, closeTo(150, 0.5));
-      });
-    }
+    test('front — 각도 0이면 지면 화살표가 화면 중앙선 위에 놓인다', () {
+      expect(groundBoundsFor('front', 0).center.dx, closeTo(150, 0.5));
+    });
+
+    // T79: left/right는 각도 0이 경고와 모순이라 지면 화살표를 그리지 않는다.
+    // 부호가 맞는 각도를 줘야 그려지며, 그 방향으로 기울어야 한다.
+    test('left — 양수 각도에서 지면 화살표가 오른쪽(가야 할 방향)으로 기운다', () {
+      expect(groundBoundsFor('left', 25).center.dx, greaterThan(150));
+    });
+
+    test('right — 음수 각도에서 지면 화살표가 왼쪽(가야 할 방향)으로 기운다', () {
+      expect(groundBoundsFor('right', -25).center.dx, lessThan(150));
+    });
 
     test('각도 부호대로 기운다 — +는 오른쪽, -는 왼쪽', () {
       expect(groundBoundsFor('front', 35).center.dx, greaterThan(150));
@@ -343,7 +402,7 @@ void main() {
           state: 'right',
           color: const Color(0xFFF2B14A),
           severe: severe,
-          stripeAngleDegrees: 0,
+          stripeAngleDegrees: -20, // T79: right는 음수라야 경고와 맞는다
         ).paint(canvas, tall);
         var r = canvas.paths.first.getBounds();
         for (final p in canvas.paths.skip(1)) {
@@ -497,14 +556,16 @@ void main() {
 
   // T67: 화살표가 감지된 횡단보도 방향을 따라가는 조건.
   group('StateFieldPainter — 줄무늬 각도 추적 조건', () {
-    test('각도를 알면 front/left/right에서 화살표가 회전한다', () {
-      for (final state in ['front', 'left', 'right']) {
+    // T79: 각도는 **가야 할 방향**이므로(라벨 규약: 왼쪽 이탈=양수,
+    // 오른쪽 이탈=음수) 상태마다 부호가 맞는 각도를 줘야 추적한다.
+    test('각도가 상태와 맞으면 front/left/right에서 화살표가 회전한다', () {
+      for (final entry in {'front': 20.0, 'left': 20.0, 'right': -20.0}.entries) {
         final painter = StateFieldPainter(
-          state: state,
+          state: entry.key,
           color: const Color(0xFFF2B14A),
-          stripeAngleDegrees: 20,
+          stripeAngleDegrees: entry.value,
         );
-        expect(painter.tracksStripeForTest, isTrue, reason: 'state=$state');
+        expect(painter.tracksStripeForTest, isTrue, reason: 'state=${entry.key}');
       }
     });
 
@@ -515,6 +576,67 @@ void main() {
           color: const Color(0xFFF2B14A),
         );
         expect(painter.tracksStripeForTest, isFalse, reason: 'state=$state');
+      }
+    });
+
+    // T79(2026-09-07): 분류기 상태와 각도 모델이 서로 반대를 말할 수 있다.
+    // 실측(배포 모델, 604장): 이탈 판정 298장 중 41장(13.8%)에서 화살표가
+    // 경고와 어긋났고, 그중 29장(70.7%)은 분류기가 맞고 각도가 틀렸다.
+    // 그래서 모순이면 각도를 버린다.
+    test('각도 부호가 경고와 반대면 각도를 쓰지 않는다', () {
+      // 왼쪽 이탈인데 각도가 음수(=왼쪽으로 더 가라)면 모순이다.
+      const leftContradicted = StateFieldPainter(
+        state: 'left',
+        color: Color(0xFFF2B14A),
+        stripeAngleDegrees: -20,
+      );
+      const rightContradicted = StateFieldPainter(
+        state: 'right',
+        color: Color(0xFFF2B14A),
+        stripeAngleDegrees: 20,
+      );
+      expect(leftContradicted.tracksStripeForTest, isFalse);
+      expect(rightContradicted.tracksStripeForTest, isFalse);
+      expect(leftContradicted.angleAgreesWithStateForTest, isFalse);
+      expect(rightContradicted.angleAgreesWithStateForTest, isFalse);
+    });
+
+    test('각도가 너무 작으면(사실상 직진) 이탈 상태에서 각도를 쓰지 않는다', () {
+      // 사용자 실기기 스크린샷: "왼쪽으로 틀어짐 / 오른쪽으로"인데 보정 -2로
+      // 화살표는 거의 직진을 가리켰다. 이 경우를 막는다.
+      for (final angle in <double>[0, 2, 4.9, -2]) {
+        expect(
+          StateFieldPainter(
+            state: 'left',
+            color: const Color(0xFFF2B14A),
+            stripeAngleDegrees: angle,
+          ).tracksStripeForTest,
+          isFalse,
+          reason: 'left에서 $angle도는 경고와 어긋난다',
+        );
+      }
+      // 경계값 자체는 통과해야 한다.
+      expect(
+        StateFieldPainter(
+          state: 'left',
+          color: const Color(0xFFF2B14A),
+          stripeAngleDegrees: StateFieldPainter.minDeviationAngleDegrees,
+        ).tracksStripeForTest,
+        isTrue,
+      );
+    });
+
+    test('front는 각도 크기에 제약을 두지 않는다 — 직진의 미세 보정은 정상', () {
+      for (final angle in <double>[0, 1, -1, 30, -30]) {
+        expect(
+          StateFieldPainter(
+            state: 'front',
+            color: const Color(0xFFA8CDE8),
+            stripeAngleDegrees: angle,
+          ).tracksStripeForTest,
+          isTrue,
+          reason: 'front/$angle도',
+        );
       }
     });
 
@@ -578,6 +700,7 @@ void main() {
 class _RecordingCanvas implements Canvas {
   final List<Offset> translations = <Offset>[];
   final List<Path> paths = <Path>[];
+  final List<double> rotations = <double>[];
 
   @override
   void translate(double dx, double dy) => translations.add(Offset(dx, dy));
@@ -592,7 +715,7 @@ class _RecordingCanvas implements Canvas {
   void restore() {}
 
   @override
-  void rotate(double radians) {}
+  void rotate(double radians) => rotations.add(radians);
 
   @override
   void drawLine(Offset p1, Offset p2, Paint paint) {}

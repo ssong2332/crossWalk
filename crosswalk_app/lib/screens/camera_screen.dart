@@ -903,10 +903,14 @@ class _CameraScreenState extends State<CameraScreen>
     return _strings.cameraStateDescriptions[_fieldState] ?? '';
   }
 
-  // T63: 화살표는 이제 "가야 할 방향"이 아니라 **현재 이탈 방향**을 가리킨다
-  // (사용자 확정, 2026-08-24) — 왼쪽으로 틀어졌으면 화살표가 왼쪽을 가리킨다.
-  // "가야 할 방향"은 대신 반대편 가장자리의 펄스로 전달한다: state가
-  // 'left'면 목표는 오른쪽이므로 오른쪽 가장자리가 맥동한다.
+  // 가장자리 펄스는 **가야 할 방향**을 가리킨다: state가 'left'면 목표는
+  // 오른쪽이므로 오른쪽 가장자리가 맥동한다.
+  //
+  // T79(2026-09-07): 화살표도 이제 같은 "가야 할 방향"을 가리킨다
+  // (`StateFieldPainter.paint`의 T79 주석 참고). T63 시점에는 화살표가
+  // 이탈 방향을, 펄스가 목표 방향을 맡아 채널이 갈렸으나, T78의 지면
+  // 화살표가 라벨 규약대로 목표 방향을 가리키면서 둘이 어긋났기 때문이다.
+  // 이탈 방향은 문구와 색이 계속 전달한다.
   String? get _pulseEdge {
     if (_fieldState == 'left') return 'right';
     if (_fieldState == 'right') return 'left';
@@ -1300,11 +1304,49 @@ class StateFieldPainter extends CustomPainter {
   /// 몸통을 몇 조각으로 나눠 그릴지 — 조각마다 밝기를 달리해 흐름을 만든다.
   static const _shaftSlices = 14;
 
+  /// T79: 이탈 경고와 각도가 서로 반대를 말할 때, 각도가 이만큼은 되어야
+  /// 화살표를 각도로 그린다. 이보다 작으면 화살표가 사실상 직진으로 보여
+  /// "오른쪽으로"라는 문구와 어긋난다.
+  ///
+  /// 5도인 근거: T74에서 재작성한 v2 라벨의 front 범위가 ±2.6도, 이탈 시작이
+  /// ±5.0도다. 즉 5도 미만은 라벨 기준으로도 직진 구간이다.
+  static const minDeviationAngleDegrees = 5.0;
+
+  /// T79: 분류기가 낸 상태와 각도 모델이 낸 각도가 서로 모순되지 않는지.
+  ///
+  /// 라벨 규약(T71 검증: 3_left 전부 양수, 4_right 전부 음수)상 각도는
+  /// **가야 할 방향**이다 — 왼쪽으로 이탈했으면 오른쪽(양수)으로 가야 한다.
+  /// 그런데 두 모델은 서로 독립이라 반대를 말할 수 있다.
+  ///
+  /// 실측(배포 모델, 각도 라벨 604장, `train/state_angle_consistency.py`):
+  /// 분류기가 이탈이라 한 298장 중 **41장(13.8%)** 에서 화살표가 경고와
+  /// 어긋났다(부호 반대 15장, |각도|<5도 38장). 그 41장을 정답과 대조하니
+  /// **29장(70.7%)은 분류기가 맞고 각도가 틀린** 경우였다. 그래서 모순이면
+  /// 각도를 버리고 상태 기반 화살표로 되돌아간다.
+  ///
+  /// 원인은 각도 모델의 크기 과소예측이다 — 회귀 기울기 0.755로, 라벨이
+  /// 클수록 0쪽으로 당겨 예측한다(|라벨| 45~90도 구간에서 |예측| 평균 36.4도).
+  /// 예측값에 게인을 곱해 펴는 방법은 실측 후 기각했다: 기울기는 0.996으로
+  /// 교정되지만 평균오차 7.4->8.8도, 프레임 간 흔들림 10.1->13.4도로 악화되고
+  /// 어긋남은 13.8->11.7%로 2.1%p만 줄었다.
+  bool get _angleAgreesWithState {
+    final angle = stripeAngleDegrees;
+    if (angle == null) return false;
+    // front는 크기 제약을 두지 않는다 — 직진에서는 각도가 곧 미세 보정량이다.
+    if (state == 'left') return angle >= minDeviationAngleDegrees;
+    if (state == 'right') return angle <= -minDeviationAngleDegrees;
+    return true;
+  }
+
+  @visibleForTesting
+  bool get angleAgreesWithStateForTest => _angleAgreesWithState;
+
   /// 화살표가 실제로 회전 가능한 상태인지 — left/right/front에서만,
-  /// 그리고 각도를 알 때만.
+  /// 각도를 알 때만, 그리고 그 각도가 상태와 모순되지 않을 때만(T79).
   bool get _tracksStripe =>
       stripeAngleDegrees != null &&
-      (state == 'front' || state == 'left' || state == 'right');
+      (state == 'front' || state == 'left' || state == 'right') &&
+      _angleAgreesWithState;
 
   /// 추정 각도를 캔버스 회전각(라디안)으로 바꾼다.
   double get _stripeRotation => stripeAngleDegrees! * _pi / 180 - _pi / 2;
@@ -1353,16 +1395,26 @@ class StateFieldPainter extends CustomPainter {
         _arrow(canvas, stroke, center, unit,
             _tracksStripe ? _stripeRotation : -_pi / 2);
         break;
-      // T63(2026-08-24, 사용자 확정): 각도를 모를 때의 화살표는 **가야 할
-      // 방향**이 아니라 **현재 이탈 방향**을 가리킨다. 목표 방향은 반대편
-      // 가장자리 펄스로 전달한다(CameraScreen._buildEdgePulse).
-      case 'left':
-        _arrow(canvas, stroke, center, unit,
-            _tracksStripe ? _stripeRotation : _pi);
-        break;
-      case 'right':
+      // T79(2026-09-07, 사용자 지시로 T63 결정을 뒤집음): 각도를 모르거나
+      // 각도가 경고와 모순될 때의 화살표도 **가야 할 방향**을 가리킨다.
+      //
+      // T63에서는 이 경우 화살표가 **현재 이탈 방향**(왼쪽 이탈 -> 왼쪽)을
+      // 가리켰다. 그런데 T78에서 각도를 알 때의 지면 화살표는 라벨 규약대로
+      // **가야 할 방향**(왼쪽 이탈 -> 오른쪽)을 가리키므로, 같은 상태인데도
+      // 각도 유무에 따라 화살표가 180도 뒤집히는 모순이 생겼다. 문구
+      // ("왼쪽으로 틀어짐 / 오른쪽으로")와도 어긋난다. 그래서 의미를
+      // "가야 할 방향" 하나로 통일한다.
+      //
+      // 이탈 방향 자체는 문구와 색이 계속 전달한다. 가장자리 펄스
+      // (`CameraScreen._buildEdgePulse`)도 같은 방향을 가리키게 되어,
+      // 목표 방향이 화살표·펄스 두 채널로 겹쳐 전달된다.
+      case 'left': // 왼쪽으로 이탈 -> 오른쪽으로 가야 한다
         _arrow(canvas, stroke, center, unit,
             _tracksStripe ? _stripeRotation : 0);
+        break;
+      case 'right': // 오른쪽으로 이탈 -> 왼쪽으로 가야 한다
+        _arrow(canvas, stroke, center, unit,
+            _tracksStripe ? _stripeRotation : _pi);
         break;
       case 'approach':
         _thresholdBar(canvas, stroke, size, unit);
