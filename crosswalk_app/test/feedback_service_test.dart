@@ -203,18 +203,19 @@ void main() {
       }
     });
 
-    test('방향이 바뀌면 강도는 처음부터 다시 판단한다 (T82)', () {
+    test('방향이 바뀌면 강도를 물려받지 않는다 (T82)', () {
       final service = FeedbackService();
       final t0 = DateTime(2026, 1, 1, 12, 0, 0);
 
-      // 왼쪽에서 심함을 확정시킨다.
+      // 왼쪽에서 심함으로 확정된 상태를 만든다.
       service.decideMessage('left', severe, t0);
-      service.decideMessage('left', severe, t0.add(const Duration(seconds: 2)));
       expect(service.isSevere, isTrue);
 
-      // 오른쪽으로 바뀌면 래치가 초기화되어 약함부터 시작한다.
+      // 오른쪽으로 바뀌고 신뢰도가 낮으면, 왼쪽의 '심함'을 물려받지 않고
+      // 그 방향의 첫 관측대로 약함이 되어야 한다. (래치를 초기화하지 않으면
+      // 여기서 dwell 때문에 2초간 '심함'이 그대로 남는다.)
       final right = service.decideMessage(
-          'right', severe, t0.add(const Duration(seconds: 3)));
+          'right', mild, t0.add(const Duration(seconds: 3)));
       expect(right, rightMild,
           reason: '왼쪽에서 심했다고 오른쪽도 심한 것은 아니다');
       expect(service.isSevere, isFalse);
@@ -254,28 +255,28 @@ void main() {
   });
 
   group('FeedbackService.decideMessage — message content', () {
+    // T82: 강도 변화는 SeverityLatch의 dwell(2초)을 넘겨야 반영되므로,
+    // 한 인스턴스에서 약함 -> 심함을 한 번의 호출로 확인할 수 없다. 문구 자체를
+    // 확인하는 테스트이므로 각각 새 인스턴스의 **첫 관측**으로 본다
+    // (첫 관측은 dwell 없이 곧바로 반영된다).
     test('returns the exact left-deviation Korean messages (mild/severe)', () {
-      final service = FeedbackService();
-
       expect(
-        service.decideMessage('left', mild, DateTime(2026, 1, 1)),
+        FeedbackService().decideMessage('left', mild, DateTime(2026, 1, 1)),
         '오른쪽으로 이동하세요',
       );
       expect(
-        service.decideMessage('left', severe, DateTime(2026, 1, 1, 0, 0, 5)),
+        FeedbackService().decideMessage('left', severe, DateTime(2026, 1, 1)),
         '즉시 오른쪽으로 이동하세요',
       );
     });
 
     test('returns the exact right-deviation Korean messages (mild/severe)', () {
-      final service = FeedbackService();
-
       expect(
-        service.decideMessage('right', mild, DateTime(2026, 1, 1)),
+        FeedbackService().decideMessage('right', mild, DateTime(2026, 1, 1)),
         '왼쪽으로 이동하세요',
       );
       expect(
-        service.decideMessage('right', severe, DateTime(2026, 1, 1, 0, 0, 5)),
+        FeedbackService().decideMessage('right', severe, DateTime(2026, 1, 1)),
         rightSevere,
       );
     });

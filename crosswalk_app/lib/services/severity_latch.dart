@@ -38,6 +38,7 @@ class SeverityLatch {
   final Duration dwell;
 
   bool _reported = false;
+  bool _seen = false;
   bool? _pending;
   DateTime? _pendingSince;
 
@@ -46,6 +47,18 @@ class SeverityLatch {
 
   /// 새 관측값 [raw]를 넣고, **보고해야 할** 강도를 돌려준다.
   bool update(bool raw, DateTime now) {
+    // 이탈이 시작된 첫 관측은 곧바로 받는다. dwell은 **뒤집힘**을 막기 위한
+    // 것이지 첫 경고를 늦추기 위한 것이 아니다 — 처음부터 크게 벗어나 있으면
+    // 첫 마디부터 "즉시 ..."라고 말해야 한다. (CI가 잡아준 설계 결함:
+    // 초기값을 약함으로 고정했더니 확신도 0.99에서도 첫 경고가 약함으로
+    // 나갔다.)
+    if (!_seen) {
+      _seen = true;
+      _reported = raw;
+      _pending = null;
+      _pendingSince = null;
+      return _reported;
+    }
     if (raw == _reported) {
       // 되돌아왔다 — 대기 중이던 변경은 없던 일로 한다.
       _pending = null;
@@ -67,8 +80,11 @@ class SeverityLatch {
 
   /// 이탈이 끝났거나 방향이 바뀌면 호출한다 — 다음 이탈의 강도는 처음부터
   /// 다시 판단해야 한다(왼쪽에서 심했다고 오른쪽도 심한 것은 아니다).
+  ///
+  /// 초기화 뒤 첫 관측은 다시 곧바로 받아들인다(위 `_seen` 주석 참고).
   void reset() {
     _reported = false;
+    _seen = false;
     _pending = null;
     _pendingSince = null;
   }
