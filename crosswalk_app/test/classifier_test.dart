@@ -181,19 +181,24 @@ void main() {
   // 으로** 정한 값이다(그 전에는 T51 이래 "재학습 후 확정" 잠정값이었다).
   // 상수가 조용히 바뀌면 판정 성향 전체가 달라지는데 에러는 나지 않으므로
   // 값 자체를 테스트로 고정한다.
-  group('Classifier — 임계값 상수 (T73 실측값)', () {
-    test('front/none/approach는 0.40, 이탈은 0.55다', () {
+  group('Classifier — 임계값 상수 (T73/T79 실측값)', () {
+    test('front/none은 0.40, approach와 이탈은 0.55다', () {
       expect(Classifier.thresholdsForTest['front'], 0.40);
       expect(Classifier.thresholdsForTest['none'], 0.40);
-      expect(Classifier.thresholdsForTest['approach'], 0.40);
+      // T79: 0.40 -> 0.55. 누수 없는 CV 865장에서 approach precision
+      // 73.9% -> 81.0%, 위->앞 오판 4.4% -> 2.7% (recall 85.9% -> 83.8%).
+      expect(Classifier.thresholdsForTest['approach'], 0.55);
       expect(Classifier.thresholdsForTest['deviation'], 0.55);
     });
 
-    test('이탈 임계값은 나머지보다 높다 — 경고는 더 엄격하게 낸다', () {
+    test('말을 거는 판정(이탈·approach)은 침묵 판정(front·none)보다 엄격하다', () {
+      // 이탈은 경고를, approach는 "앞에 횡단보도" 안내를 내보내므로 둘 다
+      // 틀렸을 때 사용자가 바로 체감한다. front/none은 그렇지 않다.
       final t = Classifier.thresholdsForTest;
-      expect(t['deviation']!, greaterThan(t['front']!));
-      expect(t['deviation']!, greaterThan(t['none']!));
-      expect(t['deviation']!, greaterThan(t['approach']!));
+      for (final strict in ['deviation', 'approach']) {
+        expect(t[strict]!, greaterThan(t['front']!), reason: strict);
+        expect(t[strict]!, greaterThan(t['none']!), reason: strict);
+      }
     });
 
     test('모든 임계값은 5-class 무작위(0.20)보다 충분히 높다', () {
