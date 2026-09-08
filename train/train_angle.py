@@ -63,7 +63,13 @@ torch.manual_seed(SEED)
 
 REPO = Path(__file__).resolve().parent.parent
 DATA_DIR = REPO / "image"
-LABEL_CSV = REPO / "train" / "angle_labels.csv"
+# T83: 어떤 라벨 파일로 학습할지 환경변수로 고를 수 있게 한다.
+#   angle_labels.csv          = 사람이 매긴 **순수 기하** 각도 (v3)
+#   angle_labels_weighted.csv = 거기에 위치 기반 위험 가중을 더한 값
+#                               (`apply_risk_weighting.py`가 만든다)
+# 기본값은 기존 동작 그대로 두어 예전 명령이 다르게 동작하지 않게 한다.
+LABEL_CSV = REPO / "train" / os.environ.get(
+    "ANGLE_LABEL_CSV", "angle_labels.csv")
 CACHE_DIR = REPO / "train" / "angle_cache"
 MODEL_OUT = REPO / "model" / "crosswalk_angle.pt"
 
@@ -97,7 +103,9 @@ def load_labeled_items():
     rows = []
     with open(LABEL_CSV, encoding="utf-8") as f:
         for r in csv.DictReader(f):
-            if r["status"] != "ok" or not r["angle_deg"]:
+            # 가중 CSV(`apply_risk_weighting.py` 산출물)에는 status 열이 없다 —
+            # 그 파일은 status=ok인 행만 걸러 만들어졌으므로 ok로 본다.
+            if r.get("status", "ok") != "ok" or not r["angle_deg"]:
                 continue
             p = DATA_DIR / r["class"] / r["filename"]
             if not p.exists():

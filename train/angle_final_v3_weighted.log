@@ -1,0 +1,45 @@
+라벨 720장 전량으로 배포 모델 학습
+[캐시] 신규 0장 생성, 총 720장 (EXIF 보정 적용)
+  frozen  1/10 loss 0.3535
+  frozen  2/10 loss 0.3251
+  frozen  3/10 loss 0.3057
+  frozen  4/10 loss 0.2858
+  frozen  5/10 loss 0.2677
+  frozen  6/10 loss 0.2702
+  frozen  7/10 loss 0.2951
+  frozen  8/10 loss 0.2520
+  frozen  9/10 loss 0.2659
+  frozen  10/10 loss 0.2801
+  finetune 1/25 loss 0.2294
+  finetune 2/25 loss 0.1842
+  finetune 3/25 loss 0.1510
+  finetune 4/25 loss 0.1395
+  finetune 5/25 loss 0.1204
+  finetune 6/25 loss 0.0967
+  finetune 7/25 loss 0.1068
+  finetune 8/25 loss 0.0987
+  finetune 9/25 loss 0.0940
+  finetune 10/25 loss 0.0802
+  finetune 11/25 loss 0.0793
+  finetune 12/25 loss 0.0748
+  finetune 13/25 loss 0.0680
+  finetune 14/25 loss 0.0711
+  finetune 15/25 loss 0.0709
+  finetune 16/25 loss 0.0659
+  finetune 17/25 loss 0.0717
+  finetune 18/25 loss 0.0635
+  finetune 19/25 loss 0.0687
+  finetune 20/25 loss 0.0658
+  finetune 21/25 loss 0.0650
+  finetune 22/25 loss 0.0675
+  finetune 23/25 loss 0.0703
+  finetune 24/25 loss 0.0700
+  finetune 25/25 loss 0.0677
+가중치 저장: C:\vibecoding\crossWalk\model\crosswalk_angle_final.pt
+C:\vibecoding\crossWalk\train\train_angle_final.py:97: DeprecationWarning: You are using the legacy TorchScript-based ONNX export. Starting in PyTorch 2.9, the new torch.export-based ONNX exporter has become the default. Learn more about the new export logic: https://docs.pytorch.org/docs/stable/onnx_export.html. For exporting control flow: https://pytorch.org/tutorials/beginner/onnx/export_control_flow_model_to_onnx_tutorial.html
+  torch.onnx.export(
+ONNX 저장: C:\vibecoding\crossWalk\model\crosswalk_angle.onnx
+  검증: ir_version=7, opset=12, output dims=[1, 1]
+메타 저장: C:\vibecoding\crossWalk\model\angle_meta.json  (sha256 6a669d0cf0b6ad85...)
+
+앱 통합 시 주의: 이 모델에는 **화면 방향으로 회전된** 프레임을 넣어야 한다.
