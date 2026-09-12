@@ -54,6 +54,11 @@ class Classifier {
   // 것이지, 몇 도/몇 미터 벗어났는지를 재는 것이 아니다.
   // 0.80은 **잠정값**(측정 아님). _deviationThreshold(0.55)와 1.0 사이의
   // 중간보다 살짝 위 — 실기기 보행 테스트로 재보정이 필요하다.
+  //
+  // T84(2026-09-13): **더 이상 강도 판정에 쓰지 않는다.** 누수 없는 CV로
+  // 재보니 이 기준은 정판정 이탈의 81%를 '심함'으로 찍어 변별력이 없었다.
+  // 강도는 각도 모델 출력으로 판정한다 — `FeedbackService.severeAngleDegrees`.
+  // 상수는 이력 참조용으로만 남긴다.
   static const deviationSeverityThreshold = 0.80;
   // T42 재학습 후 none 데이터가 36→101장으로 늘며 softmax 확률이 더 분산돼
   // 0.65는 front 판정을 과도하게 "무판정(None)" 처리함 (recall 78.6%→57.1% 하락,

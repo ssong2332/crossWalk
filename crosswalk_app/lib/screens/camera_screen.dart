@@ -417,7 +417,9 @@ class _CameraScreenState extends State<CameraScreen>
 
     final result = _classifier.processFrame(image);
     if (result != null) {
-      _feedback.alert(result.label, result.confidence);
+      // T84: 강도 판정용 각도 — 화살표와 같은 보정값을 넘긴다.
+      _feedback.alert(result.label, result.confidence,
+          angleDegrees: _arrowStripeAngle);
       if (mounted) {
         setState(() {
           _statusLabel = _labelText[result.label] ?? result.label;
@@ -856,7 +858,7 @@ class _CameraScreenState extends State<CameraScreen>
 
   // T63: 이 분류기는 좌표·기하 정보를 내지 않으므로 "얼마나 벗어났는지"를
   // 직접 재지 못한다. left/right 확신도를 이탈 정도의 **근사치**로 쓴다
-  // (Classifier.deviationSeverityThreshold 문서 참조, 잠정값).
+  // (T84부터 각도 기준 — FeedbackService.severeAngleDegrees 문서 참조).
   //
   // T82(2026-09-08): 신뢰도를 매 프레임 그대로 비교하던 것을
   // `FeedbackService.isSevere`(= SeverityLatch를 거친 값)로 바꿨다. 사용자가
