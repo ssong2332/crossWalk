@@ -5,7 +5,6 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:vibration/vibration.dart';
 import '../localization/app_strings.dart';
 import 'audio_policy.dart';
-import 'classifier.dart';
 import 'severity_latch.dart';
 
 class FeedbackService {
@@ -28,6 +27,12 @@ class FeedbackService {
 
   /// 화면 표시용 — 지금 보고 중인 이탈 강도.
   bool get isSevere => severityLatch.isSevere;
+
+  /// T84: '크게 벗어남' 판정 각도(도). 이 값 이상 틀어지면 심함.
+  /// 근거(누수 없는 CV, left/right 354장, 정답=|기하각도|>=30):
+  ///   20도 재현율 89%/정밀도 90%, **25도 82%/92%**, 30도 72%/94%.
+  /// 25는 사용자가 고른 균형점(2026-09-13). 실기기 결과에 따라 여기만 바꾼다.
+  static const double severeAngleDegrees = 25.0;
 
   DateTime? _lastAlertTime;
   String? _lastAlertClass;
@@ -131,9 +136,16 @@ class FeedbackService {
   }
 
   // T63: 쿨다운 키가 (클래스, 강도) 쌍으로 바뀌었다 — 방향이 그대로여도
-  // 강도가 바뀌면(약함<->심함) 즉시 재발화한다. 강도는 이 분류기가 내지
-  // 못하는 실제 이탈량의 근사치일 뿐이다(Classifier.deviationSeverityThreshold
-  // 문서 참조).
+  // 강도가 바뀌면(약함<->심함) 즉시 재발화한다.
+  //
+  // T84(2026-09-13): 강도의 입력을 **분류기 신뢰도에서 각도 모델 출력으로**
+  // 바꿨다. 사용자 실기기 스크린샷 27장에서 "18도인데 크게 벗어남, 32도인데
+  // 틀어짐"처럼 각도와 강도가 따로 놀았다. 누수 없는 CV(left/right 354장)로
+  // 재보니 신뢰도>=0.80은 정판정 이탈의 81%를 '심함'으로 찍어 사실상 항상
+  // 심함이었고(|기하각도|>=30 판별 정밀도 89% = 기저율 89%), 변별력이 없었다.
+  // |각도|>=25는 같은 정답에 재현율 82% / 정밀도 92%다.
+  // 주의: 각도로도 **위치(가장자리)** 는 판별할 수 없다(정밀도 4% = 기저율).
+  // 그래서 '크게 벗어남'의 정의는 "많이 틀어졌다"다(사용자 확정, 2026-09-13).
   //
   // T82(2026-09-08): 그 "강도"를 **신뢰도와 직접 비교하지 않고**
   // [SeverityLatch]를 거친 값으로 바꿨다. 사용자가 실기기에서 "가만히 서
@@ -145,8 +157,12 @@ class FeedbackService {
   // 2초 이상 유지될 때만 강도가 바뀌므로, 튀었다 되돌아오는 경우는 쿨다운을
   // 무효화하지 못한다. 진짜로 악화된 경우(2초 이상 유지)는 종전대로 즉시
   // 재발화한다 — 안전 쪽 동작은 유지된다.
+  /// [angleDegrees]는 화살표가 쓰는 것과 같은 보정 각도(`_arrowStripeAngle`)다
+  /// — 화면·화살표·음성이 같은 값을 보게 하려는 것. null(각도 모델 미준비·
+  /// 미검출)이면 보수적으로 약함으로 본다.
   @visibleForTesting
-  String? decideMessage(String detectedClass, double confidence, DateTime now) {
+  String? decideMessage(
+      String detectedClass, double? angleDegrees, DateTime now) {
     if (detectedClass != 'left' && detectedClass != 'right') {
       severityLatch.reset();
       _lastSeverityClass = null;
@@ -162,7 +178,7 @@ class FeedbackService {
     _lastSeverityClass = detectedClass;
 
     final severe = severityLatch.update(
-        confidence >= Classifier.deviationSeverityThreshold, now);
+        angleDegrees != null && angleDegrees.abs() >= severeAngleDegrees, now);
     if (_lastAlertTime != null &&
         _lastAlertClass == detectedClass &&
         _lastAlertSevere == severe &&
@@ -386,7 +402,8 @@ class FeedbackService {
   // silently suppress vibration too. `unawaited` (dart:async) starts
   // speech without the vibration branch waiting on its completion; the
   // two feedback channels now run independently.
-  Future<void> alert(String detectedClass, double confidence) async {
+  Future<void> alert(String detectedClass, double confidence,
+      {double? angleDegrees}) async {
     final now = DateTime.now();
 
     // T63: 발화 여부와 무관하게 진짜 직전 클래스를 먼저 뽑아 둔다 —
@@ -409,8 +426,9 @@ class FeedbackService {
     }
 
     // 음성 — 이탈 경고는 P0다. 무음 예산·최소 간격에서 면제되며, 재생 중인
-    // 하위 등급 안내를 끊는다. T63: confidence를 강도 판정에 쓴다.
-    final message = decideMessage(detectedClass, confidence, now);
+    // 하위 등급 안내를 끊는다. T84: 강도는 각도로 판정한다(confidence는
+    // 더 이상 강도에 쓰지 않는다 — 호출부 호환을 위해 인자는 남겨 둔다).
+    final message = decideMessage(detectedClass, angleDegrees, now);
     if (message != null) {
       unawaited(_speak(message, priority: FeedbackPriority.p0));
     }
