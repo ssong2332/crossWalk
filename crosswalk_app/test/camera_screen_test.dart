@@ -325,12 +325,22 @@ void main() {
       expect(rotationFor('front'), closeTo(-math.pi / 2, 1e-9));
     });
 
-    test('각도가 경고와 모순이어도 같은 방향을 가리킨다', () {
-      // 왼쪽 이탈인데 각도는 음수(모순) -> 각도를 버리고 오른쪽을 가리킨다.
-      expect(rotationFor('left', angle: -20), closeTo(0, 1e-9));
-      expect(rotationFor('right', angle: 20), closeTo(math.pi, 1e-9));
-      // 사용자 스크린샷 사례: 왼쪽 이탈인데 보정 -2로 거의 직진이던 경우.
-      expect(rotationFor('left', angle: -2), closeTo(0, 1e-9));
+    // T85(2026-09-13): T79의 "모순이면 각도를 버리고 평면 화살표"는 폐기됐다.
+    // 모순은 그리기 전에 DirectionResolver가 상태를 뒤집어 풀고, painter는
+    // 각도만 있으면 지면 화살표를 그린다 — 평면 화살표(회전)는 나오지 않는다.
+    test('T85: 각도가 있으면 부호·크기와 무관하게 평면 화살표를 그리지 않는다',
+        () {
+      for (final c in [('left', -20.0), ('right', 20.0), ('left', -2.0)]) {
+        final canvas = _RecordingCanvas();
+        StateFieldPainter(
+          state: c.$1,
+          color: const Color(0xFFF2B14A),
+          stripeAngleDegrees: c.$2,
+        // 지면 투영이 화면 안에 들어오는 세로 비율(T78 그룹과 동일).
+        ).paint(canvas, const Size(300, 600));
+        expect(canvas.rotations, isEmpty,
+            reason: '${c.$1}/${c.$2}도는 지면 화살표여야 한다');
+      }
     });
 
     test('가장자리 펄스와 같은 방향이다 — 두 채널이 어긋나지 않는다', () {
@@ -579,51 +589,24 @@ void main() {
       }
     });
 
-    // T79(2026-09-07): 분류기 상태와 각도 모델이 서로 반대를 말할 수 있다.
-    // 실측(배포 모델, 604장): 이탈 판정 298장 중 41장(13.8%)에서 화살표가
-    // 경고와 어긋났고, 그중 29장(70.7%)은 분류기가 맞고 각도가 틀렸다.
-    // 그래서 모순이면 각도를 버린다.
-    test('각도 부호가 경고와 반대면 각도를 쓰지 않는다', () {
-      // 왼쪽 이탈인데 각도가 음수(=왼쪽으로 더 가라)면 모순이다.
-      const leftContradicted = StateFieldPainter(
-        state: 'left',
-        color: Color(0xFFF2B14A),
-        stripeAngleDegrees: -20,
-      );
-      const rightContradicted = StateFieldPainter(
-        state: 'right',
-        color: Color(0xFFF2B14A),
-        stripeAngleDegrees: 20,
-      );
-      expect(leftContradicted.tracksStripeForTest, isFalse);
-      expect(rightContradicted.tracksStripeForTest, isFalse);
-      expect(leftContradicted.angleAgreesWithStateForTest, isFalse);
-      expect(rightContradicted.angleAgreesWithStateForTest, isFalse);
-    });
-
-    test('각도가 너무 작으면(사실상 직진) 이탈 상태에서 각도를 쓰지 않는다', () {
-      // 사용자 실기기 스크린샷: "왼쪽으로 틀어짐 / 오른쪽으로"인데 보정 -2로
-      // 화살표는 거의 직진을 가리켰다. 이 경우를 막는다.
-      for (final angle in <double>[0, 2, 4.9, -2]) {
-        expect(
-          StateFieldPainter(
-            state: 'left',
-            color: const Color(0xFFF2B14A),
-            stripeAngleDegrees: angle,
-          ).tracksStripeForTest,
-          isFalse,
-          reason: 'left에서 $angle도는 경고와 어긋난다',
-        );
+    // T85(2026-09-13): T79의 "모순이면 각도를 버린다"는 폐기됐다. 모순은
+    // 그리기 전에 DirectionResolver가 상태를 각도 방향으로 뒤집어 푼다.
+    // 그래서 painter는 부호를 검사하지 않고, 각도만 있으면 지면 화살표를
+    // 그린다 — 중립(|각도|<5)이면 실제 각도(거의 직진)로 그린다(사용자 (가)).
+    test('T85: 이탈 상태에서 각도 부호·크기와 무관하게 지면 화살표를 그린다', () {
+      for (final state in ['left', 'right']) {
+        for (final angle in <double>[-20, -4.9, -2, 0, 2, 4.9, 20]) {
+          expect(
+            StateFieldPainter(
+              state: state,
+              color: const Color(0xFFF2B14A),
+              stripeAngleDegrees: angle,
+            ).tracksStripeForTest,
+            isTrue,
+            reason: '$state/$angle도',
+          );
+        }
       }
-      // 경계값 자체는 통과해야 한다.
-      expect(
-        StateFieldPainter(
-          state: 'left',
-          color: const Color(0xFFF2B14A),
-          stripeAngleDegrees: StateFieldPainter.minDeviationAngleDegrees,
-        ).tracksStripeForTest,
-        isTrue,
-      );
     });
 
     test('front는 각도 크기에 제약을 두지 않는다 — 직진의 미세 보정은 정상', () {
