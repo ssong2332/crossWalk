@@ -1200,7 +1200,10 @@ class _CameraScreenState extends State<CameraScreen>
                           ),
                         ),
                         // 2차 정보 — 200% 확대 시 화면에서 버린다 (음성으로만 남는다).
-                        if (!dense && _confidence > 0 && !_hasError) ...[
+                        // T89: 무판정("판정 없음")일 때는 숨긴다 — 이 값은
+                        // 3초 전 마지막 유효 판정의 신뢰도라, "판정 없음 65%"
+                        // 처럼 보이면 오도한다(실기기 #15).
+                        if (!dense && _confidence > 0 && !_hasError && !_noCall) ...[
                           Padding(
                             padding: const EdgeInsets.only(top: 10),
                             child: Text(
