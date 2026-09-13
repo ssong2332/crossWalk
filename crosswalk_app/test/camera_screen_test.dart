@@ -325,12 +325,22 @@ void main() {
       expect(rotationFor('front'), closeTo(-math.pi / 2, 1e-9));
     });
 
-    test('각도가 경고와 모순이어도 같은 방향을 가리킨다', () {
-      // 왼쪽 이탈인데 각도는 음수(모순) -> 각도를 버리고 오른쪽을 가리킨다.
-      expect(rotationFor('left', angle: -20), closeTo(0, 1e-9));
-      expect(rotationFor('right', angle: 20), closeTo(math.pi, 1e-9));
-      // 사용자 스크린샷 사례: 왼쪽 이탈인데 보정 -2로 거의 직진이던 경우.
-      expect(rotationFor('left', angle: -2), closeTo(0, 1e-9));
+    // T85(2026-09-13): T79의 "모순이면 각도를 버리고 평면 화살표"는 폐기됐다.
+    // 모순은 그리기 전에 DirectionResolver가 상태를 뒤집어 풀고, painter는
+    // 각도만 있으면 지면 화살표를 그린다 — 평면 화살표(회전)는 나오지 않는다.
+    test('T85: 각도가 있으면 부호·크기와 무관하게 평면 화살표를 그리지 않는다',
+        () {
+      for (final c in [('left', -20.0), ('right', 20.0), ('left', -2.0)]) {
+        final canvas = _RecordingCanvas();
+        StateFieldPainter(
+          state: c.$1,
+          color: const Color(0xFFF2B14A),
+          stripeAngleDegrees: c.$2,
+        // 지면 투영이 화면 안에 들어오는 세로 비율(T78 그룹과 동일).
+        ).paint(canvas, const Size(300, 600));
+        expect(canvas.rotations, isEmpty,
+            reason: '${c.$1}/${c.$2}도는 지면 화살표여야 한다');
+      }
     });
 
     test('가장자리 펄스와 같은 방향이다 — 두 채널이 어긋나지 않는다', () {
