@@ -22,11 +22,12 @@ void main() {
   const leftSevere = '즉시 오른쪽으로 이동하세요';
   const rightMild = '왼쪽으로 이동하세요';
   const rightSevere = '즉시 왼쪽으로 이동하세요';
-  // T63: decideMessage(class, confidence, now)의 confidence는 이탈 '정도'의
-  // 근사치다(Classifier.deviationSeverityThreshold=0.80). 아래 두 상수로
-  // 강도와 무관한 기존 쿨다운/전이 테스트를 그대로 재사용한다.
-  const mild = 0.6;
-  const severe = 0.9;
+  // T84: decideMessage(class, angleDegrees, now)의 두 번째 인자는 각도
+  // 모델의 보정 각도(도)다. |각도| >= FeedbackService.severeAngleDegrees(25)
+  // 이면 심함. 아래 두 상수로 강도와 무관한 기존 쿨다운/전이 테스트를
+  // 그대로 재사용한다. (T63~T83까지는 분류기 신뢰도 0.6/0.9였다.)
+  const mild = 10.0;
+  const severe = 40.0;
 
   // flutter_tts 4.2.5 (lib/flutter_tts.dart:330):
   // static const MethodChannel _channel = MethodChannel('flutter_tts');
@@ -229,7 +230,7 @@ void main() {
       service.decideMessage('left', severe, t0.add(const Duration(seconds: 2)));
       expect(service.isSevere, isTrue);
 
-      service.decideMessage('front', 0.9, t0.add(const Duration(seconds: 3)));
+      service.decideMessage('front', 0.0, t0.add(const Duration(seconds: 3)));
       expect(service.isSevere, isFalse);
     });
   });
@@ -281,13 +282,43 @@ void main() {
       );
     });
 
-    // T63: confidence == deviationSeverityThreshold 정확히 그 값은 심함으로
-    // 친다(>=, > 아님) — Classifier.deviationSeverityThreshold 문서와 일치.
-    test('treats confidence exactly at the threshold as severe', () {
+    // T84: |각도| == severeAngleDegrees 정확히 그 값은 심함으로 친다(>=, > 아님).
+    test('treats |angle| exactly at severeAngleDegrees as severe', () {
       final service = FeedbackService();
-      final message = service.decideMessage('left', 0.80, DateTime(2026, 1, 1));
+      final message = service.decideMessage(
+          'left', FeedbackService.severeAngleDegrees, DateTime(2026, 1, 1));
 
       expect(message, leftSevere);
+    });
+
+    // T84: 강도는 각도의 **크기**로만 정한다. 부호(방향)는 분류기 클래스가
+    // 담당하므로, 클래스와 각도 부호가 어긋나도 강도 판정은 크기만 본다.
+    test('severity uses |angle| — sign does not matter (T84)', () {
+      expect(
+        FeedbackService().decideMessage('right', 40.0, DateTime(2026, 1, 1)),
+        rightSevere,
+      );
+      expect(
+        FeedbackService().decideMessage('left', -40.0, DateTime(2026, 1, 1)),
+        leftSevere,
+      );
+    });
+
+    // T84: 각도 모델이 아직 값을 못 내면(준비 중·미검출) 보수적으로 약함.
+    test('null angle is mild, not severe (T84)', () {
+      expect(
+        FeedbackService().decideMessage('left', null, DateTime(2026, 1, 1)),
+        leftMild,
+      );
+    });
+
+    // T84 회귀 방지: 분류기 신뢰도는 강도에 영향을 주지 않는다. 실기기에서
+    // "신뢰도 100%인데 18도 -> 크게 벗어남"이 나왔던 것을 막는다.
+    test('18 degrees is mild regardless of classifier confidence (T84)', () {
+      final service = FeedbackService();
+      final message = service.decideMessage('left', 18.0, DateTime(2026, 1, 1));
+      expect(message, leftMild);
+      expect(service.isSevere, isFalse);
     });
   });
 
