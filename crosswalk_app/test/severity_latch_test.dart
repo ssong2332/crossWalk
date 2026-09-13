@@ -31,19 +31,15 @@ void main() {
   });
 
   group('SeverityLatch — 이후의 변화는 dwell을 요구한다', () {
-    test('dwell을 채우지 못한 변화는 반영하지 않는다', () {
+    // T88: 올라가는 변화는 즉시 반영한다(안전 경고를 늦추지 않는다).
+    test('약함에서 심함으로 올라가는 변화는 dwell 없이 즉시 반영한다 (T88)', () {
       final latch = SeverityLatch(dwell: dwell);
       latch.update(false, t0); // 첫 관측(약함)으로 시작
-      expect(latch.update(true, t0.add(const Duration(seconds: 1))), isFalse);
-      // 대기 시계는 변화가 처음 관측된 t0+1s부터 돈다. t0+2999ms에는 아직
-      // 1999ms뿐이라 반영되지 않고, t0+3s에 정확히 2초를 채워 반영된다.
-      expect(latch.update(true, t0.add(const Duration(milliseconds: 2999))),
-          isFalse);
-      expect(latch.update(true, t0.add(const Duration(seconds: 3))), isTrue,
-          reason: '변화 시점(t0+1s)부터 2초가 지났으므로 반영된다');
+      expect(latch.update(true, t0.add(const Duration(seconds: 1))), isTrue,
+          reason: '실기기 #3: 각도 -52도인데 2초 동안 "틀어짐"이던 경우를 막는다');
     });
 
-    test('심함에서 약함으로 내려갈 때도 같은 dwell을 요구한다', () {
+    test('심함에서 약함으로 내려갈 때는 dwell을 요구한다', () {
       final latch = SeverityLatch(dwell: dwell);
       latch.update(true, t0);
       expect(latch.update(false, t0.add(const Duration(seconds: 1))), isTrue,
@@ -51,19 +47,19 @@ void main() {
       expect(latch.update(false, t0.add(const Duration(seconds: 3))), isFalse);
     });
 
-    test('되돌아오면 대기 중이던 변화가 취소된다 — 튐을 흡수한다', () {
+    test('내려가다 되돌아오면 대기 중이던 변화가 취소된다 — 튐을 흡수한다', () {
       final latch = SeverityLatch(dwell: dwell);
-      latch.update(false, t0);
-      latch.update(true, t0.add(const Duration(milliseconds: 500)));
+      latch.update(true, t0);
+      latch.update(false, t0.add(const Duration(milliseconds: 500)));
       // 되돌아왔다 -> 대기 취소
-      latch.update(false, t0.add(const Duration(milliseconds: 1000)));
-      // 다시 올라가도 대기 시계는 여기서 새로 시작해야 한다.
-      latch.update(true, t0.add(const Duration(milliseconds: 1500)));
-      expect(latch.update(true, t0.add(const Duration(milliseconds: 3000))),
-          isFalse,
-          reason: '되돌아온 뒤 다시 올라간 시점(1500ms)부터 2초를 채워야 한다');
-      expect(latch.update(true, t0.add(const Duration(milliseconds: 3500))),
-          isTrue);
+      latch.update(true, t0.add(const Duration(milliseconds: 1000)));
+      // 다시 내려가도 대기 시계는 여기서 새로 시작해야 한다.
+      latch.update(false, t0.add(const Duration(milliseconds: 1500)));
+      expect(latch.update(false, t0.add(const Duration(milliseconds: 3000))),
+          isTrue,
+          reason: '되돌아온 뒤 다시 내려간 시점(1500ms)부터 2초를 채워야 한다');
+      expect(latch.update(false, t0.add(const Duration(milliseconds: 3500))),
+          isFalse);
     });
 
     test('reset하면 약함으로 돌아가고 다음 첫 관측을 곧바로 받는다', () {
@@ -112,7 +108,7 @@ void main() {
         t = t.add(const Duration(milliseconds: 700));
         result = latch.update(conf >= threshold, t);
       }
-      expect(result, isTrue, reason: '2초 넘게 유지되면 심함으로 올라가야 한다');
+      expect(result, isTrue, reason: 'T88: 올라가는 변화는 즉시 반영된다');
     });
   });
 }
