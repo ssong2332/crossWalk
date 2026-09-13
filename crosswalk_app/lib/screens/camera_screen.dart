@@ -418,8 +418,8 @@ class _CameraScreenState extends State<CameraScreen>
 
     final result = _classifier.processFrame(image);
     if (result != null) {
-      // T85: 분류기 방향과 각도 모델이 반대를 말하면 각도 모델을 따른다.
-      // 여기서 한 번 정한 방향을 문구·화살표·음성·진동이 전부 공유한다.
+      // T87: 방향은 각도 모델이 정한다 — 분류기 결과는 "없음/앞/위"로만 쓴다.
+      // 여기서 정한 상태를 문구·화살표·음성·진동이 전부 공유한다.
       // 각도는 화살표와 같은 보정값(`_arrowStripeAngle`, 최대 10프레임 전).
       final label = DirectionResolver.resolve(result.label, _arrowStripeAngle);
       // T84: 강도 판정용 각도 — 화살표와 같은 보정값을 넘긴다.
@@ -428,8 +428,8 @@ class _CameraScreenState extends State<CameraScreen>
       if (mounted) {
         setState(() {
           _statusLabel = _labelText[label] ?? label;
-          // 신뢰도는 분류기가 낸 값 그대로다 — 방향이 뒤집힌 경우 이 숫자는
-          // 원래 방향에 대한 확신이므로 참고값일 뿐이다.
+          // 신뢰도는 분류기가 낸 값 그대로다 — 방향은 각도가 정하므로 이
+          // 숫자는 "횡단보도 위/앞/없음" 판정에 대한 확신이다.
           _confidence = result.confidence;
           _lastResultAt = DateTime.now();
           _noCall = false;
@@ -493,10 +493,28 @@ class _CameraScreenState extends State<CameraScreen>
       raw == null ? null : StripeDirectionEstimate(raw, 1.0),
     );
 
+    // T87: 각도가 바뀌면 방향도 다시 정한다. 분류기가 저신뢰로 결과를 안
+    // 내는 동안(classifier.dart:244 -> null) 문구는 옛 방향에 멈춰 있고
+    // 화살표만 돌던 실기기 #14 경로를 막는다. 상태가 실제로 바뀔 때만
+    // alert를 불러 음성·진동도 같은 방향을 말하게 한다(쿨다운은 alert가
+    // 알아서 건다).
+    String? relabel;
+    if (DirectionResolver.isOnCrosswalk(_guidanceLabel) && !_noCall) {
+      final next = DirectionResolver.resolve(_guidanceLabel, smoothed);
+      if (next != _guidanceLabel) relabel = next;
+    }
+    if (relabel != null) {
+      _feedback.alert(relabel, _confidence, angleDegrees: smoothed);
+    }
+
     if (mounted) {
       setState(() {
         _lastRawAngle = raw;
         _arrowStripeAngle = smoothed;
+        if (relabel != null) {
+          _statusLabel = _labelText[relabel] ?? relabel;
+          _guidanceLabel = relabel;
+        }
       });
     }
   }
@@ -877,20 +895,12 @@ class _CameraScreenState extends State<CameraScreen>
       (_guidanceLabel == 'left' || _guidanceLabel == 'right') &&
       _feedback.isSevere;
 
-  /// T86: 직진 판정인데 각도 모델이 크게 틀어졌다고 하는 상태. 문구와 색만
-  /// 바꾼다 — 상태 키는 front 그대로라 화살표(각도대로)·음성(침묵)·진동은
-  /// 영향이 없다. 근거는 DirectionResolver.frontUncertainAngleDegrees.
-  bool get _frontUncertain =>
-      _fieldState == 'front' &&
-      DirectionResolver.frontLooksDeviated('front', _arrowStripeAngle);
-
   Color get _fieldColor {
     switch (_fieldState) {
       case 'left':
       case 'right':
         return _severe ? _colorSevere : _colorAmber;
       case 'front':
-        return _frontUncertain ? _colorAmber : _colorSteel;
       case 'approach':
         return _colorSteel;
       case 'nocall':
@@ -916,10 +926,6 @@ class _CameraScreenState extends State<CameraScreen>
         return _severe ? _strings.labelLeftSevere : _strings.labelLeft;
       case 'right':
         return _severe ? _strings.labelRightSevere : _strings.labelRight;
-      case 'front':
-        return _frontUncertain
-            ? _strings.labelFrontUncertain
-            : (_labelText[_fieldState] ?? _statusLabel);
       default:
         return _labelText[_fieldState] ?? _statusLabel;
     }
@@ -1194,7 +1200,10 @@ class _CameraScreenState extends State<CameraScreen>
                           ),
                         ),
                         // 2차 정보 — 200% 확대 시 화면에서 버린다 (음성으로만 남는다).
-                        if (!dense && _confidence > 0 && !_hasError) ...[
+                        // T89: 무판정("판정 없음")일 때는 숨긴다 — 이 값은
+                        // 3초 전 마지막 유효 판정의 신뢰도라, "판정 없음 65%"
+                        // 처럼 보이면 오도한다(실기기 #15).
+                        if (!dense && _confidence > 0 && !_hasError && !_noCall) ...[
                           Padding(
                             padding: const EdgeInsets.only(top: 10),
                             child: Text(
@@ -1332,13 +1341,10 @@ class StateFieldPainter extends CustomPainter {
   /// 몸통을 몇 조각으로 나눠 그릴지 — 조각마다 밝기를 달리해 흐름을 만든다.
   static const _shaftSlices = 14;
 
-  /// T79 -> T85: 이전에는 분류기 상태와 각도 부호가 모순이면 각도를 버리고
-  /// 상태 기반 평면 화살표로 되돌아갔다(`_angleAgreesWithState`). T85부터는
-  /// 모순을 그리는 단계가 아니라 **상태를 정하는 단계**에서 푼다 —
-  /// `DirectionResolver`가 각도 방향으로 상태를 뒤집으므로 여기 들어오는
-  /// 상태와 각도는 이미 같은 방향이거나(|각도|>=5), 각도가 중립(<5)이다.
-  /// 중립이면 지면 화살표를 실제 각도(거의 직진)로 그린다(사용자 선택 (가)).
-  /// 근거·판정표는 direction_resolver.dart 참고.
+  /// T79 -> T85 -> T87: 이전에는 분류기 상태와 각도 부호가 모순이면 각도를
+  /// 버리고 평면 화살표로 되돌아갔다. 지금은 방향 자체를 각도가 정하므로
+  /// (`DirectionResolver`, T87) 여기 들어오는 상태와 각도는 모순일 수 없다.
+  /// 각도만 있으면 지면 화살표를 그 각도로 그린다.
   ///
   /// 화살표가 실제로 회전 가능한 상태인지 — left/right/front에서만,
   /// 각도를 알 때만.

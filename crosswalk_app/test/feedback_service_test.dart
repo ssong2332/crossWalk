@@ -150,38 +150,36 @@ void main() {
 
     // T63: 강도가 바뀌면(약함<->심함) 방향이 그대로여도 쿨다운을 무시하고
     // 즉시 재발화한다 — 갑자기 심해진 이탈을 3초 동안 못 알리면 안 된다.
-    test(
-        'bypasses cooldown when severity change persists past the latch '
-        'dwell (T82)', () {
+    // T88: 올라가는 변화는 dwell 없이 즉시 반영되므로 1ms 뒤에도 발화한다.
+    // 내려가는 변화는 여전히 dwell(2초)을 채워야 인정된다.
+    test('severity escalation bypasses cooldown immediately (T63/T88)', () {
       final service = FeedbackService();
       final t0 = DateTime(2026, 1, 1, 12, 0, 0);
 
-      final first = service.decideMessage('left', mild, t0);
-      expect(first, leftMild);
+      expect(service.decideMessage('left', mild, t0), leftMild);
 
-      // T82: 강도 변화는 이제 즉시가 아니라 SeverityLatch의 dwell(2초)만큼
-      // 유지되어야 인정된다. 그 전까지는 쿨다운이 그대로 걸린다.
-      final tooSoon = service.decideMessage(
+      final escalated = service.decideMessage(
         'left',
         severe,
         t0.add(const Duration(milliseconds: 1)),
       );
-      expect(tooSoon, isNull,
-          reason: '1ms 만에 뒤집힌 강도는 아직 인정하지 않는다');
+      expect(escalated, leftSevere,
+          reason: '심해진 이탈은 쿨다운·dwell 없이 즉시 알린다');
 
-      // 같은 강도가 dwell을 넘겨 유지되면 그때 반영되고, 쿨다운을 무효화해
-      // 즉시 발화한다(악화 알림은 늦지 않아야 한다).
-      //
-      // 2500ms인 이유: 대기 시계는 강도가 처음 뒤집힌 t0+1ms부터 도므로
-      // t0+2000ms에는 아직 1999ms밖에 안 됐다. 그리고 2500ms는 쿨다운(3초)
-      // **안**이라, 여기서 발화한다면 그건 쿨다운 만료가 아니라 강도 변화가
-      // 쿨다운을 무효화한 것임이 분명해진다.
-      final confirmed = service.decideMessage(
+      // 내려가는 변화: 1ms 뒤에는 아직 심함, 2초를 채우면 약함으로 재발화.
+      final tooSoon = service.decideMessage(
         'left',
-        severe,
-        t0.add(const Duration(milliseconds: 2500)),
+        mild,
+        t0.add(const Duration(milliseconds: 2)),
       );
-      expect(confirmed, leftSevere);
+      expect(tooSoon, isNull, reason: '내려가는 변화는 dwell 전에는 인정하지 않는다');
+      final deescalated = service.decideMessage(
+        'left',
+        mild,
+        t0.add(const Duration(milliseconds: 2002)),
+      );
+      expect(deescalated, leftMild,
+          reason: '2초를 채우면 약함으로 바뀌고 쿨다운을 무효화해 발화한다');
     });
 
     // T82(2026-09-08, 사용자 실기기 보고): "가만히 서 있는데 '크게 벗어남'과
@@ -189,19 +187,23 @@ void main() {
     // 원인은 쿨다운 키가 (클래스, 강도)라서 강도가 뒤집히면 쿨다운이
     // 무효화되는 것이었다. 실측: 같은 방향 연속쌍 46쌍 중 11쌍(23.9%)에서
     // 강도가 뒤집혔고 변화폭이 0.98->0.68처럼 컸다.
-    test('튀었다 되돌아오는 강도 변화는 재발화시키지 않는다 (T82)', () {
+    // T88(2026-09-13): 올라가는 변화(약함->심함)는 즉시 반영하므로 첫 상승은
+    // 1회 재발화한다(안전 경고를 늦추지 않기 위해). 내려가는 쪽은 여전히
+    // 2초를 기다리므로, 그 뒤의 요동은 재발화하지 않는다.
+    test('튀는 강도 변화는 최대 1회(상승)만 재발화한다 (T82 -> T88)', () {
       final service = FeedbackService();
       var t = DateTime(2026, 1, 1, 12, 0, 0);
 
       expect(service.decideMessage('left', mild, t), leftMild);
 
-      // 신뢰도가 크게 튀지만 dwell(2초) 안에 되돌아온다 — 실기기에서 관찰된
-      // 패턴 그대로. 쿨다운(3초) 안에서는 한 번도 다시 말하면 안 된다.
-      for (final conf in [severe, mild, severe, mild, severe]) {
+      final fired = <String>[];
+      for (final angle in [severe, mild, severe, mild, severe]) {
         t = t.add(const Duration(milliseconds: 500));
-        expect(service.decideMessage('left', conf, t), isNull,
-            reason: 't=$t conf=$conf 에서 재발화했다');
+        final m = service.decideMessage('left', angle, t);
+        if (m != null) fired.add(m);
       }
+      expect(fired, [leftSevere],
+          reason: '상승 1회만 재발화하고 이후 요동은 흡수돼야 한다');
     });
 
     test('방향이 바뀌면 강도를 물려받지 않는다 (T82)', () {
