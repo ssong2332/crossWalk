@@ -42,4 +42,31 @@ void main() {
       }
     });
   });
+
+  // T86: front인데 |각도| >= 15면 "방향 확인 중". 진짜 front 185장 중 배포
+  // 모델 |예측| >= 15도는 8장(4.3%), 라벨 기준 0장 — 오경보 4.3%.
+  group('DirectionResolver.frontLooksDeviated', () {
+    const f = DirectionResolver.frontUncertainAngleDegrees;
+
+    test('front이고 |각도| >= 15면 true (경계값 포함, 부호 무관)', () {
+      expect(DirectionResolver.frontLooksDeviated('front', f), isTrue);
+      expect(DirectionResolver.frontLooksDeviated('front', -f), isTrue);
+      expect(DirectionResolver.frontLooksDeviated('front', 40), isTrue);
+    });
+
+    test('front이고 |각도| < 15면 false', () {
+      for (final a in <double>[0, 5, -10, 14.9, -14.9]) {
+        expect(DirectionResolver.frontLooksDeviated('front', a), isFalse,
+            reason: '$a');
+      }
+    });
+
+    test('각도가 없거나 front가 아니면 false', () {
+      expect(DirectionResolver.frontLooksDeviated('front', null), isFalse);
+      for (final label in ['left', 'right', 'approach', 'none']) {
+        expect(DirectionResolver.frontLooksDeviated(label, 40), isFalse,
+            reason: label);
+      }
+    });
+  });
 }
