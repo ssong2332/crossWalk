@@ -877,12 +877,20 @@ class _CameraScreenState extends State<CameraScreen>
       (_guidanceLabel == 'left' || _guidanceLabel == 'right') &&
       _feedback.isSevere;
 
+  /// T86: 직진 판정인데 각도 모델이 크게 틀어졌다고 하는 상태. 문구와 색만
+  /// 바꾼다 — 상태 키는 front 그대로라 화살표(각도대로)·음성(침묵)·진동은
+  /// 영향이 없다. 근거는 DirectionResolver.frontUncertainAngleDegrees.
+  bool get _frontUncertain =>
+      _fieldState == 'front' &&
+      DirectionResolver.frontLooksDeviated('front', _arrowStripeAngle);
+
   Color get _fieldColor {
     switch (_fieldState) {
       case 'left':
       case 'right':
         return _severe ? _colorSevere : _colorAmber;
       case 'front':
+        return _frontUncertain ? _colorAmber : _colorSteel;
       case 'approach':
         return _colorSteel;
       case 'nocall':
@@ -908,6 +916,10 @@ class _CameraScreenState extends State<CameraScreen>
         return _severe ? _strings.labelLeftSevere : _strings.labelLeft;
       case 'right':
         return _severe ? _strings.labelRightSevere : _strings.labelRight;
+      case 'front':
+        return _frontUncertain
+            ? _strings.labelFrontUncertain
+            : (_labelText[_fieldState] ?? _statusLabel);
       default:
         return _labelText[_fieldState] ?? _statusLabel;
     }
