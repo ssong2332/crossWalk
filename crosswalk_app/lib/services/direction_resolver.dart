@@ -39,6 +39,25 @@ class DirectionResolver {
   /// ±5.0도 — 5도 미만은 라벨 기준으로도 직진 구간이다.
   static const double neutralAngleDegrees = 5.0;
 
+  /// T86: 분류기가 front(직진)라는데 각도가 이 크기 이상이면 "방향 확인 중"
+  /// 으로 표시한다(문구·색만 바뀌고 상태·음성·진동은 front 그대로).
+  ///
+  /// 왜: 실기기 #13 — front 75%인데 각도 -16도로 화살표는 왼쪽을 가리켰다.
+  /// T79는 front에 크기 제약을 두지 않아 안전망이 없었다. 누수 없는 CV에서
+  /// 정답 left/right 317장 중 front로 오판이 10장(3.2%)이고 front 확신이
+  /// 0.80~0.92인 것도 있어 임계값으로는 못 거른다 — 각도가 유일한 단서다.
+  ///
+  /// 15도인 근거: 진짜 front 185장에서 배포 모델 |예측|>=15도는 8장(4.3%),
+  /// 라벨 기준 0장(`train/screenshot_probe_after_v3.log`). 즉 오경보 4.3%.
+  /// 사용자 확정(2026-09-13). 음성은 실기기 확인 뒤 결정하기로 했다.
+  static const double frontUncertainAngleDegrees = 15.0;
+
+  /// [label]이 front인데 각도 크기가 [frontUncertainAngleDegrees] 이상인가.
+  static bool frontLooksDeviated(String label, double? angleDegrees) =>
+      label == 'front' &&
+      angleDegrees != null &&
+      angleDegrees.abs() >= frontUncertainAngleDegrees;
+
   /// 분류기 [label]과 각도 모델의 [angleDegrees]를 합쳐 최종 방향을 낸다.
   static String resolve(String label, double? angleDegrees) {
     if (label != 'left' && label != 'right') return label;
