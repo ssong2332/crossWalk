@@ -62,8 +62,6 @@ class AppStrings {
   // 텍스트 겹침(redundancy) — 색각이상 사용자에게도 강도가 전달되도록.
   final String labelLeftSevere;
   final String labelRightSevere;
-  /// T86: 분류기는 직진이라는데 각도 모델이 크게 틀어졌다고 할 때.
-  final String labelFrontUncertain;
 
   // Claude Design 1d/1f: 무판정은 6번째 상태다. 전체의 약 6%로 실제로 자주
   // 발생하며, 숨기면 "모르는 것을 아는 척"이 된다.
@@ -217,7 +215,6 @@ class AppStrings {
     required this.labelApproach,
     required this.labelLeftSevere,
     required this.labelRightSevere,
-    required this.labelFrontUncertain,
     required this.labelNoCall,
     required this.noCallBody,
     required this.cameraEntryAnnouncement,
@@ -297,7 +294,6 @@ class AppStrings {
     labelApproach: '앞에 횡단보도',
     labelLeftSevere: '왼쪽으로 크게 벗어남',
     labelRightSevere: '오른쪽으로 크게 벗어남',
-    labelFrontUncertain: '방향 확인 중',
     labelNoCall: '판정 없음',
     noCallBody: '확신이 낮습니다',
     cameraEntryAnnouncement: '횡단보도 안내. 보조 도구입니다. 안내는 음성과 진동으로 나갑니다.',
@@ -394,7 +390,6 @@ class AppStrings {
     labelApproach: 'Crosswalk ahead',
     labelLeftSevere: 'Veering left sharply',
     labelRightSevere: 'Veering right sharply',
-    labelFrontUncertain: 'Checking direction',
     labelNoCall: 'No call',
     noCallBody: 'Confidence is low',
     cameraEntryAnnouncement:
