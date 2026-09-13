@@ -8,6 +8,7 @@ import 'package:camera/camera.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../services/classifier.dart';
+import '../services/direction_resolver.dart';
 import '../services/feedback_service.dart';
 import '../services/angle_estimator.dart';
 import '../services/ground_projection.dart';
@@ -417,17 +418,23 @@ class _CameraScreenState extends State<CameraScreen>
 
     final result = _classifier.processFrame(image);
     if (result != null) {
+      // T85: 분류기 방향과 각도 모델이 반대를 말하면 각도 모델을 따른다.
+      // 여기서 한 번 정한 방향을 문구·화살표·음성·진동이 전부 공유한다.
+      // 각도는 화살표와 같은 보정값(`_arrowStripeAngle`, 최대 10프레임 전).
+      final label = DirectionResolver.resolve(result.label, _arrowStripeAngle);
       // T84: 강도 판정용 각도 — 화살표와 같은 보정값을 넘긴다.
-      _feedback.alert(result.label, result.confidence,
+      _feedback.alert(label, result.confidence,
           angleDegrees: _arrowStripeAngle);
       if (mounted) {
         setState(() {
-          _statusLabel = _labelText[result.label] ?? result.label;
+          _statusLabel = _labelText[label] ?? label;
+          // 신뢰도는 분류기가 낸 값 그대로다 — 방향이 뒤집힌 경우 이 숫자는
+          // 원래 방향에 대한 확신이므로 참고값일 뿐이다.
           _confidence = result.confidence;
           _lastResultAt = DateTime.now();
           _noCall = false;
         });
-        _guidanceLabel = result.label;
+        _guidanceLabel = label;
       }
     }
 
@@ -1313,49 +1320,19 @@ class StateFieldPainter extends CustomPainter {
   /// 몸통을 몇 조각으로 나눠 그릴지 — 조각마다 밝기를 달리해 흐름을 만든다.
   static const _shaftSlices = 14;
 
-  /// T79: 이탈 경고와 각도가 서로 반대를 말할 때, 각도가 이만큼은 되어야
-  /// 화살표를 각도로 그린다. 이보다 작으면 화살표가 사실상 직진으로 보여
-  /// "오른쪽으로"라는 문구와 어긋난다.
+  /// T79 -> T85: 이전에는 분류기 상태와 각도 부호가 모순이면 각도를 버리고
+  /// 상태 기반 평면 화살표로 되돌아갔다(`_angleAgreesWithState`). T85부터는
+  /// 모순을 그리는 단계가 아니라 **상태를 정하는 단계**에서 푼다 —
+  /// `DirectionResolver`가 각도 방향으로 상태를 뒤집으므로 여기 들어오는
+  /// 상태와 각도는 이미 같은 방향이거나(|각도|>=5), 각도가 중립(<5)이다.
+  /// 중립이면 지면 화살표를 실제 각도(거의 직진)로 그린다(사용자 선택 (가)).
+  /// 근거·판정표는 direction_resolver.dart 참고.
   ///
-  /// 5도인 근거: T74에서 재작성한 v2 라벨의 front 범위가 ±2.6도, 이탈 시작이
-  /// ±5.0도다. 즉 5도 미만은 라벨 기준으로도 직진 구간이다.
-  static const minDeviationAngleDegrees = 5.0;
-
-  /// T79: 분류기가 낸 상태와 각도 모델이 낸 각도가 서로 모순되지 않는지.
-  ///
-  /// 라벨 규약(T71 검증: 3_left 전부 양수, 4_right 전부 음수)상 각도는
-  /// **가야 할 방향**이다 — 왼쪽으로 이탈했으면 오른쪽(양수)으로 가야 한다.
-  /// 그런데 두 모델은 서로 독립이라 반대를 말할 수 있다.
-  ///
-  /// 실측(배포 모델, 각도 라벨 604장, `train/state_angle_consistency.py`):
-  /// 분류기가 이탈이라 한 298장 중 **41장(13.8%)** 에서 화살표가 경고와
-  /// 어긋났다(부호 반대 15장, |각도|<5도 38장). 그 41장을 정답과 대조하니
-  /// **29장(70.7%)은 분류기가 맞고 각도가 틀린** 경우였다. 그래서 모순이면
-  /// 각도를 버리고 상태 기반 화살표로 되돌아간다.
-  ///
-  /// 원인은 각도 모델의 크기 과소예측이다 — 회귀 기울기 0.755로, 라벨이
-  /// 클수록 0쪽으로 당겨 예측한다(|라벨| 45~90도 구간에서 |예측| 평균 36.4도).
-  /// 예측값에 게인을 곱해 펴는 방법은 실측 후 기각했다: 기울기는 0.996으로
-  /// 교정되지만 평균오차 7.4->8.8도, 프레임 간 흔들림 10.1->13.4도로 악화되고
-  /// 어긋남은 13.8->11.7%로 2.1%p만 줄었다.
-  bool get _angleAgreesWithState {
-    final angle = stripeAngleDegrees;
-    if (angle == null) return false;
-    // front는 크기 제약을 두지 않는다 — 직진에서는 각도가 곧 미세 보정량이다.
-    if (state == 'left') return angle >= minDeviationAngleDegrees;
-    if (state == 'right') return angle <= -minDeviationAngleDegrees;
-    return true;
-  }
-
-  @visibleForTesting
-  bool get angleAgreesWithStateForTest => _angleAgreesWithState;
-
   /// 화살표가 실제로 회전 가능한 상태인지 — left/right/front에서만,
-  /// 각도를 알 때만, 그리고 그 각도가 상태와 모순되지 않을 때만(T79).
+  /// 각도를 알 때만.
   bool get _tracksStripe =>
       stripeAngleDegrees != null &&
-      (state == 'front' || state == 'left' || state == 'right') &&
-      _angleAgreesWithState;
+      (state == 'front' || state == 'left' || state == 'right');
 
   /// 추정 각도를 캔버스 회전각(라디안)으로 바꾼다.
   double get _stripeRotation => stripeAngleDegrees! * _pi / 180 - _pi / 2;
