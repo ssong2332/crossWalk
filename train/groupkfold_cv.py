@@ -66,6 +66,27 @@ DATA_DIR = REPO / "image"
 #   groupkfold_noweight_out : 638장 5-class 손실가중 OFF (④, groupkfold_noweight.py)
 #   groupkfold_noapproach_out : 561장 4-class approach 제외 (③)
 OUT_DIR = REPO / "train" / "groupkfold_5class_out"
+# T90: 실험별 산출물 분리(T53 규칙). 환경변수로 출력 폴더를 바꿀 수 있다.
+if os.environ.get("GROUPKFOLD_OUT_DIR"):
+    OUT_DIR = REPO / "train" / os.environ["GROUPKFOLD_OUT_DIR"]
+
+# T90: **학습 전용** 추가 소스. 쉼표로 구분한 폴더 목록이며, 각 폴더명은
+# CLASS_DIRS 중 하나로 시작해야 한다(예: image_extra/0_none_aihub -> none).
+# 여기 사진은 모든 fold의 train에만 들어가고 val/test에는 절대 들어가지
+# 않는다 — 평가는 계속 자체 사진(image/)으로만 한다. 이유: AI Hub 프레임은
+# 연속 영상이라 근사중복이 극단적으로 많고 EXIF 촬영시각도 없어 세션 분할이
+# 불가능하다. 평가에 섞이면 쉬운 중복 표본이 수치를 부풀린다.
+# 캐시(build_cache)는 image/ 만 다루므로 이 사진들은 원본에서 직접 읽는다.
+EXTRA_TRAIN_DIRS = [Path(d.strip()) for d in
+                    os.environ.get("EXTRA_TRAIN_DIRS", "").split(",") if d.strip()]
+# T90(c): 추가 소스를 샘플러에서 **고정 비율**로만 뽑는다(0 < share < 1).
+# 설정하면 추가 소스는 클래스 집계(tc)·손실가중에서 빠지고, 자체 사진의
+# 샘플링 비중은 기준선과 같게 유지된다. 미설정(None)이면 (a)/(b)처럼 추가
+# 소스를 해당 클래스 장수에 그대로 합산한다 — (a) 실측에서 none 학습 장수가
+# 166->528이 되며 자체 none 비중이 1/3로 줄어 none 재현이 87.3->80.9%로
+# 떨어졌다(추정 원인, 이 옵션이 그 검증용).
+EXTRA_SAMPLE_SHARE = (float(os.environ["EXTRA_SAMPLE_SHARE"])
+                      if os.environ.get("EXTRA_SAMPLE_SHARE") else None)
 
 # T51: 5-class. 파일시스템 폴더명과 의미 라벨을 분리한다.
 # CLASS_DIRS[i]는 CLASSES[i]의 폴더명(같은 인덱스). ImageFolder 알파벳 순서와
@@ -133,8 +154,10 @@ class ListDataset(Dataset):
         return len(self.items)
 
     def __getitem__(self, i):
-        path, label = self.items[i]
-        if USE_CACHE:
+        path, label = self.items[i][:2]
+        # T90: 추가 소스(3번째 원소 True)는 캐시가 없어 원본을 읽는다.
+        use_cache = USE_CACHE and not (len(self.items[i]) > 2 and self.items[i][2])
+        if use_cache:
             path = build_cache.cache_path(Path(path))
         return self.tf(Image.open(path).convert("RGB")), label
 
@@ -147,6 +170,24 @@ def wilson(k, n, z=1.96):
     c = (p + z * z / (2 * n)) / d
     h = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d
     return (max(0.0, c - h), min(1.0, c + h))
+
+
+def load_extra_train():
+    """T90: 학습 전용 추가 소스를 읽는다. 세션/중복/fold 없음 — train에만 쓴다."""
+    out = []
+    for d in EXTRA_TRAIN_DIRS:
+        d = d if d.is_absolute() else REPO / d
+        cls = next((c for cd, c in zip(CLASS_DIRS, CLASSES) if d.name.startswith(cd)), None)
+        if cls is None:
+            raise RuntimeError(f"추가 소스 폴더명이 CLASS_DIRS로 시작하지 않음: {d}")
+        n = 0
+        for f in sorted(os.listdir(d)):
+            if f.lower().endswith((".jpg", ".jpeg", ".png")):
+                out.append({"path": str(d / f), "cls": cls, "ci": CLASSES.index(cls),
+                            "file": f, "extra": True})
+                n += 1
+        print(f"[T90] 학습 전용 추가 소스 {d.name}: {n}장 -> '{cls}'", flush=True)
+    return out
 
 
 def load_images():
@@ -259,7 +300,7 @@ def Counter_cls(rs):
     return d
 
 
-def run_fold(k, items, device):
+def run_fold(k, items, device, extra=()):
     test_items = [r for r in items if r["fold"] == k]
     rest_sess = sorted({r["session"] for r in items if r["fold"] != k})
     rnd = random.Random(SEED + 100 + k)
@@ -268,19 +309,33 @@ def run_fold(k, items, device):
     val_sess = set(rest_sess[:n_val_sess])
     train_items = [r for r in items if r["fold"] != k and r["session"] not in val_sess]
     val_items = [r for r in items if r["fold"] != k and r["session"] in val_sess]
-
-    tc = Counter_cls(train_items)
+    # T90: 추가 소스는 train에만. share 미설정이면 클래스 집계·샘플러·
+    # 손실가중에 그대로 포함되고(a/b), 설정이면 집계에서 빠진다(c).
+    own_items = train_items
+    train_items = train_items + list(extra)
+    tc = Counter_cls(own_items if EXTRA_SAMPLE_SHARE is not None else train_items)
     for c in CLASSES:
         if tc[c] == 0:
             raise RuntimeError(f"fold {k}: train에 '{c}' 클래스가 0장 — 분할 재검토 필요")
     print(f"[fold {k}] train={len(train_items)} val={len(val_items)} test={len(test_items)}", flush=True)
     print(f"[fold {k}] train 클래스별: {dict(tc)}", flush=True)
 
-    train_ds = ListDataset([(r["path"], r["ci"]) for r in train_items], TRAIN_TF)
+    train_ds = ListDataset([(r["path"], r["ci"], r.get("extra", False)) for r in train_items], TRAIN_TF)
     val_ds = ListDataset([(r["path"], r["ci"]) for r in val_items], EVAL_TF)
     test_ds = ListDataset([(r["path"], r["ci"]) for r in test_items], EVAL_TF)
 
-    sw = [1.0 / tc[CLASSES[ci]] for _, ci in train_ds.items]
+    if EXTRA_SAMPLE_SHARE is None or not extra:
+        sw = [1.0 / tc[CLASSES[it[1]]] for it in train_ds.items]
+    else:
+        # 자체 사진: 클래스당 질량 1(합 len(CLASSES)). 추가 소스: 전체 질량이
+        # share 비율이 되도록 장당 동일 가중.
+        own_mass = float(len(CLASSES))
+        extra_mass = own_mass * EXTRA_SAMPLE_SHARE / (1.0 - EXTRA_SAMPLE_SHARE)
+        n_extra = sum(1 for it in train_ds.items if it[2])
+        sw = [extra_mass / n_extra if it[2] else 1.0 / tc[CLASSES[it[1]]]
+              for it in train_ds.items]
+        print(f"[fold {k}] T90(c): 추가 소스 {n_extra}장을 샘플링 비율 "
+              f"{EXTRA_SAMPLE_SHARE:.0%}로 고정 (클래스 집계·손실가중 제외)", flush=True)
     sampler = WeightedRandomSampler(sw, num_samples=len(sw), replacement=True)
     train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, sampler=sampler, num_workers=0)
     val_loader = DataLoader(val_ds, batch_size=BATCH_SIZE, shuffle=False, num_workers=0)
@@ -442,9 +497,13 @@ def main():
     print(f"이미지 {len(items)}장 / 세션 {n_sess}개 / 근사중복 클러스터 {n_dupc}개", flush=True)
     split_folds(items, n_sess)
 
+    extra = load_extra_train()
+    if extra:
+        print(f"[T90] 추가 소스 합계 {len(extra)}장 (모든 fold train 전용, 평가 제외)", flush=True)
+
     all_recs = []
     for k in range(N_FOLDS):
-        all_recs += run_fold(k, items, device)
+        all_recs += run_fold(k, items, device, extra)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     json.dump(all_recs, open(OUT_DIR / "all_probs.json", "w"), ensure_ascii=False)

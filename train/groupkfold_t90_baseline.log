@@ -1,0 +1,166 @@
+Device: cpu | 세션간격 60s | 중복임계 10.0 | 5-fold
+224 캐시: 신규 0 / 유지 1003
+이미지 1003장 / 세션 190개 / 근사중복 클러스터 1002개
+[검사 통과] 세션 190개, 근사중복 클러스터 1002개 — 모두 단일 fold에 귀속
+  fold0: 200장 {'right': 40, 'left': 32, 'approach': 37, 'front': 41, 'none': 50}
+  fold1: 201장 {'approach': 37, 'front': 41, 'left': 32, 'right': 40, 'none': 51}
+  fold2: 202장 {'approach': 37, 'front': 42, 'left': 33, 'right': 40, 'none': 50}
+  fold3: 200장 {'approach': 37, 'front': 41, 'left': 32, 'right': 40, 'none': 50}
+  fold4: 200장 {'approach': 36, 'left': 32, 'front': 42, 'right': 40, 'none': 50}
+[fold 0] train=655 val=148 test=200
+[fold 0] train 클래스별: {'approach': 134, 'left': 99, 'front': 135, 'right': 121, 'none': 166}
+[fold 0] 손실가중 ON: [1.0, 1.24, 1.23, 1.68, 1.37]
+[fold 0] frozen 01/10 loss=1.2773 acc=0.4580 val=0.3446
+[fold 0] frozen 02/10 loss=0.8454 acc=0.7115 val=0.6081
+[fold 0] frozen 03/10 loss=0.6889 acc=0.7557 val=0.4865
+[fold 0] frozen 04/10 loss=0.6131 acc=0.7725 val=0.6892
+[fold 0] frozen 05/10 loss=0.6138 acc=0.7802 val=0.7230
+[fold 0] frozen 06/10 loss=0.5469 acc=0.8137 val=0.6554
+[fold 0] frozen 07/10 loss=0.5143 acc=0.8198 val=0.6419
+[fold 0] frozen 08/10 loss=0.4394 acc=0.8351 val=0.6892
+[fold 0] frozen 09/10 loss=0.5004 acc=0.8214 val=0.7635
+[fold 0] frozen 10/10 loss=0.3633 acc=0.8824 val=0.7635
+[fold 0] ft     01/10 loss=0.3507 acc=0.8885 val=0.8311
+[fold 0] ft     02/10 loss=0.3152 acc=0.8962 val=0.8176
+[fold 0] ft     03/10 loss=0.2015 acc=0.9481 val=0.8784
+[fold 0] ft     04/10 loss=0.2052 acc=0.9344 val=0.8716
+[fold 0] ft     05/10 loss=0.1625 acc=0.9511 val=0.8716
+[fold 0] ft     06/10 loss=0.1499 acc=0.9557 val=0.8581
+[fold 0] ft     07/10 loss=0.1708 acc=0.9405 val=0.8784
+[fold 0] ft     08/10 loss=0.1206 acc=0.9649 val=0.8716
+[fold 0] ft     09/10 loss=0.1352 acc=0.9618 val=0.8716
+[fold 0] ft     10/10 loss=0.1306 acc=0.9634 val=0.8716
+[fold 0] best val_acc=0.8784
+[fold 0] 완료 — held-out 200장
+[fold 1] train=738 val=64 test=201
+[fold 1] train 클래스별: {'approach': 119, 'left': 124, 'front': 159, 'right': 151, 'none': 185}
+[fold 1] 손실가중 ON: [1.0, 1.55, 1.16, 1.49, 1.23]
+[fold 1] frozen 01/10 loss=1.1924 acc=0.5108 val=0.5625
+[fold 1] frozen 02/10 loss=0.8742 acc=0.6762 val=0.7344
+[fold 1] frozen 03/10 loss=0.8558 acc=0.6870 val=0.5938
+[fold 1] frozen 04/10 loss=0.6387 acc=0.7696 val=0.7031
+[fold 1] frozen 05/10 loss=0.6069 acc=0.7818 val=0.7969
+[fold 1] frozen 06/10 loss=0.5164 acc=0.8049 val=0.7344
+[fold 1] frozen 07/10 loss=0.4925 acc=0.8157 val=0.7500
+[fold 1] frozen 08/10 loss=0.5714 acc=0.7886 val=0.7656
+[fold 1] frozen 09/10 loss=0.5568 acc=0.8022 val=0.7812
+[fold 1] frozen 10/10 loss=0.4995 acc=0.8130 val=0.7812
+[fold 1] ft     01/10 loss=0.3461 acc=0.8794 val=0.8125
+[fold 1] ft     02/10 loss=0.2779 acc=0.9106 val=0.8125
+[fold 1] ft     03/10 loss=0.2604 acc=0.9011 val=0.8281
+[fold 1] ft     04/10 loss=0.2006 acc=0.9390 val=0.8281
+[fold 1] ft     05/10 loss=0.1768 acc=0.9580 val=0.8750
+[fold 1] ft     06/10 loss=0.1928 acc=0.9282 val=0.8750
+[fold 1] ft     07/10 loss=0.1372 acc=0.9580 val=0.8750
+[fold 1] ft     08/10 loss=0.1460 acc=0.9634 val=0.8750
+[fold 1] ft     09/10 loss=0.1500 acc=0.9580 val=0.8750
+[fold 1] ft     10/10 loss=0.1515 acc=0.9607 val=0.8750
+[fold 1] best val_acc=0.8750
+[fold 1] 완료 — held-out 201장
+[fold 2] train=660 val=141 test=202
+[fold 2] train 클래스별: {'approach': 106, 'left': 107, 'front': 141, 'right': 137, 'none': 169}
+[fold 2] 손실가중 ON: [1.0, 1.59, 1.2, 1.58, 1.23]
+[fold 2] frozen 01/10 loss=1.2529 acc=0.4773 val=0.3404
+[fold 2] frozen 02/10 loss=0.8255 acc=0.7136 val=0.4255
+[fold 2] frozen 03/10 loss=0.7351 acc=0.7348 val=0.5390
+[fold 2] frozen 04/10 loss=0.6791 acc=0.7379 val=0.6028
+[fold 2] frozen 05/10 loss=0.6192 acc=0.7667 val=0.5816
+[fold 2] frozen 06/10 loss=0.4913 acc=0.8136 val=0.7376
+[fold 2] frozen 07/10 loss=0.4836 acc=0.8152 val=0.7092
+[fold 2] frozen 08/10 loss=0.4734 acc=0.8455 val=0.7234
+[fold 2] frozen 09/10 loss=0.3956 acc=0.8606 val=0.7234
+[fold 2] frozen 10/10 loss=0.4145 acc=0.8409 val=0.7305
+[fold 2] ft     01/10 loss=0.3110 acc=0.8924 val=0.8014
+[fold 2] ft     02/10 loss=0.2400 acc=0.9015 val=0.7872
+[fold 2] ft     03/10 loss=0.2482 acc=0.9136 val=0.8014
+[fold 2] ft     04/10 loss=0.1753 acc=0.9424 val=0.8156
+[fold 2] ft     05/10 loss=0.1349 acc=0.9530 val=0.8298
+[fold 2] ft     06/10 loss=0.1321 acc=0.9591 val=0.8369
+[fold 2] ft     07/10 loss=0.1381 acc=0.9561 val=0.8511
+[fold 2] ft     08/10 loss=0.1144 acc=0.9712 val=0.8440
+[fold 2] ft     09/10 loss=0.1149 acc=0.9712 val=0.8298
+[fold 2] ft     10/10 loss=0.1370 acc=0.9576 val=0.8298
+[fold 2] best val_acc=0.8511
+[fold 2] 완료 — held-out 202장
+[fold 3] train=739 val=64 test=200
+[fold 3] train 클래스별: {'approach': 140, 'left': 119, 'front': 153, 'right': 149, 'none': 178}
+[fold 3] 손실가중 ON: [1.0, 1.27, 1.16, 1.5, 1.19]
+[fold 3] frozen 01/10 loss=1.2115 acc=0.5115 val=0.3594
+[fold 3] frozen 02/10 loss=0.8976 acc=0.6671 val=0.5781
+[fold 3] frozen 03/10 loss=0.9019 acc=0.6752 val=0.6250
+[fold 3] frozen 04/10 loss=0.7854 acc=0.6955 val=0.7031
+[fold 3] frozen 05/10 loss=0.6677 acc=0.7673 val=0.7812
+[fold 3] frozen 06/10 loss=0.6625 acc=0.7578 val=0.7656
+[fold 3] frozen 07/10 loss=0.5965 acc=0.7821 val=0.7812
+[fold 3] frozen 08/10 loss=0.5955 acc=0.7700 val=0.7344
+[fold 3] frozen 09/10 loss=0.7097 acc=0.7402 val=0.7812
+[fold 3] frozen 10/10 loss=0.4611 acc=0.8512 val=0.7969
+[fold 3] ft     01/10 loss=0.3775 acc=0.8620 val=0.8438
+[fold 3] ft     02/10 loss=0.3109 acc=0.8945 val=0.8125
+[fold 3] ft     03/10 loss=0.2683 acc=0.9066 val=0.8438
+[fold 3] ft     04/10 loss=0.2480 acc=0.9080 val=0.8594
+[fold 3] ft     05/10 loss=0.1874 acc=0.9418 val=0.8750
+[fold 3] ft     06/10 loss=0.1801 acc=0.9486 val=0.8594
+[fold 3] ft     07/10 loss=0.2029 acc=0.9215 val=0.8594
+[fold 3] ft     08/10 loss=0.1804 acc=0.9486 val=0.8438
+[fold 3] ft     09/10 loss=0.1754 acc=0.9418 val=0.8906
+[fold 3] ft     10/10 loss=0.1561 acc=0.9608 val=0.8906
+[fold 3] best val_acc=0.8906
+[fold 3] 완료 — held-out 200장
+[fold 4] train=740 val=63 test=200
+[fold 4] train 클래스별: {'right': 149, 'left': 117, 'approach': 143, 'front': 150, 'none': 181}
+[fold 4] 손실가중 ON: [1.0, 1.27, 1.21, 1.55, 1.21]
+[fold 4] frozen 01/10 loss=1.2313 acc=0.4878 val=0.3810
+[fold 4] frozen 02/10 loss=0.8331 acc=0.6838 val=0.5714
+[fold 4] frozen 03/10 loss=0.7978 acc=0.7041 val=0.6032
+[fold 4] frozen 04/10 loss=0.7410 acc=0.7095 val=0.5079
+[fold 4] frozen 05/10 loss=0.6708 acc=0.7635 val=0.4444
+[fold 4] frozen 06/10 loss=0.6134 acc=0.7730 val=0.6667
+[fold 4] frozen 07/10 loss=0.5575 acc=0.7865 val=0.6984
+[fold 4] frozen 08/10 loss=0.5231 acc=0.8149 val=0.7460
+[fold 4] frozen 09/10 loss=0.4880 acc=0.8270 val=0.8095
+[fold 4] frozen 10/10 loss=0.5177 acc=0.8230 val=0.6825
+[fold 4] ft     01/10 loss=0.3948 acc=0.8689 val=0.8095
+[fold 4] ft     02/10 loss=0.2786 acc=0.9122 val=0.8095
+[fold 4] ft     03/10 loss=0.2449 acc=0.9162 val=0.8095
+[fold 4] ft     04/10 loss=0.2446 acc=0.9108 val=0.8413
+[fold 4] ft     05/10 loss=0.2064 acc=0.9324 val=0.8413
+[fold 4] ft     06/10 loss=0.1754 acc=0.9473 val=0.8413
+[fold 4] ft     07/10 loss=0.1610 acc=0.9365 val=0.8413
+[fold 4] ft     08/10 loss=0.1656 acc=0.9473 val=0.8254
+[fold 4] ft     09/10 loss=0.1822 acc=0.9446 val=0.8254
+[fold 4] ft     10/10 loss=0.1573 acc=0.9527 val=0.8254
+[fold 4] best val_acc=0.8413
+[fold 4] 완료 — held-out 200장
+
+============================================================================
+[주 지표] 세션단위 분할 + 근사중복 1장 집계  (평가 표본 1002장)
+============================================================================
+  none   recall=0.845 (212/251)  95% CI [0.795, 0.884]  precision=0.955  무판정=11
+  approach recall=0.875 (161/184)  95% CI [0.819, 0.915]  precision=0.778  무판정=6
+  front  recall=0.768 (159/207)  95% CI [0.706, 0.820]  precision=0.883  무판정=15
+  left   recall=0.826 (133/161)  95% CI [0.760, 0.877]  precision=0.881  무판정=6
+  right  recall=0.814 (162/199)  95% CI [0.754, 0.862]  precision=0.862  무판정=16
+
+  front 오경보(직진->편향): 19/207 = 9.2%  95% CI [6.0%, 13.9%]
+  approach 오경보(진입 전->편향): 8/184 = 4.3%  95% CI [2.2%, 8.3%]
+
+  목표(left/right recall >= 90%) 판정:
+    left  : 133/161 = 82.6%  CI [76.0%, 87.7%] -> 미달 확정
+    right : 162/199 = 81.4%  CI [75.4%, 86.2%] -> 미달 확정
+
+============================================================================
+[참고] 세션단위 분할, 중복 미제거 전체 집계  (평가 표본 1003장)
+============================================================================
+  none   recall=0.845 (212/251)  95% CI [0.795, 0.884]  precision=0.955  무판정=11
+  approach recall=0.875 (161/184)  95% CI [0.819, 0.915]  precision=0.778  무판정=6
+  front  recall=0.768 (159/207)  95% CI [0.706, 0.820]  precision=0.883  무판정=15
+  left   recall=0.826 (133/161)  95% CI [0.760, 0.877]  precision=0.881  무판정=6
+  right  recall=0.815 (163/200)  95% CI [0.755, 0.863]  precision=0.862  무판정=16
+
+  front 오경보(직진->편향): 19/207 = 9.2%  95% CI [6.0%, 13.9%]
+  approach 오경보(진입 전->편향): 8/184 = 4.3%  95% CI [2.2%, 8.3%]
+
+  목표(left/right recall >= 90%) 판정:
+    left  : 133/161 = 82.6%  CI [76.0%, 87.7%] -> 미달 확정
+    right : 163/200 = 81.5%  CI [75.5%, 86.3%] -> 미달 확정

@@ -38,3 +38,6 @@ crosswalk_app/android/key.properties
 # T69: 각도 회귀 학습용 EXIF 보정 캐시 및 학습 로그 (재생성 가능)
 train/angle_cache/
 train/angle_train_log.txt
+
+# T90: AI Hub 등 외부 데이터에서 만든 학습 전용 이미지 (대용량, image/와 같은 취급)
+image_extra/
