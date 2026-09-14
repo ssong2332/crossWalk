@@ -1,0 +1,8 @@
+클래스          장수    865 재현     새 재현   865→approach / 새→approach (none만)
+none        251     95.6%    99.6%   3 / 0
+approach    184     92.4%    96.7%
+front       207     84.5%    92.8%
+left        161     88.8%    96.3%
+right       200     93.5%    97.5%
+
+AI Hub none 362장(새 모델은 학습에 씀): 865 모델 판정 {'none': 326, 'nocall': 10, 'approach': 9, 'right': 9, 'front': 7, 'left': 1} / 새 모델 {'none': 362}

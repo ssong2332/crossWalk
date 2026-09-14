@@ -55,6 +55,47 @@ CLASSES = CLASS_DIRS
 # 현재(T51 재라벨링 후) front는 130장으로 이 상한에 걸리지 않는다.
 FRONT_DIR = "2_front"
 
+# T91: **학습 전용** 추가 소스 (T90 실험 (c) 레시피).
+#   EXTRA_TRAIN_DIRS  = 쉼표 구분 폴더 목록. 폴더명이 CLASS_DIRS 중 하나로
+#                       시작해야 한다(예: image_extra/0_none_aihub -> 0_none).
+#   EXTRA_SAMPLE_SHARE = 샘플러에서 추가 소스가 차지하는 비율(기본 0.10).
+# 추가 소스는 train에만 들어가고 val/test·클래스 개수 집계·손실가중에서는
+# 빠진다. 누수 없는 CV(train/groupkfold_t90_*) 실측: 클래스 개수에 합산하면
+# 자체 none 비중이 희석돼 none 재현 87.3->80.9%로 악화, 10% 고정이면
+# none->approach 오검출 7.6->4.0%, none 재현 91.2%, 나머지 클래스 유지.
+EXTRA_TRAIN_DIRS = [Path(d.strip()) for d in
+                    os.environ.get("EXTRA_TRAIN_DIRS", "").split(",") if d.strip()]
+EXTRA_SAMPLE_SHARE = float(os.environ.get("EXTRA_SAMPLE_SHARE", "0.10"))
+
+
+class _ExtraDataset(torch.utils.data.Dataset):
+    """추가 소스 이미지 목록 -> (tensor, class_idx). ImageFolder와 같은 transform."""
+
+    def __init__(self, items, tf):
+        self.items = items  # [(path, class_idx)]
+        self.tf = tf
+
+    def __len__(self):
+        return len(self.items)
+
+    def __getitem__(self, i):
+        path, label = self.items[i]
+        from PIL import Image
+        return self.tf(Image.open(path).convert("RGB")), label
+
+
+def load_extra_train():
+    out = []
+    for d in EXTRA_TRAIN_DIRS:
+        d = d if d.is_absolute() else REPO_ROOT / d
+        ci = next((i for i, cd in enumerate(CLASS_DIRS) if d.name.startswith(cd)), None)
+        if ci is None:
+            raise RuntimeError(f"추가 소스 폴더명이 CLASS_DIRS로 시작하지 않음: {d}")
+        files = sorted(f for f in os.listdir(d) if f.lower().endswith((".jpg", ".jpeg", ".png")))
+        out += [(str(d / f), ci) for f in files]
+        print(f"[T91] 학습 전용 추가 소스 {d.name}: {len(files)}장 -> {LABELS[ci]}")
+    return out
+
 
 # ── 1. 데이터 준비 ──────────────────────────────────────────────────
 def prepare_data():
@@ -117,9 +158,20 @@ def get_loaders():
     # 클래스 가중치 기반 WeightedRandomSampler
     class_counts = [len(os.listdir(os.path.join(PREPARED_DIR, "train", cls))) for cls in train_ds.classes]
     weights = [1.0 / class_counts[label] for _, label in train_ds.samples]
+
+    # T91: 추가 소스는 고정 비율로만 뽑는다(클래스 개수·손실가중에는 미포함).
+    extra = load_extra_train()
+    train_src = train_ds
+    if extra:
+        own_mass = float(len(train_ds.classes))  # 클래스당 질량 1
+        extra_mass = own_mass * EXTRA_SAMPLE_SHARE / (1.0 - EXTRA_SAMPLE_SHARE)
+        weights = weights + [extra_mass / len(extra)] * len(extra)
+        train_src = torch.utils.data.ConcatDataset([train_ds, _ExtraDataset(extra, train_tf)])
+        print(f"[T91] 추가 소스 {len(extra)}장, 샘플링 비율 {EXTRA_SAMPLE_SHARE:.0%} 고정 "
+              f"(train 총 {len(train_src)}장)")
     sampler = WeightedRandomSampler(weights, num_samples=len(weights), replacement=True)
 
-    train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, sampler=sampler, num_workers=0)
+    train_loader = DataLoader(train_src, batch_size=BATCH_SIZE, sampler=sampler, num_workers=0)
     val_loader   = DataLoader(val_ds,   batch_size=BATCH_SIZE, shuffle=False,   num_workers=0)
     test_loader  = DataLoader(test_ds,  batch_size=BATCH_SIZE, shuffle=False,   num_workers=0)
 
