@@ -220,7 +220,17 @@ class FeedbackService {
             previousClass == 'left' ||
             previousClass == 'right') &&
         detectedClass == 'none';
-    if (!entering && !exiting) return null;
+    // T93(2026-09-15, 사용자 요청): approach로 **들어올 때** "앞에 횡단보도가
+    // 있습니다"를 1회 안내한다. T51에서 approach를 침묵시켰던 것을 뒤집는다
+    // (이탈 경고 decideMessage는 여전히 approach에서 침묵 — 방향 경고가 아니라
+    // 구간 안내이므로 여기 둔다).
+    // 판정표: none/콜드스타트 -> approach = 안내. front/left/right ->
+    // approach는 **안내하지 않는다** — 건넌 직후 오검출(실기기 #10)일 가능성이
+    // 커서, 잘못된 "앞에 횡단보도"를 말하느니 침묵한다. 5_crossed 스위치가
+    // 생기면 재검토.
+    final approaching = detectedClass == 'approach' &&
+        (previousClass == 'none' || previousClass == '');
+    if (!entering && !exiting && !approaching) return null;
 
     if (_lastPhaseAt != null &&
         now.difference(_lastPhaseAt!).inSeconds < _cooldownSeconds) {
@@ -229,6 +239,7 @@ class FeedbackService {
     _lastPhaseAt = now;
 
     final strings = AppStrings.of(_language);
+    if (approaching) return strings.approachAheadMessage;
     return entering
         ? strings.enteredCrosswalkMessage
         : strings.crossedCrosswalkMessage;

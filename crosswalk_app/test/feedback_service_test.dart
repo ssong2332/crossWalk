@@ -354,11 +354,41 @@ void main() {
       }
     });
 
+    // T93: none(또는 콜드스타트) -> approach는 "앞에 횡단보도가 있습니다".
+    test('none/콜드스타트 -> approach는 앞에 횡단보도 안내를 낸다 (T93)', () {
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+      expect(FeedbackService().decidePhaseMessage('none', 'approach', t0),
+          '앞에 횡단보도가 있습니다.');
+      expect(FeedbackService().decidePhaseMessage('', 'approach', t0),
+          '앞에 횡단보도가 있습니다.',
+          reason: '앱을 켰을 때 이미 앞에 횡단보도가 있으면 알려야 한다');
+    });
+
+    // T93: 건넌 직후 approach 오검출(실기기 #10)에 "앞에 횡단보도"를 말하면
+    // 안 되므로, 횡단보도 위 -> approach는 침묵한다.
+    test('front/left/right -> approach는 안내하지 않는다 (T93)', () {
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+      for (final on in ['front', 'left', 'right']) {
+        expect(FeedbackService().decidePhaseMessage(on, 'approach', t0), isNull,
+            reason: '$on -> approach');
+      }
+    });
+
+    test('approach에 머무는 동안 반복하지 않는다 (T93)', () {
+      final service = FeedbackService();
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+      expect(service.decidePhaseMessage('none', 'approach', t0), isNotNull);
+      expect(
+          service.decidePhaseMessage(
+              'approach', 'approach', t0.add(const Duration(seconds: 10))),
+          isNull);
+    });
+
     test('그 외 전이는 안내하지 않는다', () {
       final service = FeedbackService();
       final t0 = DateTime(2026, 1, 1, 12, 0, 0);
 
-      expect(service.decidePhaseMessage('none', 'approach', t0), isNull);
+      expect(service.decidePhaseMessage('approach', 'none', t0), isNull);
       expect(service.decidePhaseMessage('front', 'left', t0), isNull);
       expect(service.decidePhaseMessage('left', 'right', t0), isNull);
       expect(

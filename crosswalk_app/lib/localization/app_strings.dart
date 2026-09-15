@@ -102,6 +102,8 @@ class AppStrings {
   // 상태 전이 안내 — 반복 경고가 아니라 "구간이 바뀌었다"는 1회성 사실.
   final String enteredCrosswalkMessage;
   final String crossedCrosswalkMessage;
+  /// T93: none -> approach 전이 때 1회 안내.
+  final String approachAheadMessage;
 
   // T38: accessibility labels for the voice/vibration status pills and the
   // settings-entry gear button added to CameraScreen's top-right corner.
@@ -238,6 +240,7 @@ class AppStrings {
     required this.recoveredMessage,
     required this.enteredCrosswalkMessage,
     required this.crossedCrosswalkMessage,
+    required this.approachAheadMessage,
     required this.voiceIndicatorLabel,
     required this.vibrationIndicatorLabel,
     required this.settingsButtonLabel,
@@ -318,6 +321,7 @@ class AppStrings {
     recoveredMessage: '직진하세요',
     enteredCrosswalkMessage: '횡단보도에 진입했습니다.',
     crossedCrosswalkMessage: '횡단보도를 건넜습니다.',
+    approachAheadMessage: '앞에 횡단보도가 있습니다.',
     voiceIndicatorLabel: '음성 안내',
     vibrationIndicatorLabel: '진동 알림',
     settingsButtonLabel: '설정',
@@ -419,6 +423,7 @@ class AppStrings {
     recoveredMessage: 'Go straight',
     enteredCrosswalkMessage: 'You have entered the crosswalk.',
     crossedCrosswalkMessage: 'You have crossed the crosswalk.',
+    approachAheadMessage: 'Crosswalk ahead.',
     voiceIndicatorLabel: 'Voice guidance',
     vibrationIndicatorLabel: 'Vibration alert',
     settingsButtonLabel: 'Settings',
