@@ -58,7 +58,7 @@ class,filename,position,status
 1_approach,20260823_143119.jpg,-1,ok
 1_approach,20260823_143123.jpg,-1,ok
 1_approach,20260823_143152.jpg,2,ok
-1_approach,20260823_143257.jpg,2,ok
+1_approach,20260823_143257.jpg,2,moved_none
 1_approach,20260823_143300.jpg,0,ok
 1_approach,20260823_143304.jpg,-1,ok
 1_approach,20260823_160517.jpg,-2,ok
@@ -180,7 +180,7 @@ class,filename,position,status
 2_front,20251119_163913_009_saved.jpg,-2,ok
 2_front,20251119_163913_041_saved.jpg,-1,ok
 2_front,20251119_163913_069_saved.jpg,-2,ok
-2_front,20251119_163913_081_saved.jpg,-2,ok
+2_front,20251119_163913_081_saved.jpg,-2,moved_crossed
 2_front,20251119_164334_029_saved.jpg,1,ok
 2_front,20251119_164340_063_saved.jpg,1,ok
 2_front,20251119_164354_018_saved.jpg,1,ok
@@ -215,7 +215,7 @@ class,filename,position,status
 2_front,20251120_171001_034_saved.jpg,0,ok
 2_front,20251120_171001_060_saved.jpg,0,ok
 2_front,20251120_171001_086_saved.jpg,0,ok
-2_front,20251120_171001_099_saved.jpg,0,ok
+2_front,20251120_171001_099_saved.jpg,0,moved_crossed
 2_front,20251120_171353_096_saved.jpg,0,ok
 2_front,20260708_203302.jpg,0,ok
 2_front,20260708_203323.jpg,0,ok
@@ -309,7 +309,7 @@ class,filename,position,status
 2_front,20260831_201244.jpg,0,ok
 2_front,20260831_201247.jpg,0,ok
 2_front,20260831_201315.jpg,0,ok
-2_front,20260831_201318.jpg,0,ok
+2_front,20260831_201318.jpg,0,moved_crossed
 2_front,20260831_201326.jpg,0,ok
 2_front,20260831_201418.jpg,0,ok
 2_front,20260831_201438.jpg,0,ok
@@ -425,7 +425,7 @@ class,filename,position,status
 3_left,20260904_172133.jpg,-1,ok
 3_left,20260904_172204.jpg,0,ok
 3_left,left (1184).jpg,1,ok
-3_left,left (1393).jpg,-1,ok
+3_left,left (1393).jpg,-1,moved_crossed
 3_left,left (1625).jpg,-1,ok
 3_left,left (1666).jpg,-1,ok
 3_left,left (1900).jpg,0,ok
@@ -466,7 +466,7 @@ class,filename,position,status
 4_right,20260724_200442.jpg,1,ok
 4_right,20260724_200446.jpg,0,ok
 4_right,20260724_200447.jpg,0,ok
-4_right,20260724_200454.jpg,0,ok
+4_right,20260724_200454.jpg,0,moved_crossed
 4_right,20260724_201403.jpg,2,ok
 4_right,20260724_201430.jpg,1,ok
 4_right,20260724_201431.jpg,1,ok
