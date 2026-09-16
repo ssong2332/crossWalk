@@ -63,6 +63,7 @@ torch.manual_seed(SEED)
 
 REPO = Path(__file__).resolve().parent.parent
 DATA_DIR = REPO / "image"
+EXTRA_DIR = REPO / "image_extra" / "on_surface_unlabeled"  # T95: class=on_surface
 # T83: 어떤 라벨 파일로 학습할지 환경변수로 고를 수 있게 한다.
 #   angle_labels.csv          = 사람이 매긴 **순수 기하** 각도 (v3)
 #   angle_labels_weighted.csv = 거기에 위치 기반 위험 가중을 더한 값
@@ -107,7 +108,11 @@ def load_labeled_items():
             # 그 파일은 status=ok인 행만 걸러 만들어졌으므로 ok로 본다.
             if r.get("status", "ok") != "ok" or not r["angle_deg"]:
                 continue
-            p = DATA_DIR / r["class"] / r["filename"]
+            # T95: AI Hub Surface 사진(class=on_surface)은 image_extra/에 있고
+            # **학습 전용**이다(fold -1, 평가 제외). 센서 방향으로 저장돼 있어
+            # 캐시 생성 때 화면 방향으로 되돌린다(EXIF 없음).
+            extra = r["class"] == "on_surface"
+            p = (EXTRA_DIR / r["filename"]) if extra else (DATA_DIR / r["class"] / r["filename"])
             if not p.exists():
                 raise RuntimeError(f"라벨에 있는 파일이 없음: {p}")
             rows.append({
@@ -115,9 +120,13 @@ def load_labeled_items():
                 "cls": r["class"],
                 "file": r["filename"],
                 "angle": float(r["angle_deg"]),
+                "extra": extra,
             })
 
     for r in rows:
+        if r["extra"]:
+            r["dt"] = None
+            continue
         ex = Image.open(r["path"])._getexif() or {}
         dt = None
         for k, v in ex.items():
@@ -126,18 +135,26 @@ def load_labeled_items():
         if dt is None:
             raise RuntimeError(f"EXIF 촬영시각 없음: {r['path']} — 세션 분할 불가")
         r["dt"] = dt
+    n_extra = sum(1 for r in rows if r["extra"])
+    if n_extra:
+        print(f"[T95] 학습 전용 추가 소스(on_surface) {n_extra}장 — 평가 제외")
     return rows
 
 
 # ── 2. 세션 / 근사중복 (groupkfold_cv.py와 동일 기준) ────────────────
 def assign_sessions(items):
-    items.sort(key=lambda r: r["dt"])
+    own = [r for r in items if not r.get("extra")]
+    extra = [r for r in items if r.get("extra")]
+    own.sort(key=lambda r: r["dt"])
     sid, prev = 0, None
-    for r in items:
+    for r in own:
         if prev is not None and (r["dt"] - prev).total_seconds() > SESSION_GAP_SEC:
             sid += 1
         r["session"] = sid
         prev = r["dt"]
+    for r in extra:
+        r["session"] = -1  # T95: 추가 소스는 세션 없음(학습 전용)
+    items[:] = own + extra
     return sid + 1
 
 
@@ -180,6 +197,7 @@ def split_folds(items):
     for r in items:
         by_sess[r["session"]].append(r)
 
+    by_sess.pop(-1, None)  # T95: 추가 소스 세션은 fold 배정 대상이 아니다
     load = [0] * N_FOLDS
     fold_of = {}
     for s in sorted(by_sess, key=lambda s: -len(by_sess[s])):
@@ -187,7 +205,7 @@ def split_folds(items):
         fold_of[s] = best
         load[best] += len(by_sess[s])
     for r in items:
-        r["fold"] = fold_of[r["session"]]
+        r["fold"] = -1 if r.get("extra") else fold_of[r["session"]]
 
     # 누수 없음 하드 검사 — 위반 시 즉시 중단한다.
     sess_folds, dup_folds = defaultdict(set), defaultdict(set)
@@ -222,6 +240,8 @@ def build_cache(items):
             continue
         dst.parent.mkdir(parents=True, exist_ok=True)
         im = ImageOps.exif_transpose(Image.open(src)).convert("RGB")
+        if r.get("extra"):
+            im = im.rotate(-90, expand=True)  # T95: 센서 방향 -> 화면 방향
         im = im.resize((CACHE_SIZE, CACHE_SIZE), Image.BILINEAR)
         im.save(dst, format="PNG", optimize=False)
         made += 1
