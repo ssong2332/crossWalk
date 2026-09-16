@@ -1,0 +1,8 @@
+클래스          장수     이전 재현     새 재현  (none: →approach 이전/새)
+none        252     99.2%    99.6%   1 / 0
+approach    183     96.7%    97.3%
+front       204     92.6%    97.1%
+left        160     96.9%    96.2%
+right       199     97.5%    97.0%
+
+5_crossed 5장(학습 미사용): 이전 {'front': 3, 'right': 1, 'approach': 1} / 새 {'front': 3, 'nocall': 1, 'none': 1}
