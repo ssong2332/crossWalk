@@ -37,10 +37,17 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 #   python train/label_approach_zone.py 2_front    -> image/2_front, zone_labels_2_front.csv
 # 사용자 지적(2026-09-15): front/left/right에도 "다 건넘" 장면이 섞여 있을 수 있다.
 CLASS_DIR = sys.argv[1] if len(sys.argv) > 1 else "1_approach"
-SRC_DIR = os.path.join(REPO, "image", CLASS_DIR)
+# T94: "image_extra/1_approach_surface"처럼 경로를 주면 그 폴더를 매긴다.
+#   AI Hub 변환본은 센서 방향(반시계 90도)으로 저장돼 있어 화면용으로 되돌린다.
+if "/" in CLASS_DIR or "\\" in CLASS_DIR:
+    SRC_DIR = os.path.join(REPO, CLASS_DIR)
+    IS_EXTRA = True
+else:
+    SRC_DIR = os.path.join(REPO, "image", CLASS_DIR)
+    IS_EXTRA = False
 OUT_CSV = os.path.join(REPO, "train",
                        "approach_zone_labels.csv" if CLASS_DIR == "1_approach"
-                       else f"zone_labels_{CLASS_DIR}.csv")
+                       else f"zone_labels_{os.path.basename(CLASS_DIR)}.csv")
 VIEW_MAX = 820
 
 CHOICES = [
@@ -101,6 +108,8 @@ class Labeler:
             return
         name = self.targets[self.idx]
         im = ImageOps.exif_transpose(Image.open(os.path.join(SRC_DIR, name))).convert("RGB")
+        if IS_EXTRA:
+            im = im.rotate(-90, expand=True)  # 센서 방향 -> 화면 방향
         im.thumbnail((VIEW_MAX, VIEW_MAX))
         self.photo = ImageTk.PhotoImage(im)
         self.canvas.config(width=im.size[0], height=im.size[1])

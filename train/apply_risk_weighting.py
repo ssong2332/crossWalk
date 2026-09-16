@@ -52,39 +52,75 @@ OUT_CSV = REPO / "train" / "angle_labels_weighted.csv"
 W = 3.0
 DEVIATION = {"3_left": -1, "4_right": +1}  # position 부호 -> 위험 방향
 
+# T95(2026-09-16, 사용자 확정): 가장자리(위치 ±2) 규칙.
+#   - 이탈(|기하|>=15) & 위험한 쪽 끝(risk_level 2): 단계당 W가 아니라 W_EDGE로
+#     더 세게 민다(+12도), 75도 클램프.
+#   - 직진(|기하|<15) & 끝: 기하값 대신 **중앙 쪽으로 EDGE_MIN**(오른쪽 끝 -> -20,
+#     왼쪽 끝 -> +20). 20도인 이유: T87 이탈 임계 15도를 넘어 상태가 '틀어짐'이
+#     되고, T84 '크게' 임계 25도는 넘지 않아 약한 경고로 중앙 유도.
+#   - 직진 & 치우침(±1), 안전한 쪽, approach는 그대로.
+#   판정은 클래스 폴더가 아니라 **기하 각도 부호**로 한다(AI Hub Surface 사진은
+#   클래스가 'on_surface' 하나라 폴더로는 못 나눔; 3_left는 전부 양수, 4_right는
+#   전부 음수라 자체 사진에서는 결과가 같다).
+W_EDGE = 6.0
+EDGE_MIN = 20.0
+DEV_T = 15.0
+CLAMP = 75.0
+EXTRA_ANGLE_CSV = REPO / "train" / "angle_labels_surface.csv"
+EXTRA_POS_CSV = REPO / "train" / "position_labels_surface.csv"
+
 
 def main():
     angles = {}
-    for r in csv.DictReader(open(ANGLE_CSV, encoding="utf-8")):
-        if r["status"] == "ok":
-            angles[r["filename"]] = r
+    for src in (ANGLE_CSV, EXTRA_ANGLE_CSV):
+        if not src.exists():
+            continue
+        for r in csv.DictReader(open(src, encoding="utf-8")):
+            if r["status"] == "ok":
+                angles[r["filename"]] = r
 
     positions = {}
-    for r in csv.DictReader(open(POS_CSV, encoding="utf-8")):
-        if r["status"] == "ok":
-            positions[r["filename"]] = int(r["position"])
+    for src in (POS_CSV, EXTRA_POS_CSV):
+        if not src.exists():
+            continue
+        for r in csv.DictReader(open(src, encoding="utf-8")):
+            if r["status"] == "ok":
+                positions[r["filename"]] = int(r["position"])
 
     rows = []
     stats = Counter()
     for name, r in angles.items():
         cls = r["class"]
         geo = float(r["angle_deg"])
-        risk_dir = DEVIATION.get(cls)
         pos = positions.get(name)
+        risk_level = ""
 
-        if risk_dir is None:
+        if cls == "1_approach":
             final = geo
-            stats["가중 대상 아님(front/approach)"] += 1
-            risk_level = ""
+            stats["가중 대상 아님(approach)"] += 1
         elif pos is None:
             final = geo
             stats["위치 라벨 없음 -> 가중 0"] += 1
-            risk_level = ""
+        elif abs(geo) < DEV_T:
+            # 직진. 끝(±2)이면 중앙 쪽으로 EDGE_MIN (T95).
+            if abs(pos) == 2:
+                final = (-1 if pos > 0 else 1) * EDGE_MIN
+                stats["직진 & 끝 -> 중앙 쪽 ±20도 (T95)"] += 1
+            else:
+                final = geo
+                stats["직진 -> 기하값 유지"] += 1
         else:
+            # 이탈. 위험 방향 = 기하 부호로: 양수(왼쪽 이탈)면 왼쪽 끝(-2)이 위험.
+            risk_dir = -1 if geo > 0 else +1
             risk_level = risk_dir * pos
-            add = W * max(risk_level, 0)
+            if risk_level >= 2:
+                add = W_EDGE * risk_level          # 끝: +12도 (T95)
+            else:
+                add = W * max(risk_level, 0)       # 치우침: +3도 / 안전한 쪽: 0
             final = geo + (1 if geo >= 0 else -1) * add
-            stats["가중 적용됨" if add > 0 else "안전한 쪽 -> 기하값 유지"] += 1
+            final = max(-CLAMP, min(CLAMP, final))
+            stats["이탈 & 끝 -> +12도 (T95)" if risk_level >= 2 else
+                  ("가중 적용됨(+3)" if add > 0 else "안전한 쪽 -> 기하값 유지")] += 1
 
         rows.append({
             "class": cls,
@@ -103,7 +139,7 @@ def main():
         w.writeheader()
         w.writerows(rows)
 
-    print(f"W = {W}도/단계, 안전한 쪽은 기하값 유지")
+    print(f"W = {W}도/단계, 끝 W_EDGE = {W_EDGE}도/단계, 직진&끝 = 중앙 쪽 {EDGE_MIN}도, 클램프 ±{CLAMP}도")
     print(f"입력: 기하 라벨 {len(angles)}장 / 위치 라벨 {len(positions)}장")
     for k, v in stats.most_common():
         print(f"  {k}: {v}장")
