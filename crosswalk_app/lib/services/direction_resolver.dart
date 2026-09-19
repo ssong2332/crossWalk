@@ -37,19 +37,57 @@
 ///
 /// 부호 규약(T71 검증): 각도는 **가야 할 방향**. 왼쪽 이탈(3_left)은
 /// 오른쪽으로 가야 하므로 양수, 오른쪽 이탈(4_right)은 음수.
+///
+/// T98(2026-09-19, 사용자 최종 목표): **끝이면 각도와 무관하게 중앙 쪽으로.**
+///   왼쪽 끝이면 직진·이탈이든 오른쪽으로, 오른쪽 끝이면 왼쪽으로 보내
+///   사용자가 폭 안(치우침~중앙)에서 건너게 한다. 위치는 별도 회귀 모델
+///   (`PositionEstimator`, -2 왼쪽 끝 ~ +2 오른쪽 끝)이 내고, 여기서 규칙으로
+///   각도 판정에 **앞서** 적용한다.
+///
+///   근거(누수 없는 5-fold CV, 횡단보도 위 사진만, `train/position_cv_t98b.log`):
+///   임계 1.0에서 오검출은 거의 전부 "치우침(±1)"이고 반대쪽 끝·중앙을
+///   끝으로 부른 경우는 0~소수, **반대 방향으로 보낸 경우 0장**. 치우친
+///   사용자를 중앙 쪽으로 보내는 건 무해하므로 임계 1.0을 쓴다(사용자 승인 C안).
+///
+/// 판정표(T98, 사용자 확정) — 각도 표보다 먼저 본다:
+///   | 분류기 L         | 위치 p      | 최종                                   |
+///   | none / approach  | 무엇이든    | L 그대로 (위치 규칙 미적용)            |
+///   | front/left/right | null        | 아래 각도 표로                          |
+///   | front/left/right | p <= -1.0   | left  (오른쪽으로 가라, 각도 +20 취급)  |
+///   | front/left/right | p >= +1.0   | right (왼쪽으로 가라, 각도 -20 취급)    |
+///   | front/left/right | -1 < p < 1  | 아래 각도 표로                          |
 class DirectionResolver {
   DirectionResolver._();
 
   /// 이 크기 미만이면 직진. 근거는 위 표.
   static const double deviationAngleDegrees = 15.0;
 
+  /// T98: |위치| 가 이 값 이상이면 "끝"으로 본다(라벨 단위: ±2가 끝).
+  static const double edgePosition = 1.0;
+
+  /// T98: 끝일 때 화살표·강도 판정에 쓰는 각도 크기. 부호는 중앙 쪽.
+  static const double edgeSteerDegrees = 20.0;
+
+  /// T98: 위치가 끝이면 중앙 쪽으로 보내는 각도(왼쪽 끝 → +20, 오른쪽 끝 →
+  /// -20), 아니면 null. 위치가 없으면 null.
+  static double? edgeSteerAngle(double? position) {
+    if (position == null) return null;
+    if (position <= -edgePosition) return edgeSteerDegrees;
+    if (position >= edgePosition) return -edgeSteerDegrees;
+    return null;
+  }
+
   /// 분류기가 "횡단보도 위"라고 본 상태인가.
   static bool isOnCrosswalk(String label) =>
       label == 'front' || label == 'left' || label == 'right';
 
-  /// 분류기 [label]과 각도 모델의 [angleDegrees]를 합쳐 최종 상태를 낸다.
-  static String resolve(String label, double? angleDegrees) {
+  /// 분류기 [label]과 각도 모델의 [angleDegrees], 위치 모델의 [position]을
+  /// 합쳐 최종 상태를 낸다. 위치 규칙(T98)이 각도 규칙(T87)보다 앞선다.
+  static String resolve(String label, double? angleDegrees,
+      {double? position}) {
     if (!isOnCrosswalk(label)) return label;
+    final steer = edgeSteerAngle(position);
+    if (steer != null) return steer > 0 ? 'left' : 'right';
     if (angleDegrees == null) return label;
     if (angleDegrees >= deviationAngleDegrees) return 'left';
     if (angleDegrees <= -deviationAngleDegrees) return 'right';
