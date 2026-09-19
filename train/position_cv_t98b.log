@@ -1,0 +1,222 @@
+==============================================================================
+T97: 좌우 위치 회귀 (누수 없는 세션 기반 5-fold CV)
+==============================================================================
+위치 라벨 983장 로드 (파일 없음으로 건너뜀 0장, Surface 학습 전용 170장)
+세션 175개, 근사중복 클러스터 982개
+[검사 통과] 세션 175개 / 근사중복 클러스터 982개 — 모두 단일 fold에 귀속
+  fold별 장수: [163, 163, 163, 162, 162]
+[캐시] 신규 0장, 총 983장 (EXIF 보정, 전체 프레임)
+
+[fold 0] train 820 / test 163
+  frozen  1/10 loss 0.3766
+  frozen  2/10 loss 0.3203
+  frozen  3/10 loss 0.3108
+  frozen  4/10 loss 0.2847
+  frozen  5/10 loss 0.2815
+  frozen  6/10 loss 0.2764
+  frozen  7/10 loss 0.2827
+  frozen  8/10 loss 0.2774
+  frozen  9/10 loss 0.2715
+  frozen  10/10 loss 0.2663
+  finetune 1/25 loss 0.2625
+  finetune 2/25 loss 0.2586
+  finetune 3/25 loss 0.2634
+  finetune 4/25 loss 0.2479
+  finetune 5/25 loss 0.2404
+  finetune 6/25 loss 0.2283
+  finetune 7/25 loss 0.2131
+  finetune 8/25 loss 0.2021
+  finetune 9/25 loss 0.1906
+  finetune 10/25 loss 0.1768
+  finetune 11/25 loss 0.1703
+  finetune 12/25 loss 0.1603
+  finetune 13/25 loss 0.1506
+  finetune 14/25 loss 0.1499
+  finetune 15/25 loss 0.1447
+  finetune 16/25 loss 0.1367
+  finetune 17/25 loss 0.1325
+  finetune 18/25 loss 0.1266
+  finetune 19/25 loss 0.1199
+  finetune 20/25 loss 0.1256
+  finetune 21/25 loss 0.1202
+  finetune 22/25 loss 0.1185
+  finetune 23/25 loss 0.1131
+  finetune 24/25 loss 0.1181
+  finetune 25/25 loss 0.1140
+  -> fold 0 위치 평균오차 0.63 (단위: 위치 단계)
+
+[fold 1] train 820 / test 163
+  frozen  1/10 loss 0.4032
+  frozen  2/10 loss 0.3134
+  frozen  3/10 loss 0.2905
+  frozen  4/10 loss 0.2916
+  frozen  5/10 loss 0.2851
+  frozen  6/10 loss 0.2916
+  frozen  7/10 loss 0.2731
+  frozen  8/10 loss 0.2727
+  frozen  9/10 loss 0.2727
+  frozen  10/10 loss 0.2713
+  finetune 1/25 loss 0.2679
+  finetune 2/25 loss 0.2619
+  finetune 3/25 loss 0.2600
+  finetune 4/25 loss 0.2475
+  finetune 5/25 loss 0.2451
+  finetune 6/25 loss 0.2394
+  finetune 7/25 loss 0.2325
+  finetune 8/25 loss 0.2231
+  finetune 9/25 loss 0.2092
+  finetune 10/25 loss 0.1928
+  finetune 11/25 loss 0.1806
+  finetune 12/25 loss 0.1672
+  finetune 13/25 loss 0.1651
+  finetune 14/25 loss 0.1571
+  finetune 15/25 loss 0.1424
+  finetune 16/25 loss 0.1383
+  finetune 17/25 loss 0.1310
+  finetune 18/25 loss 0.1356
+  finetune 19/25 loss 0.1326
+  finetune 20/25 loss 0.1285
+  finetune 21/25 loss 0.1316
+  finetune 22/25 loss 0.1276
+  finetune 23/25 loss 0.1243
+  finetune 24/25 loss 0.1213
+  finetune 25/25 loss 0.1191
+  -> fold 1 위치 평균오차 0.55 (단위: 위치 단계)
+
+[fold 2] train 820 / test 163
+  frozen  1/10 loss 0.3812
+  frozen  2/10 loss 0.3281
+  frozen  3/10 loss 0.3142
+  frozen  4/10 loss 0.2983
+  frozen  5/10 loss 0.3101
+  frozen  6/10 loss 0.2980
+  frozen  7/10 loss 0.2878
+  frozen  8/10 loss 0.2920
+  frozen  9/10 loss 0.2900
+  frozen  10/10 loss 0.2836
+  finetune 1/25 loss 0.2795
+  finetune 2/25 loss 0.2673
+  finetune 3/25 loss 0.2642
+  finetune 4/25 loss 0.2639
+  finetune 5/25 loss 0.2600
+  finetune 6/25 loss 0.2480
+  finetune 7/25 loss 0.2449
+  finetune 8/25 loss 0.2218
+  finetune 9/25 loss 0.2163
+  finetune 10/25 loss 0.1865
+  finetune 11/25 loss 0.1730
+  finetune 12/25 loss 0.1611
+  finetune 13/25 loss 0.1623
+  finetune 14/25 loss 0.1425
+  finetune 15/25 loss 0.1372
+  finetune 16/25 loss 0.1335
+  finetune 17/25 loss 0.1310
+  finetune 18/25 loss 0.1313
+  finetune 19/25 loss 0.1295
+  finetune 20/25 loss 0.1192
+  finetune 21/25 loss 0.1233
+  finetune 22/25 loss 0.1208
+  finetune 23/25 loss 0.1120
+  finetune 24/25 loss 0.1206
+  finetune 25/25 loss 0.1238
+  -> fold 2 위치 평균오차 0.52 (단위: 위치 단계)
+
+[fold 3] train 821 / test 162
+  frozen  1/10 loss 0.3732
+  frozen  2/10 loss 0.3374
+  frozen  3/10 loss 0.3163
+  frozen  4/10 loss 0.2956
+  frozen  5/10 loss 0.2989
+  frozen  6/10 loss 0.2948
+  frozen  7/10 loss 0.2926
+  frozen  8/10 loss 0.2883
+  frozen  9/10 loss 0.2883
+  frozen  10/10 loss 0.2816
+  finetune 1/25 loss 0.2746
+  finetune 2/25 loss 0.2662
+  finetune 3/25 loss 0.2627
+  finetune 4/25 loss 0.2639
+  finetune 5/25 loss 0.2580
+  finetune 6/25 loss 0.2438
+  finetune 7/25 loss 0.2278
+  finetune 8/25 loss 0.2158
+  finetune 9/25 loss 0.2045
+  finetune 10/25 loss 0.1884
+  finetune 11/25 loss 0.1756
+  finetune 12/25 loss 0.1723
+  finetune 13/25 loss 0.1605
+  finetune 14/25 loss 0.1496
+  finetune 15/25 loss 0.1457
+  finetune 16/25 loss 0.1439
+  finetune 17/25 loss 0.1303
+  finetune 18/25 loss 0.1326
+  finetune 19/25 loss 0.1353
+  finetune 20/25 loss 0.1215
+  finetune 21/25 loss 0.1148
+  finetune 22/25 loss 0.1182
+  finetune 23/25 loss 0.1145
+  finetune 24/25 loss 0.1279
+  finetune 25/25 loss 0.1197
+  -> fold 3 위치 평균오차 0.52 (단위: 위치 단계)
+
+[fold 4] train 821 / test 162
+  frozen  1/10 loss 0.3777
+  frozen  2/10 loss 0.3204
+  frozen  3/10 loss 0.3231
+  frozen  4/10 loss 0.3090
+  frozen  5/10 loss 0.2972
+  frozen  6/10 loss 0.2939
+  frozen  7/10 loss 0.2902
+  frozen  8/10 loss 0.2833
+  frozen  9/10 loss 0.2839
+  frozen  10/10 loss 0.2803
+  finetune 1/25 loss 0.2793
+  finetune 2/25 loss 0.2705
+  finetune 3/25 loss 0.2620
+  finetune 4/25 loss 0.2618
+  finetune 5/25 loss 0.2603
+  finetune 6/25 loss 0.2551
+  finetune 7/25 loss 0.2411
+  finetune 8/25 loss 0.2251
+  finetune 9/25 loss 0.2131
+  finetune 10/25 loss 0.1988
+  finetune 11/25 loss 0.1848
+  finetune 12/25 loss 0.1760
+  finetune 13/25 loss 0.1563
+  finetune 14/25 loss 0.1595
+  finetune 15/25 loss 0.1427
+  finetune 16/25 loss 0.1421
+  finetune 17/25 loss 0.1389
+  finetune 18/25 loss 0.1330
+  finetune 19/25 loss 0.1294
+  finetune 20/25 loss 0.1359
+  finetune 21/25 loss 0.1321
+  finetune 22/25 loss 0.1319
+  finetune 23/25 loss 0.1332
+  finetune 24/25 loss 0.1244
+  finetune 25/25 loss 0.1302
+  -> fold 4 위치 평균오차 0.52 (단위: 위치 단계)
+
+==============================================================================
+결과 (자체 사진 813장, 평가는 자체만)
+==============================================================================
+  위치 MAE 0.55 단계 (기준선 '항상 0' 0.71)
+  임계 1.0: 왼쪽 끝(-2)   n= 64 재현  56.2%  정밀도  67.9%  (오검출 17장 중 치우침(±1) 13, 중앙/반대 4)
+  임계 1.0: 오른쪽 끝(+2)  n= 67 재현  44.8%  정밀도  68.2%  (오검출 14장 중 치우침(±1) 10, 중앙/반대 4)
+  임계 1.5: 왼쪽 끝(-2)   n= 64 재현  10.9%  정밀도  63.6%  (오검출 4장 중 치우침(±1) 4, 중앙/반대 0)
+  임계 1.5: 오른쪽 끝(+2)  n= 67 재현  11.9%  정밀도  80.0%  (오검출 2장 중 치우침(±1) 2, 중앙/반대 0)
+
+  3구간 혼동(임계 1.5), 행=정답 열=예측 [왼쪽끝, 안, 오른쪽끝]:
+    왼쪽끝        [7, 57, 0]  (n=64)
+    안(-1~+1)   [4, 676, 2]  (n=682)
+    오른쪽끝       [0, 59, 8]  (n=67)
+
+  [횡단보도 위만, approach 제외] n=629
+  임계 1.0: 왼쪽 끝(-2)   n= 38 재현  65.8%  정밀도  64.1%  (오검출 14장 중 치우침(±1) 10, 중앙/반대 4)
+  임계 1.0: 오른쪽 끝(+2)  n= 51 재현  52.9%  정밀도  75.0%  (오검출 9장 중 치우침(±1) 7, 중앙/반대 2)
+  임계 1.0: 반대 방향 유도 0장
+  임계 1.5: 왼쪽 끝(-2)   n= 38 재현  15.8%  정밀도  66.7%  (오검출 3장 중 치우침(±1) 3, 중앙/반대 0)
+  임계 1.5: 오른쪽 끝(+2)  n= 51 재현  15.7%  정밀도  88.9%  (오검출 1장 중 치우침(±1) 1, 중앙/반대 0)
+  임계 1.5: 반대 방향 유도 0장
+
+예측값 저장: C:\vibecoding\crossWalk\train\position_cv_predictions.csv

@@ -11,6 +11,7 @@ import '../services/classifier.dart';
 import '../services/direction_resolver.dart';
 import '../services/feedback_service.dart';
 import '../services/angle_estimator.dart';
+import '../services/position_estimator.dart';
 import '../services/ground_projection.dart';
 import '../services/stripe_direction_estimator.dart';
 import '../localization/app_strings.dart';
@@ -49,6 +50,7 @@ class _CameraScreenState extends State<CameraScreen>
   // T70: 학습된 각도 회귀 모델. 분류기와 별도 세션이며, 횡단보도가
   // 보이는 상태에서만 돌린다(none이면 각도라는 개념 자체가 없다).
   final AngleEstimator _angleEstimator = AngleEstimator();
+  final PositionEstimator _positionEstimator = PositionEstimator();
 
   // Reviewer fix (T40 follow-up): uses widget.feedback (normally the single
   // FeedbackService instance owned by CrosswalkApp and shared via
@@ -219,6 +221,7 @@ class _CameraScreenState extends State<CameraScreen>
       // (앱 재개 등으로 전혀 다른 장면일 수 있다). 스무딩 상태를 비워
       // 낡은 각도로 화살표가 잘못 돌아가는 것을 막는다.
       _angleSmoother.reset();
+      _positionSmoother.reset();
 
       setState(() {
         _hasError = false;
@@ -226,6 +229,7 @@ class _CameraScreenState extends State<CameraScreen>
         _torchEnabled = false;
         _statusLabel = _strings.initializing;
         _arrowStripeAngle = null;
+        _smoothedPosition = null;
       });
 
       try {
@@ -266,6 +270,12 @@ class _CameraScreenState extends State<CameraScreen>
           await _angleEstimator.init();
         } catch (e) {
           debugPrint('[T70] 각도 모델 초기화 실패(각도 없이 계속 진행): $e');
+        }
+        // T98: 위치 모델도 마찬가지 — 실패하면 끝 규칙만 빠지고 각도로 동작한다.
+        try {
+          await _positionEstimator.init();
+        } catch (e) {
+          debugPrint('[T98] 위치 모델 초기화 실패(끝 규칙 없이 계속 진행): $e');
         }
 
         setState(() => _statusLabel = _strings.connectingCamera);
@@ -421,10 +431,12 @@ class _CameraScreenState extends State<CameraScreen>
       // T87: 방향은 각도 모델이 정한다 — 분류기 결과는 "없음/앞/위"로만 쓴다.
       // 여기서 정한 상태를 문구·화살표·음성·진동이 전부 공유한다.
       // 각도는 화살표와 같은 보정값(`_arrowStripeAngle`, 최대 10프레임 전).
-      final label = DirectionResolver.resolve(result.label, _arrowStripeAngle);
+      // T98: 끝이면 위치 규칙이 각도보다 앞선다(DirectionResolver 표).
+      final label = DirectionResolver.resolve(result.label, _arrowStripeAngle,
+          position: _smoothedPosition);
       // T84: 강도 판정용 각도 — 화살표와 같은 보정값을 넘긴다.
       _feedback.alert(label, result.confidence,
-          angleDegrees: _arrowStripeAngle);
+          angleDegrees: _effectiveAngle);
       if (mounted) {
         setState(() {
           _statusLabel = _labelText[label] ?? label;
@@ -439,6 +451,7 @@ class _CameraScreenState extends State<CameraScreen>
     }
 
     _updateAngleEstimate(image);
+    _updatePositionEstimate(image);
 
     _isProcessing = false;
   }
@@ -500,11 +513,14 @@ class _CameraScreenState extends State<CameraScreen>
     // 알아서 건다).
     String? relabel;
     if (DirectionResolver.isOnCrosswalk(_guidanceLabel) && !_noCall) {
-      final next = DirectionResolver.resolve(_guidanceLabel, smoothed);
+      final next = DirectionResolver.resolve(_guidanceLabel, smoothed,
+          position: _smoothedPosition);
       if (next != _guidanceLabel) relabel = next;
     }
     if (relabel != null) {
-      _feedback.alert(relabel, _confidence, angleDegrees: smoothed);
+      _feedback.alert(relabel, _confidence,
+          angleDegrees: DirectionResolver.edgeSteerAngle(_smoothedPosition) ??
+              smoothed);
     }
 
     if (mounted) {
@@ -547,7 +563,8 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   Widget _buildStateField(Color color, bool reducedMotion) {
-    final angle = _arrowStripeAngle;
+    // T98: 끝이면 화살표도 중앙 쪽(±20)을 가리킨다 — 문구·음성과 같은 방향.
+    final angle = _effectiveAngle;
     // 지면 화살표를 실제로 그리는 상태에서만 흐름이 의미가 있다.
     final drawsGroundArrow = angle != null &&
         (_fieldState == 'front' ||
@@ -615,12 +632,74 @@ class _CameraScreenState extends State<CameraScreen>
   /// (실측: 위치 한 단계당 +7.3도), 가장자리에서 바깥으로 향할수록 값이
   /// 실제 기하 각도보다 크게 나온다. "각도"라고 쓰면 사용자가 이를 실제
   /// 방향으로 읽어 오도된다. 자세한 근거는 docs/Tasks.md T74.
+  // T98: 횡단보도 폭 안 좌우 위치(-2 왼쪽 끝 ~ +2 오른쪽 끝). 끝이면
+  // 각도와 무관하게 중앙 쪽으로 보낸다(`DirectionResolver` T98 표).
+  // 각도와 같은 EMA 스무더를 쓰되(신뢰도 게이트 없음) 각도(3번째)·분류기
+  // (5의 배수)와 겹치지 않게 10프레임 중 7번째에 건다.
+  int _positionFrameCount = 0;
+  final StripeAngleSmoother _positionSmoother =
+      StripeAngleSmoother(minConfidence: 0.0, smoothingFactor: 0.6);
+  double? _smoothedPosition;
+
+  /// 화살표·강도 판정에 실제로 쓰는 각도: 끝이면 중앙 쪽 ±20, 아니면 각도 모델값.
+  double? get _effectiveAngle =>
+      DirectionResolver.edgeSteerAngle(_smoothedPosition) ?? _arrowStripeAngle;
+
+  void _updatePositionEstimate(CameraImage image) {
+    if (!_positionEstimator.isReady) return;
+
+    _positionFrameCount++;
+    if (_positionFrameCount % 10 != 7) return;
+
+    // 위치는 "횡단보도 위"에서만 뜻이 있다. approach·none이면 값을 받지 않고
+    // 스무더를 비워 옛 끝 판정이 남지 않게 한다.
+    double? raw;
+    if (DirectionResolver.isOnCrosswalk(_guidanceLabel) && !_noCall) {
+      final rot = _controller?.description.sensorOrientation ?? 90;
+      raw = _positionEstimator.estimate(image, rot);
+    }
+    if (kDebugMode) {
+      debugPrint('[T98 position] label=$_guidanceLabel raw=$raw');
+    }
+    final smoothed = _positionSmoother.add(
+      raw == null ? null : StripeDirectionEstimate(raw, 1.0),
+    );
+
+    // 끝 판정이 바뀌면 상태도 다시 정한다(각도 갱신 때와 같은 경로).
+    String? relabel;
+    if (DirectionResolver.isOnCrosswalk(_guidanceLabel) && !_noCall) {
+      final next = DirectionResolver.resolve(_guidanceLabel, _arrowStripeAngle,
+          position: smoothed);
+      if (next != _guidanceLabel) relabel = next;
+    }
+    if (relabel != null) {
+      _feedback.alert(relabel, _confidence,
+          angleDegrees:
+              DirectionResolver.edgeSteerAngle(smoothed) ?? _arrowStripeAngle);
+    }
+
+    if (mounted) {
+      setState(() {
+        _smoothedPosition = smoothed;
+        if (relabel != null) {
+          _statusLabel = _labelText[relabel] ?? relabel;
+          _guidanceLabel = relabel;
+        }
+      });
+    }
+  }
+
   String _stripeDebugText() {
     if (!_angleEstimator.isReady) return '보정 모델 준비 중';
     final raw = _lastRawAngle;
     if (raw == null) return '보정: 횡단보도 미검출';
     final shown = _arrowStripeAngle ?? raw;
-    return '보정 ${shown.toStringAsFixed(0)} (원시 ${raw.toStringAsFixed(0)})';
+    final pos = _smoothedPosition;
+    final posText = pos == null
+        ? ''
+        : ' 위치 ${pos.toStringAsFixed(1)}'
+            '${DirectionResolver.edgeSteerAngle(pos) != null ? "(끝)" : ""}';
+    return '보정 ${shown.toStringAsFixed(0)} (원시 ${raw.toStringAsFixed(0)})$posText';
   }
 
   @override
@@ -644,6 +723,7 @@ class _CameraScreenState extends State<CameraScreen>
     _controller?.dispose();
     _classifier.dispose();
     _angleEstimator.dispose();
+    _positionEstimator.dispose();
     // Reviewer fix (T40 follow-up): only dispose the instance this screen
     // created itself. A shared instance is owned by CrosswalkApp (see
     // main.dart) and must outlive this screen — e.g. across

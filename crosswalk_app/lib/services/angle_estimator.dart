@@ -142,7 +142,12 @@ class AngleEstimator {
   /// YUV420 프레임을 회전·축소·정규화해 모델 입력 텐서(NCHW)로 만든다.
   ///
   /// 전체 프레임을 RGB로 디코딩하지 않고 224x224 격자만 직접 샘플링한다.
-  Float32List? _preprocess(CameraImage image, int rotationDegrees) {
+  ///
+  /// T98: `PositionEstimator`도 같은 전처리를 쓴다 — 다만 그 모델은 학습에서
+  /// 중앙 크롭 없이 **화면 전체**를 224로 줄였으므로(`train_position.py`,
+  /// 가장자리 단서를 살리기 위해) [cropRatio]를 1.0으로 넘긴다.
+  static Float32List? preprocessFrame(CameraImage image, int rotationDegrees,
+      {double cropRatio = AngleEstimator.cropRatio}) {
     if (image.format.group != ImageFormatGroup.yuv420) return null;
     if (image.planes.length < 3) return null;
 
@@ -224,7 +229,7 @@ class AngleEstimator {
     final session = _session;
     if (session == null) return null;
 
-    final input = _preprocess(image, rotationDegrees);
+    final input = preprocessFrame(image, rotationDegrees);
     if (input == null) return null;
 
     final tensor = OrtValueTensor.createTensorWithDataList(

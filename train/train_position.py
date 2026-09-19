@@ -231,6 +231,19 @@ def main():
     for a, name in ((-1, "왼쪽끝"), (0, "안(-1~+1)"), (1, "오른쪽끝")):
         row = [int(((zg == a) & (zp == b)).sum()) for b in (-1, 0, 1)]
         print(f"    {name:10} {row}  (n={sum(row)})")
+    # T98: 앱 끝 규칙은 횡단보도 위(front/left/right)에서만 쓰므로 approach 를 뺀 수치를 따로 낸다.
+    on = np.array([r["cls"] != "1_approach" for r in all_items])
+    g2, p2 = gt[on], pr[on]
+    print(f"\n  [횡단보도 위만, approach 제외] n={int(on.sum())}")
+    for t in (1.0, 1.5):
+        for side, sign in (("왼쪽 끝(-2)", -1), ("오른쪽 끝(+2)", +1)):
+            truth = g2 == 2 * sign
+            pred = (p2 * sign) >= t
+            tp = int((truth & pred).sum()); fp = int((~truth & pred).sum())
+            rec = tp / max(1, truth.sum()); prec = tp / max(1, pred.sum())
+            print(f"  임계 {t}: {side:10} n={int(truth.sum()):3} 재현 {rec*100:5.1f}%  정밀도 {prec*100:5.1f}%  (오검출 {fp}장 중 치우침(±1) {int((~truth & pred & (g2 * sign == 1)).sum())}, 중앙/반대 {int((~truth & pred & (g2 * sign <= 0)).sum())})")
+        wrong = int((((g2 <= -1) & (p2 >= t)) | ((g2 >= 1) & (p2 <= -t))).sum())
+        print(f"  임계 {t}: 반대 방향 유도 {wrong}장")
     with open(OUT_PRED, "w", encoding="utf-8", newline="") as f:
         w = csv.writer(f); w.writerow(["class", "filename", "gt_position", "pred_position"])
         for r, p in zip(all_items, all_pred):
