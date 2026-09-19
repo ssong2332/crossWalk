@@ -41,6 +41,10 @@
 
 실행:
     python train/label_position.py
+    python train/label_position.py --review train/review_position_t98/review_list.csv
+      (T98 재검 모드: 목록의 사진만 다시 띄우고, 기존 라벨·CV 예측값을 보여준다.
+       1~5 = 새 값으로 **덮어쓰기**, K = 기존 값 유지, Z = 직전 판정 되돌리기.
+       변경 내역은 같은 폴더의 review_log.csv 에 class,filename,old,new 로 남는다.)
 """
 
 import csv
@@ -81,6 +85,17 @@ def collect_targets():
     return targets
 
 
+def collect_review_targets(list_csv):
+    """재검 목록(class,filename,gt_position,pred_position) -> targets + 표시용 정보."""
+    targets, info = [], {}
+    with open(list_csv, "r", encoding="utf-8", newline="") as f:
+        for row in csv.DictReader(f):
+            cls, name = row["class"], row["filename"]
+            targets.append((cls, name, os.path.join(IMAGE_ROOT, cls, name)))
+            info[(cls, name)] = (row.get("gt_position", ""), row.get("pred_position", ""))
+    return targets, info
+
+
 def load_done():
     """이미 라벨링된 (cls, name) 집합. 중간에 꺼도 이어서 할 수 있게 한다."""
     done = set()
@@ -98,11 +113,14 @@ def ensure_csv():
 
 
 class Labeler:
-    def __init__(self, root, targets):
+    def __init__(self, root, targets, review=None):
         self.root = root
         self.targets = targets
         self.idx = 0
         self.photo = None
+        # review = (표시용 info dict, 로그 CSV 경로) 이면 재검 모드
+        self.review_info, self.review_log = review if review else (None, None)
+        self.undo = []  # 재검 모드: (cls, name, old) 되돌리기용
 
         root.title("횡단보도 내 좌우 위치 라벨링 (T74)")
 
@@ -116,6 +134,7 @@ class Labeler:
             "1=왼쪽 끝   2=왼쪽 치우침   3=중앙   4=오른쪽 치우침   "
             "5=오른쪽 끝\n"
             "S=건너뛰기   Z=이전으로   Q=종료"
+            + ("\n[재검 모드] 1~5=덮어쓰기   K=기존 값 유지" if self.review_info else "")
         )
         tk.Label(root, text=help_text, font=("Malgun Gothic", 9),
                  fg="#333", anchor="w", justify="left").pack(
@@ -132,6 +151,8 @@ class Labeler:
             root.bind(k, lambda e: self.prev())
         for k in ("q", "Q"):
             root.bind(k, lambda e: self.quit())
+        for k in ("k", "K"):
+            root.bind(k, lambda e: self.keep())
 
         self.show()
 
@@ -152,8 +173,12 @@ class Labeler:
         self.canvas.create_image(0, 0, anchor="nw", image=self.photo)
         self._draw_scale(im.size[0], im.size[1])
 
+        extra = ""
+        if self.review_info:
+            gt, pred = self.review_info.get((cls, name), ("", ""))
+            extra = f"    기존 라벨 {gt}   CV 예측 {pred}"
         self.info.config(
-            text=f"[{self.idx + 1}/{len(self.targets)}]  {cls}/{name}"
+            text=f"[{self.idx + 1}/{len(self.targets)}]  {cls}/{name}{extra}"
         )
 
     def _draw_scale(self, w, h):
@@ -180,12 +205,49 @@ class Labeler:
             ])
 
     def choose(self, value):
-        self.write_row("ok", value)
+        if self.review_info is not None:
+            self._overwrite(value)
+        else:
+            self.write_row("ok", value)
         self.advance()
 
     def skip(self):
+        if self.review_info is not None:
+            return  # 재검 모드에서는 건너뛰기 대신 K(유지)를 쓴다
         self.write_row("skipped")
         self.advance()
+
+    def keep(self):
+        if self.review_info is None:
+            return
+        cls, name, _ = self.targets[self.idx]
+        self.undo.append((cls, name, None))
+        self.advance()
+
+    # ---- 재검 모드: 기존 행 덮어쓰기 ---------------------------------------
+    def _overwrite(self, value):
+        cls, name, _ = self.targets[self.idx]
+        old = self._set_position(cls, name, value)
+        self.undo.append((cls, name, old))
+        with open(self.review_log, "a", encoding="utf-8", newline="") as f:
+            csv.writer(f).writerow([cls, name, old, value])
+
+    @staticmethod
+    def _set_position(cls, name, value):
+        """position_labels.csv 에서 (cls,name) 행의 position 을 value 로 바꾸고 이전 값을 돌려준다."""
+        with open(OUT_CSV, "r", encoding="utf-8", newline="") as f:
+            rows = list(csv.reader(f))
+        old = None
+        for r in rows[1:]:
+            if r[0] == cls and r[1] == name:
+                old = r[2]
+                r[2] = str(value)
+                r[3] = "ok"
+        if old is None:
+            raise RuntimeError(f"position_labels.csv 에 없음: {cls}/{name}")
+        with open(OUT_CSV, "w", encoding="utf-8", newline="") as f:
+            csv.writer(f).writerows(rows)
+        return old
 
     def advance(self):
         self.idx += 1
@@ -196,8 +258,21 @@ class Labeler:
         if self.idx == 0:
             return
         self.idx -= 1
-        self._drop_last_csv_row()
+        if self.review_info is not None:
+            cls, name, old = self.undo.pop()
+            if old is not None:
+                self._set_position(cls, name, old)
+                self._drop_last_review_log_row()
+        else:
+            self._drop_last_csv_row()
         self.show()
+
+    def _drop_last_review_log_row(self):
+        with open(self.review_log, "r", encoding="utf-8", newline="") as f:
+            lines = f.readlines()
+        if len(lines) > 1:
+            with open(self.review_log, "w", encoding="utf-8", newline="") as f:
+                f.writelines(lines[:-1])
 
     @staticmethod
     def _drop_last_csv_row():
@@ -212,9 +287,13 @@ class Labeler:
 
 
 def main():
+    import sys
     if not os.path.isdir(IMAGE_ROOT):
         print(f"이미지 폴더를 찾을 수 없습니다: {IMAGE_ROOT}")
         return 1
+
+    if len(sys.argv) >= 3 and sys.argv[1] == "--review":
+        return main_review(sys.argv[2])
 
     ensure_csv()
     done = load_done()
@@ -233,6 +312,22 @@ def main():
 
     done_after = load_done()
     print(f"저장 완료: {OUT_CSV}  (누적 {len(done_after)}장)")
+    return 0
+
+
+def main_review(list_csv):
+    targets, info = collect_review_targets(list_csv)
+    log_csv = os.path.join(os.path.dirname(os.path.abspath(list_csv)), "review_log.csv")
+    if not os.path.exists(log_csv):
+        with open(log_csv, "w", encoding="utf-8", newline="") as f:
+            csv.writer(f).writerow(["class", "filename", "old", "new"])
+    print(f"재검 대상 {len(targets)}장 (목록: {list_csv}, 변경 로그: {log_csv})")
+    root = tk.Tk()
+    Labeler(root, targets, review=(info, log_csv))
+    root.mainloop()
+    with open(log_csv, "r", encoding="utf-8", newline="") as f:
+        n = sum(1 for _ in f) - 1
+    print(f"재검 종료: 변경 {n}건 -> {OUT_CSV}")
     return 0
 
 

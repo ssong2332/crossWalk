@@ -59,4 +59,55 @@ void main() {
       expect(DirectionResolver.isOnCrosswalk(l), isFalse);
     }
   });
+
+  // T98: 끝이면 각도와 무관하게 중앙 쪽으로 (사용자 최종 목표, 2026-09-19).
+  group('DirectionResolver T98 위치(끝) 규칙', () {
+    const e = DirectionResolver.edgePosition;
+    const s = DirectionResolver.edgeSteerDegrees;
+
+    test('edgeSteerAngle: 왼쪽 끝 +20, 오른쪽 끝 -20, 그 외 null', () {
+      expect(DirectionResolver.edgeSteerAngle(null), isNull);
+      expect(DirectionResolver.edgeSteerAngle(0), isNull);
+      expect(DirectionResolver.edgeSteerAngle(-0.99), isNull);
+      expect(DirectionResolver.edgeSteerAngle(0.99), isNull);
+      expect(DirectionResolver.edgeSteerAngle(-e), s);
+      expect(DirectionResolver.edgeSteerAngle(-2), s);
+      expect(DirectionResolver.edgeSteerAngle(e), -s);
+      expect(DirectionResolver.edgeSteerAngle(2), -s);
+    });
+
+    test('왼쪽 끝이면 직진·이탈·각도 없음과 무관하게 left(오른쪽으로 가라)', () {
+      for (final label in ['front', 'left', 'right']) {
+        for (final a in <double?>[null, 0, 40, -40]) {
+          expect(DirectionResolver.resolve(label, a, position: -1.5), 'left',
+              reason: '$label/$a');
+        }
+      }
+    });
+
+    test('오른쪽 끝이면 각도와 무관하게 right(왼쪽으로 가라)', () {
+      for (final label in ['front', 'left', 'right']) {
+        for (final a in <double?>[null, 0, 40, -40]) {
+          expect(DirectionResolver.resolve(label, a, position: 1.5), 'right',
+              reason: '$label/$a');
+        }
+      }
+    });
+
+    test('끝이 아니면(|p|<1) 기존 각도 표 그대로', () {
+      for (final p in <double?>[null, 0, 0.9, -0.9]) {
+        expect(DirectionResolver.resolve('left', 0, position: p), 'front');
+        expect(DirectionResolver.resolve('front', 40, position: p), 'left');
+        expect(DirectionResolver.resolve('front', -40, position: p), 'right');
+        expect(DirectionResolver.resolve('right', null, position: p), 'right');
+      }
+    });
+
+    test('none/approach에는 위치 규칙을 적용하지 않는다', () {
+      for (final label in ['none', 'approach']) {
+        expect(DirectionResolver.resolve(label, 40, position: -2), label);
+        expect(DirectionResolver.resolve(label, null, position: 2), label);
+      }
+    });
+  });
 }
