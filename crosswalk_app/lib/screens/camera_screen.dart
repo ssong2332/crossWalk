@@ -1335,7 +1335,10 @@ class _CameraScreenState extends State<CameraScreen>
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 10, vertical: 6),
                                 child: Text(
-                                  _stripeDebugText(),
+                                  // T99: 어느 커밋의 APK인지 실기기 테스트
+                                  // 중 메인 화면에서 바로 보이게 한다
+                                  // (설정 화면의 T45 값과 같은 출처).
+                                  '${_stripeDebugText()}  ·  빌드 $buildShaShort',
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     color: _colorTextDim.withValues(alpha: 0.8),
