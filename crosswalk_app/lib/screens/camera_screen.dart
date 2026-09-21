@@ -519,8 +519,9 @@ class _CameraScreenState extends State<CameraScreen>
     }
     if (relabel != null) {
       _feedback.alert(relabel, _confidence,
-          angleDegrees: DirectionResolver.edgeSteerAngle(_smoothedPosition) ??
-              smoothed);
+          angleDegrees:
+              DirectionResolver.edgeSteerAngle(_smoothedPosition, smoothed) ??
+                  smoothed);
     }
 
     if (mounted) {
@@ -643,7 +644,8 @@ class _CameraScreenState extends State<CameraScreen>
 
   /// 화살표·강도 판정에 실제로 쓰는 각도: 끝이면 중앙 쪽 ±20, 아니면 각도 모델값.
   double? get _effectiveAngle =>
-      DirectionResolver.edgeSteerAngle(_smoothedPosition) ?? _arrowStripeAngle;
+      DirectionResolver.edgeSteerAngle(_smoothedPosition, _arrowStripeAngle) ??
+      _arrowStripeAngle;
 
   void _updatePositionEstimate(CameraImage image) {
     if (!_positionEstimator.isReady) return;
@@ -675,7 +677,8 @@ class _CameraScreenState extends State<CameraScreen>
     if (relabel != null) {
       _feedback.alert(relabel, _confidence,
           angleDegrees:
-              DirectionResolver.edgeSteerAngle(smoothed) ?? _arrowStripeAngle);
+              DirectionResolver.edgeSteerAngle(smoothed, _arrowStripeAngle) ??
+                  _arrowStripeAngle);
     }
 
     if (mounted) {
@@ -698,7 +701,7 @@ class _CameraScreenState extends State<CameraScreen>
     final posText = pos == null
         ? ''
         : ' 위치 ${pos.toStringAsFixed(1)}'
-            '${DirectionResolver.edgeSteerAngle(pos) != null ? "(끝)" : ""}';
+            '${DirectionResolver.edgeSteerAngle(pos, _arrowStripeAngle) != null ? "(끝)" : ""}';
     return '보정 ${shown.toStringAsFixed(0)} (원시 ${raw.toStringAsFixed(0)})$posText';
   }
 
