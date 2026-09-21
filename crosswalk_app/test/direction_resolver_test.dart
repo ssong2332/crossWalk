@@ -66,31 +66,54 @@ void main() {
     const s = DirectionResolver.edgeSteerDegrees;
 
     test('edgeSteerAngle: 왼쪽 끝 +20, 오른쪽 끝 -20, 그 외 null', () {
-      expect(DirectionResolver.edgeSteerAngle(null), isNull);
-      expect(DirectionResolver.edgeSteerAngle(0), isNull);
-      expect(DirectionResolver.edgeSteerAngle(-0.99), isNull);
-      expect(DirectionResolver.edgeSteerAngle(0.99), isNull);
-      expect(DirectionResolver.edgeSteerAngle(-e), s);
-      expect(DirectionResolver.edgeSteerAngle(-2), s);
-      expect(DirectionResolver.edgeSteerAngle(e), -s);
-      expect(DirectionResolver.edgeSteerAngle(2), -s);
+      expect(DirectionResolver.edgeSteerAngle(null, 0), isNull);
+      expect(DirectionResolver.edgeSteerAngle(0, 0), isNull);
+      expect(DirectionResolver.edgeSteerAngle(-0.99, 0), isNull);
+      expect(DirectionResolver.edgeSteerAngle(0.99, 0), isNull);
+      expect(DirectionResolver.edgeSteerAngle(-e, null), s);
+      expect(DirectionResolver.edgeSteerAngle(-2, 0), s);
+      expect(DirectionResolver.edgeSteerAngle(e, null), -s);
+      expect(DirectionResolver.edgeSteerAngle(2, 0), -s);
     });
 
-    test('왼쪽 끝이면 직진·이탈·각도 없음과 무관하게 left(오른쪽으로 가라)', () {
+    test('T100: 끝인데 각도가 이미 중앙 쪽 ±15 이상이면 0(직진 유지)', () {
+      const t = DirectionResolver.deviationAngleDegrees;
+      // 왼쪽 끝: 오른쪽으로 가라(+). 각도가 -15 이하면 이미 오른쪽으로 튼 것.
+      expect(DirectionResolver.edgeSteerAngle(-2, -t), 0);
+      expect(DirectionResolver.edgeSteerAngle(-2, -30), 0);
+      expect(DirectionResolver.edgeSteerAngle(-2, -14.9), s);
+      expect(DirectionResolver.edgeSteerAngle(-2, 30), s); // 바깥쪽이면 여전히 유도
+      // 오른쪽 끝: 대칭.
+      expect(DirectionResolver.edgeSteerAngle(2, t), 0);
+      expect(DirectionResolver.edgeSteerAngle(2, 30), 0);
+      expect(DirectionResolver.edgeSteerAngle(2, 14.9), -s);
+      expect(DirectionResolver.edgeSteerAngle(2, -30), -s);
+    });
+
+    test('왼쪽 끝이면 각도 없음·직진·바깥쪽 이탈 모두 left(오른쪽으로 가라)', () {
       for (final label in ['front', 'left', 'right']) {
-        for (final a in <double?>[null, 0, 40, -40]) {
+        for (final a in <double?>[null, 0, 14, 40]) {
           expect(DirectionResolver.resolve(label, a, position: -1.5), 'left',
               reason: '$label/$a');
         }
       }
     });
 
-    test('오른쪽 끝이면 각도와 무관하게 right(왼쪽으로 가라)', () {
+    test('오른쪽 끝이면 각도 없음·직진·바깥쪽 이탈 모두 right(왼쪽으로 가라)', () {
       for (final label in ['front', 'left', 'right']) {
-        for (final a in <double?>[null, 0, 40, -40]) {
+        for (final a in <double?>[null, 0, -14, -40]) {
           expect(DirectionResolver.resolve(label, a, position: 1.5), 'right',
               reason: '$label/$a');
         }
+      }
+    });
+
+    test('T100: 끝에서 이미 중앙 쪽으로 틀었으면 front(유지) — 실기기 #3', () {
+      for (final label in ['front', 'left', 'right']) {
+        expect(DirectionResolver.resolve(label, -30, position: -1.3), 'front',
+            reason: label);
+        expect(DirectionResolver.resolve(label, 30, position: 1.3), 'front',
+            reason: label);
       }
     });
 
