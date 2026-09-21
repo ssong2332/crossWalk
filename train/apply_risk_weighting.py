@@ -69,10 +69,20 @@ CLAMP = 75.0
 EXTRA_ANGLE_CSV = REPO / "train" / "angle_labels_surface.csv"
 EXTRA_POS_CSV = REPO / "train" / "position_labels_surface.csv"
 
+# T100(2026-09-21): T95 끝 규칙은 CV에서 학습되지 않아 폐기됐고(T95), 끝 유도는
+# 위치 모델 + 앱 규칙(T98)으로 간다. 그래서 기본은 **T81 공식**(단계당 W, 끝도
+# 2*W=6도, 직진은 기하값 유지)이고, Surface 행도 넣지 않는다(T95 h2 실험용).
+#   RISK_EDGE_RULE=t95     -> 위 T95 규칙(W_EDGE/EDGE_MIN) + Surface 병합 (실험 재현용)
+#   RISK_EDGE_RULE=t81     -> 기본
+import os
+EDGE_RULE = os.environ.get("RISK_EDGE_RULE", "t81")
+
 
 def main():
+    angle_srcs = (ANGLE_CSV, EXTRA_ANGLE_CSV) if EDGE_RULE == "t95" else (ANGLE_CSV,)
+    pos_srcs = (POS_CSV, EXTRA_POS_CSV) if EDGE_RULE == "t95" else (POS_CSV,)
     angles = {}
-    for src in (ANGLE_CSV, EXTRA_ANGLE_CSV):
+    for src in angle_srcs:
         if not src.exists():
             continue
         for r in csv.DictReader(open(src, encoding="utf-8")):
@@ -80,7 +90,7 @@ def main():
                 angles[r["filename"]] = r
 
     positions = {}
-    for src in (POS_CSV, EXTRA_POS_CSV):
+    for src in pos_srcs:
         if not src.exists():
             continue
         for r in csv.DictReader(open(src, encoding="utf-8")):
@@ -101,9 +111,10 @@ def main():
         elif pos is None:
             final = geo
             stats["위치 라벨 없음 -> 가중 0"] += 1
-        elif abs(geo) < DEV_T:
-            # 직진. 끝(±2)이면 중앙 쪽으로 EDGE_MIN (T95).
-            if abs(pos) == 2:
+        elif (abs(geo) < DEV_T) if EDGE_RULE == "t95" else (cls not in ("3_left", "4_right")):
+            # 직진(T81: 폴더 기준 / T95: |기하|<15 기준).
+            # 끝(±2)이면 중앙 쪽으로 EDGE_MIN (T95). T81 모드에서는 기하값 유지.
+            if EDGE_RULE == "t95" and abs(pos) == 2:
                 final = (-1 if pos > 0 else 1) * EDGE_MIN
                 stats["직진 & 끝 -> 중앙 쪽 ±20도 (T95)"] += 1
             else:
@@ -113,13 +124,13 @@ def main():
             # 이탈. 위험 방향 = 기하 부호로: 양수(왼쪽 이탈)면 왼쪽 끝(-2)이 위험.
             risk_dir = -1 if geo > 0 else +1
             risk_level = risk_dir * pos
-            if risk_level >= 2:
+            if EDGE_RULE == "t95" and risk_level >= 2:
                 add = W_EDGE * risk_level          # 끝: +12도 (T95)
             else:
                 add = W * max(risk_level, 0)       # 치우침: +3도 / 안전한 쪽: 0
             final = geo + (1 if geo >= 0 else -1) * add
             final = max(-CLAMP, min(CLAMP, final))
-            stats["이탈 & 끝 -> +12도 (T95)" if risk_level >= 2 else
+            stats["이탈 & 끝 -> +12도 (T95)" if (EDGE_RULE == "t95" and risk_level >= 2) else
                   ("가중 적용됨(+3)" if add > 0 else "안전한 쪽 -> 기하값 유지")] += 1
 
         rows.append({
@@ -139,7 +150,7 @@ def main():
         w.writeheader()
         w.writerows(rows)
 
-    print(f"W = {W}도/단계, 끝 W_EDGE = {W_EDGE}도/단계, 직진&끝 = 중앙 쪽 {EDGE_MIN}도, 클램프 ±{CLAMP}도")
+    print(f"모드 {EDGE_RULE}: W = {W}도/단계, 클램프 ±{CLAMP}도" + (f", 끝 W_EDGE = {W_EDGE}, 직진&끝 = 중앙 쪽 {EDGE_MIN}도" if EDGE_RULE == "t95" else ""))
     print(f"입력: 기하 라벨 {len(angles)}장 / 위치 라벨 {len(positions)}장")
     for k, v in stats.most_common():
         print(f"  {k}: {v}장")

@@ -49,13 +49,21 @@
 ///   끝으로 부른 경우는 0~소수, **반대 방향으로 보낸 경우 0장**. 치우친
 ///   사용자를 중앙 쪽으로 보내는 건 무해하므로 임계 1.0을 쓴다(사용자 승인 C안).
 ///
-/// 판정표(T98, 사용자 확정) — 각도 표보다 먼저 본다:
-///   | 분류기 L         | 위치 p      | 최종                                   |
-///   | none / approach  | 무엇이든    | L 그대로 (위치 규칙 미적용)            |
-///   | front/left/right | null        | 아래 각도 표로                          |
-///   | front/left/right | p <= -1.0   | left  (오른쪽으로 가라, 각도 +20 취급)  |
-///   | front/left/right | p >= +1.0   | right (왼쪽으로 가라, 각도 -20 취급)    |
-///   | front/left/right | -1 < p < 1  | 아래 각도 표로                          |
+/// 판정표(T98 + T100, 사용자 확정) — 각도 표보다 먼저 본다:
+///   | 분류기 L         | 위치 p      | 각도 a            | 최종                                  |
+///   | none / approach  | 무엇이든    | 무엇이든          | L 그대로 (위치 규칙 미적용)           |
+///   | front/left/right | null        | —                 | 아래 각도 표로                         |
+///   | front/left/right | p <= -1.0   | a > -15 또는 null | left  (오른쪽으로 가라, 각도 +20 취급) |
+///   | front/left/right | p <= -1.0   | a <= -15          | front (이미 오른쪽으로 틀었음, 각도 0) |
+///   | front/left/right | p >= +1.0   | a < +15 또는 null | right (왼쪽으로 가라, 각도 -20 취급)   |
+///   | front/left/right | p >= +1.0   | a >= +15          | front (이미 왼쪽으로 틀었음, 각도 0)   |
+///   | front/left/right | -1 < p < 1  | —                 | 아래 각도 표로                         |
+///
+///   T100(2026-09-21, 실기기 #1·#3): 끝에서 "오른쪽으로"를 듣고 오른쪽으로 틀어도
+///   위치는 아직 끝이라 "오른쪽으로"가 계속 유지됐다. 각도 모델은 이때 반대
+///   부호(줄무늬에 다시 나란해지려면 왼쪽)를 내므로, **끝 + 각도가 중앙 쪽으로
+///   ±15 이상이면 "이미 틀었다"로 보고 직진(유지)** 을 낸다(사용자 선택 a안).
+///   화살표·강도 각도는 0으로 두어 "직진"과 모순되지 않게 한다.
 class DirectionResolver {
   DirectionResolver._();
 
@@ -68,12 +76,22 @@ class DirectionResolver {
   /// T98: 끝일 때 화살표·강도 판정에 쓰는 각도 크기. 부호는 중앙 쪽.
   static const double edgeSteerDegrees = 20.0;
 
-  /// T98: 위치가 끝이면 중앙 쪽으로 보내는 각도(왼쪽 끝 → +20, 오른쪽 끝 →
-  /// -20), 아니면 null. 위치가 없으면 null.
-  static double? edgeSteerAngle(double? position) {
+  /// T98/T100: 위치가 끝이면 화살표·강도에 쓸 각도, 아니면 null.
+  ///   왼쪽 끝 → +20, 오른쪽 끝 → -20.
+  ///   단 각도 모델이 이미 중앙 쪽으로 ±[deviationAngleDegrees] 이상이면
+  ///   (사용자가 이미 틀었음) 0 — 직진 유지.
+  static double? edgeSteerAngle(double? position, double? angleDegrees) {
     if (position == null) return null;
-    if (position <= -edgePosition) return edgeSteerDegrees;
-    if (position >= edgePosition) return -edgeSteerDegrees;
+    if (position <= -edgePosition) {
+      final turned =
+          angleDegrees != null && angleDegrees <= -deviationAngleDegrees;
+      return turned ? 0.0 : edgeSteerDegrees;
+    }
+    if (position >= edgePosition) {
+      final turned =
+          angleDegrees != null && angleDegrees >= deviationAngleDegrees;
+      return turned ? 0.0 : -edgeSteerDegrees;
+    }
     return null;
   }
 
@@ -86,8 +104,11 @@ class DirectionResolver {
   static String resolve(String label, double? angleDegrees,
       {double? position}) {
     if (!isOnCrosswalk(label)) return label;
-    final steer = edgeSteerAngle(position);
-    if (steer != null) return steer > 0 ? 'left' : 'right';
+    final steer = edgeSteerAngle(position, angleDegrees);
+    if (steer != null) {
+      if (steer == 0) return 'front';
+      return steer > 0 ? 'left' : 'right';
+    }
     if (angleDegrees == null) return label;
     if (angleDegrees >= deviationAngleDegrees) return 'left';
     if (angleDegrees <= -deviationAngleDegrees) return 'right';
