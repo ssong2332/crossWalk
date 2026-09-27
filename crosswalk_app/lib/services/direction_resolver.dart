@@ -35,6 +35,25 @@
 /// 알려진 위험: ±15 경계에서 front <-> 이탈이 오갈 수 있다(히스테리시스
 /// 없음 — 판정표에 없어 넣지 않았다). 실기기에서 잦으면 별도 태스크.
 ///
+/// T103(2026-09-27, 사용자 확정): 기준 **15 -> 12**, 경계 떨림 방지 추가.
+///   사용자가 2_front 중 |라벨| >= 5도 44장을 재검토해 25장을 좌/우 이탈로
+///   바꿨다(`train/review_t102/front_review_log.csv`) — 15도는 작은 이탈을
+///   놓친다는 판단. T100 각도 CV(`angle_cv_pred_t100_952.csv`, front 275장):
+///     | 기준 | 직진->이탈 오경보 | left 감지 | right 감지 |
+///     | 15   | 5.1%              | 91.0%     | 91.9%      |
+///     | 12   | 6.5%              | 94.3%     | 94.7%      |
+///   (오경보 칸에는 T100에서 front로 옮긴 작은 이탈이 섞여 실제보다 불리하다.)
+///   떨림 방지: 이탈로 **들어갈 때는 12도**, 이미 같은 방향 이탈이면 **9도
+///   이상인 동안 유지**하고 그 밑에서 직진으로 돌아온다. 9는 선택지 예시로
+///   제안한 값이다(실기기 뒤 조정).
+///   판정표(T87 표의 15를 대체, 끝 규칙 뒤에 본다):
+///     | 직전 상태 | 각도 a          | 최종  |
+///     | left      | a >= +9         | left  |
+///     | right     | a <= -9         | right |
+///     | 그 외     | a >= +12        | left  |
+///     | 그 외     | a <= -12        | right |
+///     | 그 외     | |a| < 12        | front |
+///
 /// 부호 규약(T71 검증): 각도는 **가야 할 방향**. 왼쪽 이탈(3_left)은
 /// 오른쪽으로 가야 하므로 양수, 오른쪽 이탈(4_right)은 음수.
 ///
@@ -67,8 +86,13 @@
 class DirectionResolver {
   DirectionResolver._();
 
-  /// 이 크기 미만이면 직진. 근거는 위 표.
-  static const double deviationAngleDegrees = 15.0;
+  /// 이 크기 이상이면 이탈로 **들어간다**. 근거는 위 표(T103: 15 -> 12).
+  /// 끝 규칙의 "이미 중앙 쪽으로 틀었음"(T100 a안)도 이 값을 쓴다.
+  static const double deviationAngleDegrees = 12.0;
+
+  /// T103: 이미 같은 방향 이탈이면 이 크기 이상인 동안 이탈을 **유지**한다
+  /// (경계 떨림 방지). 이 밑으로 내려가야 직진으로 돌아온다.
+  static const double recoverAngleDegrees = 9.0;
 
   /// T98: |위치| 가 이 값 이상이면 "끝"으로 본다(라벨 단위: ±2가 끝).
   static const double edgePosition = 1.0;
@@ -110,8 +134,9 @@ class DirectionResolver {
 
   /// 분류기 [label]과 각도 모델의 [angleDegrees], 위치 모델의 [position]을
   /// 합쳐 최종 상태를 낸다. 위치 규칙(T98)이 각도 규칙(T87)보다 앞선다.
+  /// [previous]는 직전 최종 상태 — 떨림 방지(T103)에 쓴다.
   static String resolve(String label, double? angleDegrees,
-      {double? position}) {
+      {double? position, String? previous}) {
     if (!isOnCrosswalk(label)) return label;
     final steer = edgeSteerAngle(position, angleDegrees);
     if (steer != null) {
@@ -119,6 +144,12 @@ class DirectionResolver {
       return steer > 0 ? 'left' : 'right';
     }
     if (angleDegrees == null) return label;
+    if (previous == 'left' && angleDegrees >= recoverAngleDegrees) {
+      return 'left';
+    }
+    if (previous == 'right' && angleDegrees <= -recoverAngleDegrees) {
+      return 'right';
+    }
     if (angleDegrees >= deviationAngleDegrees) return 'left';
     if (angleDegrees <= -deviationAngleDegrees) return 'right';
     return 'front';

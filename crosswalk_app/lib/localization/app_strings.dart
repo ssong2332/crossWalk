@@ -57,6 +57,10 @@ class AppStrings {
   // T51: 5-class 체계에서 신설된 `approach`(인도 위인데 앞에 진입할 횡단보도가
   // 보이는 상태)의 화면 표시용 라벨.
   final String labelApproach;
+  // T103: 6-class의 `crossed`(다 건넘, 연석·점자블록 앞) 화면 라벨.
+  final String labelCrossed;
+  // T103: 줄무늬 없는 구간에서 "횡단 중"을 유지할 때(CrossingHold)의 화면 라벨.
+  final String labelCrossingHold;
 
   // T63: 심한 이탈 전용 화면 라벨. 색만으로 강도를 구분하지 않기 위한
   // 텍스트 겹침(redundancy) — 색각이상 사용자에게도 강도가 전달되도록.
@@ -230,6 +234,8 @@ class AppStrings {
     required this.labelRight,
     required this.labelNone,
     required this.labelApproach,
+    required this.labelCrossed,
+    required this.labelCrossingHold,
     required this.labelLeftSevere,
     required this.labelRightSevere,
     required this.labelLeftEdge,
@@ -315,6 +321,8 @@ class AppStrings {
     labelRight: '오른쪽으로 틀어짐',
     labelNone: '횡단보도 없음',
     labelApproach: '앞에 횡단보도',
+    labelCrossed: '다 건넘',
+    labelCrossingHold: '횡단 중',
     labelLeftSevere: '왼쪽으로 크게 벗어남',
     labelRightSevere: '오른쪽으로 크게 벗어남',
     labelLeftEdge: '왼쪽 끝',
@@ -394,6 +402,10 @@ class AppStrings {
       // decideMessage) 이 문구는 TTS로 발화되지 않는다. 이 맵은 화면 표시용이며,
       // 다른 클래스와 형식을 맞추기 위해 항목을 둔다.
       'approach': '',
+      // T103: crossed는 음성 안내가 전이 순간 한 번뿐이라 보조 문구가 없다.
+      'crossed': '',
+      // T103: hold 동안은 방향 안내를 멈추므로 보조 문구가 없다.
+      'hold': '',
     },
     cameraGuidanceDisclaimer: '흰지팡이나 안내견을 대신하지 않습니다.',
     warnLowLightTitle: '조도가 낮습니다',
@@ -417,6 +429,8 @@ class AppStrings {
     labelRight: 'Veering right',
     labelNone: 'No crosswalk detected',
     labelApproach: 'Crosswalk ahead',
+    labelCrossed: 'Crossed',
+    labelCrossingHold: 'Crossing',
     labelLeftSevere: 'Veering left sharply',
     labelRightSevere: 'Veering right sharply',
     labelLeftEdge: 'Left edge',
@@ -508,6 +522,10 @@ class AppStrings {
       // feedback_service.dart decideMessage), so this string is never spoken.
       // It exists for on-screen display and parity with the other classes.
       'approach': '',
+      // T103: crossed는 음성 안내가 전이 순간 한 번뿐이라 보조 문구가 없다.
+      'crossed': '',
+      // T103: hold 동안은 방향 안내를 멈추므로 보조 문구가 없다.
+      'hold': '',
     },
     cameraGuidanceDisclaimer:
         'This does not replace a white cane or a guide dog.',

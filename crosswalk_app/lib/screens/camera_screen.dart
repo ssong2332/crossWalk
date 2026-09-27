@@ -8,6 +8,7 @@ import 'package:camera/camera.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../services/classifier.dart';
+import '../services/crossing_hold.dart';
 import '../services/direction_resolver.dart';
 import '../services/feedback_service.dart';
 import '../services/angle_estimator.dart';
@@ -158,6 +159,8 @@ class _CameraScreenState extends State<CameraScreen>
         'right': _strings.labelRight,
         'none': _strings.labelNone,
         'approach': _strings.labelApproach,
+        'crossed': _strings.labelCrossed,
+        CrossingHold.holdLabel: _strings.labelCrossingHold,
       };
 
   // 마지막으로 받은 분류 라벨. `_fieldState`가 오류/로딩/무판정이 아닐 때
@@ -432,14 +435,24 @@ class _CameraScreenState extends State<CameraScreen>
       // 여기서 정한 상태를 문구·화살표·음성·진동이 전부 공유한다.
       // 각도는 화살표와 같은 보정값(`_arrowStripeAngle`, 최대 10프레임 전).
       // T98: 끝이면 위치 규칙이 각도보다 앞선다(DirectionResolver 표).
-      final label = DirectionResolver.resolve(result.label, _arrowStripeAngle,
-          position: _smoothedPosition);
+      final resolved = DirectionResolver.resolve(
+          result.label, _arrowStripeAngle,
+          position: _smoothedPosition, previous: _guidanceLabel);
+      // T103: 횡단보도 위에서 줄무늬가 사라지면(none/approach) 10초 동안
+      // "횡단 중"으로 붙잡는다(CrossingHold 표). 그동안 방향 안내는 멈추고
+      // alert도 부르지 않는다 — 각도·위치 갱신은 `_guidanceLabel`이 위가
+      // 아니라서 스스로 멈춘다.
+      final label =
+          _crossingHold.apply(_guidanceLabel, resolved, DateTime.now());
       // T102: 끝 규칙에서 나온 상태면 끝 전용 음성·화면 문구를 쓴다.
+      // (hold는 위가 아니므로 isEdge가 false다.)
       final atEdge = DirectionResolver.isEdge(
           label, _smoothedPosition, _arrowStripeAngle);
-      // T84: 강도 판정용 각도 — 화살표와 같은 보정값을 넘긴다.
-      _feedback.alert(label, result.confidence,
-          angleDegrees: _effectiveAngle, atEdge: atEdge);
+      if (label != CrossingHold.holdLabel) {
+        // T84: 강도 판정용 각도 — 화살표와 같은 보정값을 넘긴다.
+        _feedback.alert(label, result.confidence,
+            angleDegrees: _effectiveAngle, atEdge: atEdge);
+      }
       if (mounted) {
         setState(() {
           _statusLabel = _labelText[label] ?? label;
@@ -518,7 +531,7 @@ class _CameraScreenState extends State<CameraScreen>
     String? relabel;
     if (DirectionResolver.isOnCrosswalk(_guidanceLabel) && !_noCall) {
       final next = DirectionResolver.resolve(_guidanceLabel, smoothed,
-          position: _smoothedPosition);
+          position: _smoothedPosition, previous: _guidanceLabel);
       if (next != _guidanceLabel) relabel = next;
     }
     // T102: 끝 여부는 상태 라벨이 그대로여도 바뀔 수 있다(예: left가 일반
@@ -659,6 +672,9 @@ class _CameraScreenState extends State<CameraScreen>
   // 으로 바꾸는 데 쓴다(음성은 alert(atEdge:)가 따로 받는다).
   bool _atEdge = false;
 
+  // T103: X형 교차 횡단보도처럼 줄무늬 없는 구간에서 "횡단 중"을 유지한다.
+  final CrossingHold _crossingHold = CrossingHold();
+
   /// 화살표·강도 판정에 실제로 쓰는 각도: 끝이면 중앙 쪽 ±20, 아니면 각도 모델값.
   double? get _effectiveAngle =>
       DirectionResolver.edgeSteerAngle(_smoothedPosition, _arrowStripeAngle) ??
@@ -688,7 +704,7 @@ class _CameraScreenState extends State<CameraScreen>
     String? relabel;
     if (DirectionResolver.isOnCrosswalk(_guidanceLabel) && !_noCall) {
       final next = DirectionResolver.resolve(_guidanceLabel, _arrowStripeAngle,
-          position: smoothed);
+          position: smoothed, previous: _guidanceLabel);
       if (next != _guidanceLabel) relabel = next;
     }
     // T102: 각도 경로와 같은 이유로, 라벨이 그대로여도 끝 여부가 바뀌면 alert.
@@ -1422,7 +1438,8 @@ class StateFieldPainter extends CustomPainter {
     this.projection = const GroundProjection(),
   });
 
-  /// 'front' | 'left' | 'right' | 'approach' | 'none' | 'nocall' | 'error'
+  /// 'front' | 'left' | 'right' | 'approach' | 'none' | 'crossed' | 'nocall' | 'error'
+  /// (T103: crossed는 none과 같은 기본 도형·색으로 그린다)
   final String state;
   final Color color;
 

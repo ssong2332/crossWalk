@@ -341,17 +341,41 @@ void main() {
       }
     });
 
-    test('front/left/right -> none은 완료 안내를 낸다', () {
+    // T103(사용자 확정): 다 건넘은 위 -> crossed 순간에 안내한다.
+    test('front/left/right -> crossed는 완료 안내를 낸다 (T103)', () {
       final t0 = DateTime(2026, 1, 1, 12, 0, 0);
 
       for (final crossing in ['front', 'left', 'right']) {
         final s = FeedbackService();
         expect(
-          s.decidePhaseMessage(crossing, 'none', t0),
+          s.decidePhaseMessage(crossing, 'crossed', t0),
           '횡단보도를 건넜습니다.',
-          reason: '$crossing -> none',
+          reason: '$crossing -> crossed',
         );
       }
+    });
+
+    // T103: 위 -> none은 줄무늬가 잠깐 안 보이거나 오판일 수 있어 침묵.
+    test('front/left/right -> none은 안내하지 않는다 (T103)', () {
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+      for (final on in ['front', 'left', 'right']) {
+        expect(FeedbackService().decidePhaseMessage(on, 'none', t0), isNull,
+            reason: '$on -> none');
+      }
+    });
+
+    // T103: 다 건넌 과정(위 -> crossed -> none)의 나머지 전이는 침묵.
+    test('crossed -> none/approach, none/approach -> crossed는 침묵 (T103)', () {
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+      expect(FeedbackService().decidePhaseMessage('crossed', 'none', t0),
+          isNull);
+      expect(FeedbackService().decidePhaseMessage('crossed', 'approach', t0),
+          isNull,
+          reason: '건너편 횡단보도가 보여도 "앞에 횡단보도"는 none에서 올 때만');
+      expect(FeedbackService().decidePhaseMessage('none', 'crossed', t0),
+          isNull);
+      expect(FeedbackService().decidePhaseMessage('approach', 'crossed', t0),
+          isNull);
     });
 
     // T93: none(또는 콜드스타트) -> approach는 "앞에 횡단보도가 있습니다".
