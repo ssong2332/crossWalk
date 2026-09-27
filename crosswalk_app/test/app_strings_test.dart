@@ -54,6 +54,12 @@ void main() {
       expect(strings.rightDeviationMessageMild, '왼쪽으로 이동하세요');
       expect(strings.rightDeviationMessageSevere, '즉시 왼쪽으로 이동하세요');
       expect(strings.recoveredMessage, '직진하세요');
+      // T102: 끝 전용 문구.
+      expect(strings.labelLeftEdge, '왼쪽 끝');
+      expect(strings.labelRightEdge, '오른쪽 끝');
+      expect(strings.leftEdgeMessage, '오른쪽으로 이동하세요. 가장자리입니다');
+      expect(strings.rightEdgeMessage, '왼쪽으로 이동하세요. 가장자리입니다');
+      expect(strings.edgeTurnedMessage, '그대로 가세요');
       expect(strings.enteredCrosswalkMessage, '횡단보도에 진입했습니다.');
       expect(strings.crossedCrosswalkMessage, '횡단보도를 건넜습니다.');
     });
@@ -68,6 +74,11 @@ void main() {
       expect(strings.rightDeviationMessageMild, 'Move to the left');
       expect(strings.rightDeviationMessageSevere, 'Move left now');
       expect(strings.recoveredMessage, 'Go straight');
+      expect(strings.labelLeftEdge, 'Left edge');
+      expect(strings.labelRightEdge, 'Right edge');
+      expect(strings.leftEdgeMessage, "Move to the right. You're at the edge");
+      expect(strings.rightEdgeMessage, "Move to the left. You're at the edge");
+      expect(strings.edgeTurnedMessage, 'Keep going');
       expect(
         strings.enteredCrosswalkMessage,
         'You have entered the crosswalk.',

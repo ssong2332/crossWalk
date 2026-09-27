@@ -33,7 +33,17 @@ class Classifier {
   // 이 순서를 "보기 편한" 순서로 바꾸면 로짓이 엉뚱한 라벨에 매핑되며
   // 에러 없이 조용히 오작동한다(T42에서 실제로 겪은 함정).
   // train/train_model.py가 학습 시작 시 class_to_idx를 assert로 검사한다.
-  static const _labels = ['none', 'approach', 'front', 'left', 'right'];
+  //
+  // T103(2026-09-27): 6-class — `5_crossed`(다 건넘)가 인덱스 5로 추가됐다.
+  // 폴더명 알파벳순이 그대로 이어지므로 앞 5개 인덱스는 바뀌지 않는다.
+  static const _labels = [
+    'none',
+    'approach',
+    'front',
+    'left',
+    'right',
+    'crossed',
+  ];
 
   /// T54: 라벨 동기화 검증용 노출.
   /// `assets/model/labels.json`이 익스포트 시점의 모델과 함께 생성되며,
@@ -104,6 +114,12 @@ class Classifier {
   // (argmax 자체가 틀린 경우라 어떤 임계값에서도 동일). 데이터·재학습 문제다.
   static const _approachThreshold = 0.55;
 
+  // T103 신설. crossed는 "횡단보도를 건넜습니다"를 말하게 하는 판정이라
+  // 말을 거는 쪽(이탈·approach)과 같은 0.55에서 시작한다. 6-class CV
+  // (`train/groupkfold_t102_c6.log`)도 이 값(분류 외 라벨 기본값)으로 쟀다:
+  // crossed recall 84.8% / precision 85.7%. 실기기 뒤 조정 가능.
+  static const _crossedThreshold = 0.55;
+
   /// T73: 실측으로 정한 값이므로 테스트로 고정한다. 이 상수가 조용히
   /// 바뀌면 판정 성향 전체가 달라지는데 에러는 나지 않는다.
   @visibleForTesting
@@ -111,6 +127,7 @@ class Classifier {
     'front': _frontThreshold,
     'none': _noneThreshold,
     'approach': _approachThreshold,
+    'crossed': _crossedThreshold,
     'deviation': _deviationThreshold,
   };
 
@@ -239,6 +256,7 @@ class Classifier {
       'front' => _frontThreshold,
       'none' => _noneThreshold,
       'approach' => _approachThreshold,
+      'crossed' => _crossedThreshold,
       _ => _deviationThreshold,
     };
     if (conf < threshold) return null;

@@ -57,11 +57,21 @@ class AppStrings {
   // T51: 5-class 체계에서 신설된 `approach`(인도 위인데 앞에 진입할 횡단보도가
   // 보이는 상태)의 화면 표시용 라벨.
   final String labelApproach;
+  // T103: 6-class의 `crossed`(다 건넘, 연석·점자블록 앞) 화면 라벨.
+  final String labelCrossed;
+  // T103: 줄무늬 없는 구간에서 "횡단 중"을 유지할 때(CrossingHold)의 화면 라벨.
+  final String labelCrossingHold;
 
   // T63: 심한 이탈 전용 화면 라벨. 색만으로 강도를 구분하지 않기 위한
   // 텍스트 겹침(redundancy) — 색각이상 사용자에게도 강도가 전달되도록.
   final String labelLeftSevere;
   final String labelRightSevere;
+
+  // T102: 횡단보도 좌우 끝(위치 모델 |p|>=1.0)일 때의 화면 라벨. 끝 규칙은
+  // 몸이 틀어진 것이 아니라 **서 있는 위치**를 알리는 것이므로 "틀어짐" 대신
+  // 위치를 말한다(사용자 확정 2026-09-27).
+  final String labelLeftEdge;
+  final String labelRightEdge;
 
   // Claude Design 1d/1f: 무판정은 6번째 상태다. 전체의 약 6%로 실제로 자주
   // 발생하며, 숨기면 "모르는 것을 아는 척"이 된다.
@@ -98,6 +108,15 @@ class AppStrings {
   // 처음부터 똑바로 가고 있을 때는 말하지 않는다 — 이탈에서 회복했을 때만
   // 1회 발화한다 (FeedbackService.decideRecoveryMessage).
   final String recoveredMessage;
+
+  // T102: 끝 전용 음성(사용자 확정 B안). 행동을 먼저 말하고 반대 방향 단어는
+  // 쓰지 않는다 — 차도 위에서 첫 단어가 "왼쪽"이면 반대로 반응할 수 있다.
+  final String leftEdgeMessage;
+  final String rightEdgeMessage;
+  // T102: 끝인데 이미 중앙 쪽으로 틀어 직진 판정(T100 a안)일 때 1회 확인.
+  // "직진하세요"(recoveredMessage)는 줄무늬에 다시 나란히 서라는 뜻으로
+  // 들려 끝에 머물게 할 수 있어 쓰지 않는다.
+  final String edgeTurnedMessage;
 
   // 상태 전이 안내 — 반복 경고가 아니라 "구간이 바뀌었다"는 1회성 사실.
   final String enteredCrosswalkMessage;
@@ -215,8 +234,12 @@ class AppStrings {
     required this.labelRight,
     required this.labelNone,
     required this.labelApproach,
+    required this.labelCrossed,
+    required this.labelCrossingHold,
     required this.labelLeftSevere,
     required this.labelRightSevere,
+    required this.labelLeftEdge,
+    required this.labelRightEdge,
     required this.labelNoCall,
     required this.noCallBody,
     required this.cameraEntryAnnouncement,
@@ -238,6 +261,9 @@ class AppStrings {
     required this.rightDeviationMessageMild,
     required this.rightDeviationMessageSevere,
     required this.recoveredMessage,
+    required this.leftEdgeMessage,
+    required this.rightEdgeMessage,
+    required this.edgeTurnedMessage,
     required this.enteredCrosswalkMessage,
     required this.crossedCrosswalkMessage,
     required this.approachAheadMessage,
@@ -295,8 +321,12 @@ class AppStrings {
     labelRight: '오른쪽으로 틀어짐',
     labelNone: '횡단보도 없음',
     labelApproach: '앞에 횡단보도',
+    labelCrossed: '다 건넘',
+    labelCrossingHold: '횡단 중',
     labelLeftSevere: '왼쪽으로 크게 벗어남',
     labelRightSevere: '오른쪽으로 크게 벗어남',
+    labelLeftEdge: '왼쪽 끝',
+    labelRightEdge: '오른쪽 끝',
     labelNoCall: '판정 없음',
     noCallBody: '확신이 낮습니다',
     cameraEntryAnnouncement: '횡단보도 안내. 보조 도구입니다. 안내는 음성과 진동으로 나갑니다.',
@@ -319,6 +349,9 @@ class AppStrings {
     rightDeviationMessageMild: '왼쪽으로 이동하세요',
     rightDeviationMessageSevere: '즉시 왼쪽으로 이동하세요',
     recoveredMessage: '직진하세요',
+    leftEdgeMessage: '오른쪽으로 이동하세요. 가장자리입니다',
+    rightEdgeMessage: '왼쪽으로 이동하세요. 가장자리입니다',
+    edgeTurnedMessage: '그대로 가세요',
     enteredCrosswalkMessage: '횡단보도에 진입했습니다.',
     crossedCrosswalkMessage: '횡단보도를 건넜습니다.',
     approachAheadMessage: '앞에 횡단보도가 있습니다.',
@@ -369,6 +402,10 @@ class AppStrings {
       // decideMessage) 이 문구는 TTS로 발화되지 않는다. 이 맵은 화면 표시용이며,
       // 다른 클래스와 형식을 맞추기 위해 항목을 둔다.
       'approach': '',
+      // T103: crossed는 음성 안내가 전이 순간 한 번뿐이라 보조 문구가 없다.
+      'crossed': '',
+      // T103: hold 동안은 방향 안내를 멈추므로 보조 문구가 없다.
+      'hold': '',
     },
     cameraGuidanceDisclaimer: '흰지팡이나 안내견을 대신하지 않습니다.',
     warnLowLightTitle: '조도가 낮습니다',
@@ -392,8 +429,12 @@ class AppStrings {
     labelRight: 'Veering right',
     labelNone: 'No crosswalk detected',
     labelApproach: 'Crosswalk ahead',
+    labelCrossed: 'Crossed',
+    labelCrossingHold: 'Crossing',
     labelLeftSevere: 'Veering left sharply',
     labelRightSevere: 'Veering right sharply',
+    labelLeftEdge: 'Left edge',
+    labelRightEdge: 'Right edge',
     labelNoCall: 'No call',
     noCallBody: 'Confidence is low',
     cameraEntryAnnouncement:
@@ -421,6 +462,9 @@ class AppStrings {
     rightDeviationMessageMild: 'Move to the left',
     rightDeviationMessageSevere: 'Move left now',
     recoveredMessage: 'Go straight',
+    leftEdgeMessage: "Move to the right. You're at the edge",
+    rightEdgeMessage: "Move to the left. You're at the edge",
+    edgeTurnedMessage: 'Keep going',
     enteredCrosswalkMessage: 'You have entered the crosswalk.',
     crossedCrosswalkMessage: 'You have crossed the crosswalk.',
     approachAheadMessage: 'Crosswalk ahead.',
@@ -478,6 +522,10 @@ class AppStrings {
       // feedback_service.dart decideMessage), so this string is never spoken.
       // It exists for on-screen display and parity with the other classes.
       'approach': '',
+      // T103: crossed는 음성 안내가 전이 순간 한 번뿐이라 보조 문구가 없다.
+      'crossed': '',
+      // T103: hold 동안은 방향 안내를 멈추므로 보조 문구가 없다.
+      'hold': '',
     },
     cameraGuidanceDisclaimer:
         'This does not replace a white cane or a guide dog.',
