@@ -623,6 +623,97 @@ void main() {
     );
   });
 
+  group('FeedbackService — 끝 안내 (T102)', () {
+    final t0 = DateTime(2026, 9, 27, 12, 0, 0);
+
+    test('끝이면 끝 전용 문구(B안)를 낸다', () {
+      expect(FeedbackService().decideMessage('left', 20, t0, atEdge: true),
+          '오른쪽으로 이동하세요. 가장자리입니다');
+      expect(FeedbackService().decideMessage('right', -20, t0, atEdge: true),
+          '왼쪽으로 이동하세요. 가장자리입니다');
+    });
+
+    test('끝이 아니면 기존 문구 그대로', () {
+      expect(FeedbackService().decideMessage('left', mild, t0), leftMild);
+      expect(FeedbackService().decideMessage('right', -severe, t0),
+          rightSevere);
+    });
+
+    test('같은 방향이라도 일반 이탈 -> 끝으로 바뀌면 쿨다운 안에서도 즉시 안내', () {
+      final service = FeedbackService();
+      expect(service.decideMessage('left', mild, t0), leftMild);
+      expect(
+        service.decideMessage('left', 20, t0.add(const Duration(seconds: 1)),
+            atEdge: true),
+        '오른쪽으로 이동하세요. 가장자리입니다',
+      );
+      // 끝이 유지되면 쿨다운이 다시 걸린다.
+      expect(
+        service.decideMessage('left', 20, t0.add(const Duration(seconds: 2)),
+            atEdge: true),
+        isNull,
+      );
+    });
+
+    test('끝에서 이미 튼 front면 회복 안내("직진하세요")는 침묵', () {
+      expect(
+        FeedbackService()
+            .decideRecoveryMessage('left', 'front', t0, atEdge: true),
+        isNull,
+      );
+    });
+
+    test('끝에서 이미 튼 front로 들어올 때 "그대로 가세요" 1회', () {
+      final service = FeedbackService();
+      expect(service.decideEdgeTurnedMessage('left', t0, atEdge: true),
+          isNull);
+      expect(
+        service.decideEdgeTurnedMessage(
+            'front', t0.add(const Duration(seconds: 1)),
+            atEdge: true),
+        '그대로 가세요',
+      );
+      // 머무는 동안은 반복하지 않는다(쿨다운이 지나도).
+      expect(
+        service.decideEdgeTurnedMessage(
+            'front', t0.add(const Duration(seconds: 10)),
+            atEdge: true),
+        isNull,
+      );
+    });
+
+    test('중앙에서의 front는 "그대로 가세요"를 내지 않는다', () {
+      expect(
+        FeedbackService().decideEdgeTurnedMessage('front', t0, atEdge: false),
+        isNull,
+      );
+    });
+
+    test('경계에서 떨리면 3초 안의 재진입은 침묵, 이후 재진입은 안내', () {
+      final service = FeedbackService();
+      expect(service.decideEdgeTurnedMessage('front', t0, atEdge: true),
+          '그대로 가세요');
+      service.decideEdgeTurnedMessage(
+          'left', t0.add(const Duration(seconds: 1)),
+          atEdge: true);
+      expect(
+        service.decideEdgeTurnedMessage(
+            'front', t0.add(const Duration(seconds: 2)),
+            atEdge: true),
+        isNull,
+      );
+      service.decideEdgeTurnedMessage(
+          'left', t0.add(const Duration(seconds: 5)),
+          atEdge: true);
+      expect(
+        service.decideEdgeTurnedMessage(
+            'front', t0.add(const Duration(seconds: 6)),
+            atEdge: true),
+        '그대로 가세요',
+      );
+    });
+  });
+
   // T40: OnboardingScreen's general-purpose read-aloud, reusing _speak().
   group('FeedbackService — speak (T40)', () {
     test('drives the same isSpeaking generation guard as alert()', () async {

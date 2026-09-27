@@ -95,6 +95,15 @@ class DirectionResolver {
     return null;
   }
 
+  /// T102: 최종 상태 [resolvedLabel]이 끝 규칙에서 나왔는가(음성·화면 문구용).
+  ///   left/right + 끝 → 끝 안내("…이동하세요. 가장자리입니다" / "왼쪽 끝"),
+  ///   front + 끝 → 이미 중앙 쪽으로 틀었음("그대로 가세요").
+  ///   none/approach면 옛 위치값이 남아 있어도 false.
+  static bool isEdge(
+          String resolvedLabel, double? position, double? angleDegrees) =>
+      isOnCrosswalk(resolvedLabel) &&
+      edgeSteerAngle(position, angleDegrees) != null;
+
   /// 분류기가 "횡단보도 위"라고 본 상태인가.
   static bool isOnCrosswalk(String label) =>
       label == 'front' || label == 'left' || label == 'right';

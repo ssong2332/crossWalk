@@ -133,4 +133,26 @@ void main() {
       }
     });
   });
+
+  group('DirectionResolver.isEdge (T102)', () {
+    test('끝 규칙에서 나온 left/right와 이미 튼 front는 끝', () {
+      expect(DirectionResolver.isEdge('left', -1.2, -3), isTrue); // 실기기 #3
+      expect(DirectionResolver.isEdge('right', 1.2, 3), isTrue);
+      expect(DirectionResolver.isEdge('front', -1.4, -25), isTrue); // 실기기 #4
+      expect(DirectionResolver.isEdge('front', 1.4, 25), isTrue);
+    });
+
+    test('끝이 아니거나 위치가 없으면 끝이 아니다', () {
+      for (final p in <double?>[null, 0, 0.9, -0.9]) {
+        expect(DirectionResolver.isEdge('left', p, 40), isFalse);
+        expect(DirectionResolver.isEdge('front', p, 0), isFalse);
+      }
+    });
+
+    test('none/approach는 옛 위치값이 끝이어도 끝이 아니다', () {
+      for (final label in ['none', 'approach']) {
+        expect(DirectionResolver.isEdge(label, -2, 0), isFalse);
+      }
+    });
+  });
 }
