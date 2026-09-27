@@ -434,12 +434,16 @@ class _CameraScreenState extends State<CameraScreen>
       // T98: 끝이면 위치 규칙이 각도보다 앞선다(DirectionResolver 표).
       final label = DirectionResolver.resolve(result.label, _arrowStripeAngle,
           position: _smoothedPosition);
+      // T102: 끝 규칙에서 나온 상태면 끝 전용 음성·화면 문구를 쓴다.
+      final atEdge = DirectionResolver.isEdge(
+          label, _smoothedPosition, _arrowStripeAngle);
       // T84: 강도 판정용 각도 — 화살표와 같은 보정값을 넘긴다.
       _feedback.alert(label, result.confidence,
-          angleDegrees: _effectiveAngle);
+          angleDegrees: _effectiveAngle, atEdge: atEdge);
       if (mounted) {
         setState(() {
           _statusLabel = _labelText[label] ?? label;
+          _atEdge = atEdge;
           // 신뢰도는 분류기가 낸 값 그대로다 — 방향은 각도가 정하므로 이
           // 숫자는 "횡단보도 위/앞/없음" 판정에 대한 확신이다.
           _confidence = result.confidence;
@@ -517,17 +521,26 @@ class _CameraScreenState extends State<CameraScreen>
           position: _smoothedPosition);
       if (next != _guidanceLabel) relabel = next;
     }
-    if (relabel != null) {
-      _feedback.alert(relabel, _confidence,
+    // T102: 끝 여부는 상태 라벨이 그대로여도 바뀔 수 있다(예: left가 일반
+    // 이탈에서 끝 규칙으로). 그때도 끝 안내가 나가도록 alert를 부른다.
+    final atEdge = DirectionResolver.isEdge(
+        relabel ?? _guidanceLabel, _smoothedPosition, smoothed);
+    final edgeChanged = atEdge != _atEdge &&
+        DirectionResolver.isOnCrosswalk(_guidanceLabel) &&
+        !_noCall;
+    if (relabel != null || edgeChanged) {
+      _feedback.alert(relabel ?? _guidanceLabel, _confidence,
           angleDegrees:
               DirectionResolver.edgeSteerAngle(_smoothedPosition, smoothed) ??
-                  smoothed);
+                  smoothed,
+          atEdge: atEdge);
     }
 
     if (mounted) {
       setState(() {
         _lastRawAngle = raw;
         _arrowStripeAngle = smoothed;
+        _atEdge = atEdge;
         if (relabel != null) {
           _statusLabel = _labelText[relabel] ?? relabel;
           _guidanceLabel = relabel;
@@ -642,6 +655,10 @@ class _CameraScreenState extends State<CameraScreen>
       StripeAngleSmoother(minConfidence: 0.0, smoothingFactor: 0.6);
   double? _smoothedPosition;
 
+  // T102: 지금 상태가 끝 규칙에서 나왔는가. 화면 제목을 "왼쪽 끝"/"오른쪽 끝"
+  // 으로 바꾸는 데 쓴다(음성은 alert(atEdge:)가 따로 받는다).
+  bool _atEdge = false;
+
   /// 화살표·강도 판정에 실제로 쓰는 각도: 끝이면 중앙 쪽 ±20, 아니면 각도 모델값.
   double? get _effectiveAngle =>
       DirectionResolver.edgeSteerAngle(_smoothedPosition, _arrowStripeAngle) ??
@@ -674,16 +691,24 @@ class _CameraScreenState extends State<CameraScreen>
           position: smoothed);
       if (next != _guidanceLabel) relabel = next;
     }
-    if (relabel != null) {
-      _feedback.alert(relabel, _confidence,
+    // T102: 각도 경로와 같은 이유로, 라벨이 그대로여도 끝 여부가 바뀌면 alert.
+    final atEdge = DirectionResolver.isEdge(
+        relabel ?? _guidanceLabel, smoothed, _arrowStripeAngle);
+    final edgeChanged = atEdge != _atEdge &&
+        DirectionResolver.isOnCrosswalk(_guidanceLabel) &&
+        !_noCall;
+    if (relabel != null || edgeChanged) {
+      _feedback.alert(relabel ?? _guidanceLabel, _confidence,
           angleDegrees:
               DirectionResolver.edgeSteerAngle(smoothed, _arrowStripeAngle) ??
-                  _arrowStripeAngle);
+                  _arrowStripeAngle,
+          atEdge: atEdge);
     }
 
     if (mounted) {
       setState(() {
         _smoothedPosition = smoothed;
+        _atEdge = atEdge;
         if (relabel != null) {
           _statusLabel = _labelText[relabel] ?? relabel;
           _guidanceLabel = relabel;
@@ -1005,9 +1030,13 @@ class _CameraScreenState extends State<CameraScreen>
         return _statusLabel;
       // T63: 심한 이탈은 별도 라벨을 쓴다 — 색만으로 강도를 구분하지 않기
       // 위한 텍스트 겹침. 화면은 관측형 문장을 유지한다(1g).
+      // T102: 끝 규칙에서 나온 이탈은 "틀어짐"이 아니라 서 있는 위치를 말한다.
+      // 끝 각도(±20)는 심함 기준(25) 밑이라 강도 라벨보다 먼저 본다.
       case 'left':
+        if (_atEdge) return _strings.labelLeftEdge;
         return _severe ? _strings.labelLeftSevere : _strings.labelLeft;
       case 'right':
+        if (_atEdge) return _strings.labelRightEdge;
         return _severe ? _strings.labelRightSevere : _strings.labelRight;
       default:
         return _labelText[_fieldState] ?? _statusLabel;
