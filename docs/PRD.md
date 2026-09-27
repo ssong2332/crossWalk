@@ -1,7 +1,7 @@
 # PRD — crosswalk_app (횡단보도 이탈 감지)
 
 Owner: planner (see AGENTS.md). Others read-only.
-Last updated: 2026-08-22 (5-class 클래스 정의 사용자 확정 — §클래스 정의 절 신설, Open Q #16 추가; 후속 태스크 T50/T51/T52 등록). Also 2026-08-22 (data-leak discovery + leak-free GroupKFold re-measurement; corrected the prior "TARGET NOT MET" assertion to "판정 불가"). Prior: 2026-07-18 (added Open Q #15 — chest-mount camera tilt/height, from Architecture §16.6 Open Question D); 2026-07-16. Basis: code inspection of `crosswalk_app/lib/`, `crosswalk_app/pubspec.yaml`, `.github/workflows/build_apk.yml`, `train/`, `model/`, and git history (`develop`).
+Last updated: 2026-09-28 (§보행 보조 확장 범위 신설 — 사용자 방향 결정, 데이터 확보 상태 기록; 기능 우선순위는 미결). Prior: 2026-08-22 (5-class 클래스 정의 사용자 확정 — §클래스 정의 절 신설, Open Q #16 추가; 후속 태스크 T50/T51/T52 등록). Also 2026-08-22 (data-leak discovery + leak-free GroupKFold re-measurement; corrected the prior "TARGET NOT MET" assertion to "판정 불가"). Prior: 2026-07-18 (added Open Q #15 — chest-mount camera tilt/height, from Architecture §16.6 Open Question D); 2026-07-16. Basis: code inspection of `crosswalk_app/lib/`, `crosswalk_app/pubspec.yaml`, `.github/workflows/build_apk.yml`, `train/`, `model/`, and git history (`develop`).
 
 > **2026-08-22 정정 고지 (중요):** 2026-07-17 / 2026-08-02 / 2026-08-21 측정값은 모두 **데이터 누수 위에서 나온 값**으로 신뢰할 수 없습니다. 이력 보존을 위해 삭제하지 않고 남기되, 모두 "누수 있음"으로 표시했습니다. 현재 권위 있는 값은 2026-08-22 GroupKFold 측정(§Model Accuracy)뿐입니다.
 
@@ -252,6 +252,44 @@ T55의 헤드 분리로 이것이 수치로 확인됐다 — 방향 head 91.2% v
 - 보행 1.4 m/s에 현재 판정 확정까지 약 1초(1.4m 이동)다. 장애물 경고는 더 빨라야 하는데
   검출기를 얹으면 프레임당 비용이 늘어 오히려 느려진다(**추정** 2~5배).
 
+## 보행 보조 확장 범위 (2026-09-28 — 방향 확정, 기능 우선순위 미결)
+
+### 금지 (이 절의 다른 내용보다 우선)
+- 아래 후보 기능 중 **사용자가 우선순위를 확정하지 않은 것은 착수하지 않는다.**
+- 이탈 경고(현재 기능)의 성능·지연을 떨어뜨리는 확장은 하지 않는다 — 추가 모델은 실기기 측정으로 비용을 확인한 뒤에만 넣는다.
+- 새 음성 안내는 `docs/AudioPolicy.md` 우선순위표에 자리를 정하기 전에 넣지 않는다.
+
+### 무엇이 확정되었나
+| 항목 | 상태 | 근거 |
+|---|---|---|
+| 앱을 횡단보도 이탈 감지 + **시각장애인 보행 보조**로 확장 | **확정 (방향)** — 사용자, 2026-09-28 | 이 절 |
+| 앱 식별자 `io.github.ssong2332.walkguide` | 이미 확장을 전제로 확정 | §확장 가능성(2026-08-24), T59 |
+| 현재 빌드 범위 | **변경 없음** — 아래 기능은 모두 후보 | §Out of Scope |
+
+### 확보한 데이터 — AI Hub "인도보행 영상" (dataSetSn=189, 2019 구축, 2021-03 갱신)
+| 묶음 | 전체 규모(공개 페이지) | 보유 (`aihub_raw/`) | 확인한 내용 |
+|---|---|---|---|
+| Surface Masking (노면 폴리곤) | 5만 장, 5개 파일 약 50GB | **Surface_1~5 전부: 46,399장** (9,558 / 9,637 / 9,452 / 8,960 / 8,792) | 라벨: sidewalk·roadway·alley·bike_lane·braille_guide_blocks·caution_zone(계단·맨홀·그레이팅·보수구역·가로수영역)·crosswalk 속성. 시점은 폰처럼 **아래를 내려다봄**. T94·T96·T103은 Surface_1만 사용 |
+| Bounding Box (장애물 29종) | 35만 장, 30개 파일 약 300GB(추정) | **Bbox_25·27: 6,965장, 박스 39,592개** (이미지 PNG 1920×1080, ZED 스테레오 좌측 영상) | 아래 표 |
+| Polygon (장애물 윤곽) | 10만 장, 약 134GB | 없음 | 경고 목적에는 박스로 충분하다고 판단(추정) |
+| Depth (스테레오 disparity) | 17만 장, 약 122GB | 없음 | 카메라 2대 전제 — 폰 1대에 바로 쓸 수 없음 |
+
+Bbox_25·27 실측(2026-09-28, 박스 수 상위): tree_trunk 7,552 / person 4,462 / car 5,434 / pole 4,895 / bollard 4,140 / traffic_light 2,714 / traffic_sign 2,659 / truck 1,946 / movable_signage 1,034 / bicycle 834 / barricade 892 … **scooter 13, wheelchair 13, dog 11** (드묾). 가림·잘림(occluded) 표시가 박스의 **52%**(20,702/39,592).
+
+Bbox 시점 특성(실측, 박스 아래끝 y 위치 중앙값 = 화면 높이의 0.34~0.45): 카메라가 **수평으로 앞을 봐서** 물체 대부분이 지평선 근처 = **멀리 있음**. bollard 박스 높이 중앙값 화면의 8%, 18%는 5% 미만. 가까운 장애물 예시는 적다. 지면의 잡동사니(쓰레기 등)는 라벨 대상이 아니다(샘플 시트 `train/review_t105_bbox/bbox_sample.jpg`).
+
+### 후보 기능 (우선순위는 사용자 결정 대기 — Open Q #19)
+| 후보 | 쓸 데이터 | 필요한 새 모델 | 알려진 위험 |
+|---|---|---|---|
+| A. 앞 장애물 경고 (기둥·볼라드·가로수·사람·자전거·입간판) | Bbox | 물체 검출기 (현재 앱엔 없음) | 거리 모름(2D). Bbox 시점은 수평·원거리 위주라 가슴 착용 근거리와 도메인 격차. 폰 CPU에 4번째 모델 → 지연·배터리(Open Q #11: 1시간 10% 이내) |
+| B. 점자블록 따라가기 / 인도→차도 이탈 | Surface 1~5 | 노면 분할 모델 | Surface는 1920×1080 가로 — 앱은 세로(T94에서 중앙 크롭으로 대응한 전례). 점자블록 파손·가림 |
+| C. 계단·맨홀·그레이팅·파손 노면 경고 | Surface (caution_zone) | B와 같은 분할 모델 | 빈도 높은 경고가 오디오 채널을 점유 |
+| D. 보행 신호(빨강/초록) 인식 | **이 데이터셋에 없음** (traffic_light는 물체 박스뿐, 신호 상태 라벨 없음) | 신호 상태 분류기 | 위를 봐야 함(Open Q #18). 데이터 출처 미정(Open Q #20) |
+| E. 사선 횡단보도 방향 보정 | Surface의 crosswalk 영역 (Surface_1 257장 중 사선 후보 12장, `train/review_t104_skew/`) + 직접 촬영 | 기존 각도 모델 재학습 | 사선 예시가 적음 — 직접 촬영이 주 수단 |
+
+### 2026-08-24 예비 판단과의 충돌 (해소 필요)
+§확장 가능성의 예비 판단은 "흰지팡이가 찾는 지면 장애물(연석·볼라드·계단)은 가치가 낮고, 가치는 머리 높이·접근 물체에 있다"였다. Bbox 데이터의 다수 클래스(bollard·pole·tree_trunk)는 **지팡이가 찾는 쪽**이고, 머리 높이 장애물(간판·나뭇가지) 클래스는 없다. 2026-09-28 대화에서 Claude가 "볼라드 경고 1순위"를 제안한 것은 이 예비 판단과 어긋난다 — **어느 쪽을 따를지는 사용자 결정**(Open Q #19). 근거가 되는 사용자 연구(시각장애인이 실제로 원하는 경고)는 아직 없다.
+
 ## Out of Scope (current build)
 - iOS build/signing (CI produces APK only). NOTE: iOS is now an in-scope target platform (Open Q #1 ANSWERED 2026-07-17), but no iOS build/signing pipeline exists yet — building it is tracked as T33, not part of the current build.
 - GPS/location, traffic-signal detection, obstacle detection.
@@ -296,3 +334,5 @@ T55의 헤드 분리로 이것이 수치로 확인됐다 — 방향 head 91.2% v
 | 16 | 클래스 체계 — 기존 `front`가 "횡단보도 위 직진"과 "인도에서 대기 중"을 섞고 있는데, 이를 어떻게 나눌 것인가? | **ANSWERED (user, 2026-08-22): 5-class 체계로 확정** — `front` / `left` / `right` / `approach`(신설) / `none`. 정의·판정 기준·결정 근거(Fisher 정확검정 p=0.00088, 오즈비 20.8)·앱 동작(`approach`는 `none`과 동일하게 침묵)은 위 **§클래스 정의 (2026-08-22 사용자 확정)** 에 기록됨. 판정 기준은 촬영 당시 실제 위치가 아니라 **사진만으로 판정 가능한 기준**을 쓰기로 확정. 남은 작업은 결정이 아니라 실행 — 재라벨링 T50, 코드 대응 T51. **주의: 이 답변은 Open Q #3a(front 오경보 허용치)를 해소하지 않음** — #3a는 여전히 OPEN. |
 | 17 | 하드웨어 기기와 스마트폰 앱의 역할 분담 — 추론은 어디서 도는가(기기 내장 / 폰), 둘 사이 통신은 무엇인가(BLE/Wi-Fi/유선), 모델을 공유하는가 아니면 각자 최적화하는가? | open (2026-08-23 제기). 하드웨어가 구상 단계라지금 답할 수 없으나, **카메라 모듈·렌즈 화각·장착 각도/높이보다 먼저 답할 필요는 없다.** 데이터 수집 계획을 좌우하는 것은 카메라 사양이므로 그쪽이 선행이다. 이 질문은 아키텍처 문서 재작성 시점의 선행 조건으로 기록해 둔다. |
 | 18 | 하드웨어 카메라 사양(모듈·렌즈 화각·장착 각도/높이) — 무엇으로 확정하는가? | open (2026-08-23 제기). **대규모 데이터 수집을 막고 있는 실질적 병목.** 카메라가 정해지기 전에 그 기기용 데이터를 수백 장 모으면 화각이 다를 경우 노동이 버려진다. 권고 순서: (1) 카메라·렌즈·장착 각도 확정 -> (2) 그 카메라로 20~30장 시험 촬영해 좌우 판별이 사람 눈으로 가능한지 확인 -> (3) 본격 수집. 앱용 폰 데이터 수집은 이 질문과 무관하게 계속 유효하다(앱이 병행 제품이므로). |
+| 19 | 보행 보조 확장 후보(A 장애물 / B 점자블록·인도 이탈 / C 주의구역 / D 보행 신호 / E 사선 횡단보도) 중 무엇을 어떤 순서로 하는가? 특히 지팡이가 찾는 지면 장애물(볼라드 등)을 경고 대상에 넣는가? | open (2026-09-28 제기). §보행 보조 확장 범위. 데이터는 A·B·C용이 확보됨(Surface 1~5, Bbox 2개 파일). |
+| 20 | 보행 신호 상태(빨강/초록) 학습 데이터를 어디서 구하는가? | open (2026-09-28 제기). AI Hub 인도보행 영상에는 없음. 다른 공개 데이터셋 존재 여부는 **미확인**. |
