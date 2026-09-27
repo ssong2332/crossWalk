@@ -72,7 +72,7 @@ Surface_1,Surface_010,MP_SEL_SUR_001091.jpg,1,linear
 Surface_1,Surface_010,MP_SEL_SUR_001092.jpg,1,linear
 Surface_1,Surface_010,MP_SEL_SUR_001093.jpg,1,dot
 Surface_1,Surface_010,MP_SEL_SUR_001101.jpg,1,dot
-Surface_1,Surface_010,MP_SEL_SUR_001111.jpg,0,none
+Surface_1,Surface_010,MP_SEL_SUR_001111.jpg,0,dot
 Surface_1,Surface_010,MP_SEL_SUR_001120.jpg,1,linear
 Surface_1,Surface_010,MP_SEL_SUR_001134.jpg,1,linear
 Surface_1,Surface_010,MP_SEL_SUR_001135.jpg,1,linear
@@ -585,7 +585,7 @@ Surface_1,Surface_104,MP_SEL_SUR_008108.jpg,1,linear
 Surface_1,Surface_104,MP_SEL_SUR_008114.jpg,1,dot
 Surface_1,Surface_104,MP_SEL_SUR_008127.jpg,1,dot
 Surface_1,Surface_105,MP_SEL_SUR_008145.jpg,1,linear
-Surface_1,Surface_105,MP_SEL_SUR_008151.jpg,0,none
+Surface_1,Surface_105,MP_SEL_SUR_008151.jpg,0,dot
 Surface_1,Surface_105,MP_SEL_SUR_008158.jpg,1,linear
 Surface_1,Surface_105,MP_SEL_SUR_008159.jpg,1,linear
 Surface_1,Surface_105,MP_SEL_SUR_008160.jpg,1,linear
@@ -1078,7 +1078,7 @@ Surface_2,Surface_219,MP_SEL_SUR_013007.jpg,1,linear
 Surface_2,Surface_219,MP_SEL_SUR_013009.jpg,1,linear
 Surface_2,Surface_220,MP_SEL_SUR_015589.jpg,1,linear
 Surface_2,Surface_220,MP_SEL_SUR_015590.jpg,1,dot
-Surface_2,Surface_220,MP_SEL_SUR_015591.jpg,0,none
+Surface_2,Surface_220,MP_SEL_SUR_015591.jpg,0,dot
 Surface_2,Surface_220,MP_SEL_SUR_015600.jpg,1,dot
 Surface_2,Surface_220,MP_SEL_SUR_015605.jpg,1,dot
 Surface_2,Surface_220,MP_SEL_SUR_015608.jpg,1,dot
@@ -1499,7 +1499,7 @@ Surface_2,Surface_295,MP_SEL_SUR_019276.jpg,1,linear
 Surface_2,Surface_295,MP_SEL_SUR_019279.jpg,1,linear
 Surface_2,Surface_295,MP_SEL_SUR_019282.jpg,1,linear
 Surface_2,Surface_295,MP_SEL_SUR_019289.jpg,1,linear
-Surface_2,Surface_296,MP_SEL_SUR_019299.jpg,0,none
+Surface_2,Surface_296,MP_SEL_SUR_019299.jpg,0,dot
 Surface_2,Surface_296,MP_SEL_SUR_019301.jpg,1,dot
 Surface_2,Surface_296,MP_SEL_SUR_019310.jpg,1,dot
 Surface_2,Surface_296,MP_SEL_SUR_019325.jpg,1,linear
@@ -1672,7 +1672,7 @@ Surface_3,Surface_327,MP_SEL_SUR_020247.jpg,1,dot
 Surface_3,Surface_327,MP_SEL_SUR_020248.jpg,1,dot
 Surface_3,Surface_327,MP_SEL_SUR_020253.jpg,1,dot
 Surface_3,Surface_327,MP_SEL_SUR_020257.jpg,1,linear
-Surface_3,Surface_328,MP_SEL_SUR_022385.jpg,0,none
+Surface_3,Surface_328,MP_SEL_SUR_022385.jpg,0,dot
 Surface_3,Surface_328,MP_SEL_SUR_022387.jpg,1,linear
 Surface_3,Surface_328,MP_SEL_SUR_022388.jpg,1,dot
 Surface_3,Surface_328,MP_SEL_SUR_022401.jpg,1,linear
@@ -2236,7 +2236,7 @@ Surface_3,Surface_433,MP_SEL_SUR_028645.jpg,1,dot
 Surface_3,Surface_433,MP_SEL_SUR_028656.jpg,1,linear
 Surface_3,Surface_433,MP_SEL_SUR_028657.jpg,1,dot
 Surface_3,Surface_434,MP_SEL_SUR_028663.jpg,1,linear
-Surface_3,Surface_434,MP_SEL_SUR_028668.jpg,0,none
+Surface_3,Surface_434,MP_SEL_SUR_028668.jpg,0,dot
 Surface_3,Surface_434,MP_SEL_SUR_028687.jpg,1,linear
 Surface_3,Surface_434,MP_SEL_SUR_028701.jpg,1,linear
 Surface_3,Surface_434,MP_SEL_SUR_028706.jpg,1,dot
@@ -3049,7 +3049,7 @@ Surface_4,Surface_606,MP_SEL_SUR_038402.jpg,1,linear
 Surface_4,Surface_606,MP_SEL_SUR_038419.jpg,1,dot
 Surface_4,Surface_606,MP_SEL_SUR_038426.jpg,1,dot
 Surface_4,Surface_606,MP_SEL_SUR_038428.jpg,1,linear
-Surface_4,Surface_607,MP_SEL_SUR_038472.jpg,0,none
+Surface_4,Surface_607,MP_SEL_SUR_038472.jpg,0,dot
 Surface_4,Surface_608,MP_SEL_SUR_038490.jpg,1,dot
 Surface_4,Surface_608,MP_SEL_SUR_038502.jpg,1,linear
 Surface_4,Surface_608,MP_SEL_SUR_038519.jpg,1,dot
@@ -3565,7 +3565,7 @@ Surface_5,Surface_744,MP_SEL_SUR_044427.jpg,1,dot
 Surface_5,Surface_744,MP_SEL_SUR_044431.jpg,1,dot
 Surface_5,Surface_745,MP_SEL_SUR_044442.jpg,1,linear
 Surface_5,Surface_745,MP_SEL_SUR_044448.jpg,1,linear
-Surface_5,Surface_745,MP_SEL_SUR_044452.jpg,0,none
+Surface_5,Surface_745,MP_SEL_SUR_044452.jpg,0,dot
 Surface_5,Surface_745,MP_SEL_SUR_044474.jpg,1,dot
 Surface_5,Surface_746,MP_SEL_SUR_044495.jpg,1,dot
 Surface_5,Surface_746,MP_SEL_SUR_044529.jpg,1,linear

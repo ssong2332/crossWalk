@@ -17,6 +17,9 @@ AI Hub 라벨은 braille_guide_blocks 하나뿐(속성 normal/damaged)이라 두
   | 그 외                                  | 점형      |  (넓은 면, 또는 가로로 놓인 띠 = 연석 앞 경고선)
 사진 단위: 발 앞 영역과 겹치는(front >= 0.05) 영역들의 판정을 모은다
   | 선형만 -> linear | 점형만 -> dot | 둘 다 -> both |
+  | 발 앞 영역이 하나도 없음(각 영역의 발 앞 비중 < 5%) -> dot |
+    (사용자 결정 A안, 2026-09-28: 검수에서 자동 '없음' 8장 중 7장이 점형이었다 —
+     `review_t104_braille/type_review_log.csv`)
 기준값은 추정이다 — 검수 결과로 정확도를 재고 필요하면 바꾼다.
 
 출력: train/braille_type_auto_t104.csv (사진별), 표준출력 분포 요약.
@@ -86,7 +89,8 @@ def main():
                     types.append(t)
                     feats.append((elong, tilt, t))
                 kinds = set(types)
-                auto = ("both" if len(kinds) == 2 else next(iter(kinds))) if kinds else "none"
+                # A안: 발 앞 영역이 없으면 점형으로 본다(위 판정표 마지막 줄).
+                auto = ("both" if len(kinds) == 2 else next(iter(kinds))) if kinds else "dot"
                 rows.append({"part": part, "folder": folder, "name": im.get("name"),
                              "n_front_poly": len(types), "auto": auto})
     with open(OUT, "w", newline="", encoding="utf-8") as f:
