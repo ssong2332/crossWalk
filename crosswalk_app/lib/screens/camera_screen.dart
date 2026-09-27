@@ -62,6 +62,7 @@ class _CameraScreenState extends State<CameraScreen>
   final SegBenchModel _segBench = SegBenchModel();
   final FrameBench _frameBench = FrameBench();
   bool _benchEnabled = false;
+  String? _benchError;
   int _benchFrameCount = 0;
 
   // Reviewer fix (T40 follow-up): uses widget.feedback (normally the single
@@ -491,8 +492,11 @@ class _CameraScreenState extends State<CameraScreen>
         await _segBench.init();
       } catch (e) {
         debugPrint('[T104] 분할 측정 모델 로드 실패: $e');
+        // 실기기 release 빌드에선 로그가 안 보이므로 디버그 박스에 낸다.
+        if (mounted) setState(() => _benchError = '측정 모델 로드 실패: $e');
         return;
       }
+      _benchError = null;
       _frameBench.clear();
       _benchFrameCount = 0;
     }
@@ -1377,6 +1381,8 @@ class _CameraScreenState extends State<CameraScreen>
                             // T104: 길게 누르면 실기기 속도 측정을 켜고 끈다.
                             child: GestureDetector(
                               onLongPress: _toggleBench,
+                              // 글자 위뿐 아니라 박스 안 여백을 눌러도 받는다.
+                              behavior: HitTestBehavior.opaque,
                               child: DecoratedBox(
                               decoration: BoxDecoration(
                                 border: Border.all(
@@ -1393,7 +1399,8 @@ class _CameraScreenState extends State<CameraScreen>
                                   // 중 메인 화면에서 바로 보이게 한다
                                   // (설정 화면의 T45 값과 같은 출처).
                                   '${_stripeDebugText()}  ·  빌드 $buildShaShort'
-                                  '${_benchEnabled ? '\n${_frameBench.summary()}' : ''}',
+                                  '${_benchEnabled ? '\n${_frameBench.summary()}' : ''}'
+                                  '${_benchError != null ? '\n$_benchError' : ''}',
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     color: _colorTextDim.withValues(alpha: 0.8),
