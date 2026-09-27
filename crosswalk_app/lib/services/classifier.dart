@@ -179,8 +179,14 @@ class Classifier {
     return actualHash == expectedHash;
   }
 
+  /// T104(측정 전용): 직전 [processFrame] 호출이 스로틀을 통과해 실제로 모델을
+  /// 돌렸는가. 실기기 추론 시간 측정이 스로틀에 걸린 빈 호출을 빼는 데 쓴다.
+  bool get lastFrameProcessed => _lastFrameProcessed;
+  bool _lastFrameProcessed = false;
+
   ClassificationResult? processFrame(CameraImage cameraImage) {
-    if (!shouldProcessFrame()) return null;
+    _lastFrameProcessed = shouldProcessFrame();
+    if (!_lastFrameProcessed) return null;
 
     final input = _preprocessCamera(cameraImage);
     if (input == null) return null;

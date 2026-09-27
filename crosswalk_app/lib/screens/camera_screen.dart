@@ -12,6 +12,8 @@ import '../services/direction_resolver.dart';
 import '../services/feedback_service.dart';
 import '../services/angle_estimator.dart';
 import '../services/position_estimator.dart';
+import '../services/frame_bench.dart';
+import '../services/seg_bench_model.dart';
 import '../services/ground_projection.dart';
 import '../services/stripe_direction_estimator.dart';
 import '../localization/app_strings.dart';
@@ -51,6 +53,16 @@ class _CameraScreenState extends State<CameraScreen>
   // 보이는 상태에서만 돌린다(none이면 각도라는 개념 자체가 없다).
   final AngleEstimator _angleEstimator = AngleEstimator();
   final PositionEstimator _positionEstimator = PositionEstimator();
+
+  // T104(측정 전용): 노면 분할 모델 후보의 실기기 속도 측정. 디버그 박스를
+  // 길게 누르면 켜고 끈다(기본 꺼짐). 켜져 있는 동안 기존 모델 3개와 분할
+  // 후보의 소요 시간을 [FrameBench]에 모아 디버그 박스에 중앙값으로 보인다.
+  // 분할 후보는 10프레임 중 9번째에 돈다 — 분류기(0·5)·각도(3)·위치(7)와
+  // 겹치지 않게. 안내(문구·음성·진동)에는 아무 영향이 없다.
+  final SegBenchModel _segBench = SegBenchModel();
+  final FrameBench _frameBench = FrameBench();
+  bool _benchEnabled = false;
+  int _benchFrameCount = 0;
 
   // Reviewer fix (T40 follow-up): uses widget.feedback (normally the single
   // FeedbackService instance owned by CrosswalkApp and shared via
@@ -425,8 +437,13 @@ class _CameraScreenState extends State<CameraScreen>
   void _onFrame(CameraImage image) {
     if (_isProcessing) return;
     _isProcessing = true;
+    final frameSw = _benchEnabled ? (Stopwatch()..start()) : null;
 
+    final clsSw = _benchEnabled ? (Stopwatch()..start()) : null;
     final result = _classifier.processFrame(image);
+    if (clsSw != null && _classifier.lastFrameProcessed) {
+      _frameBench.add('cls', clsSw.elapsedMicroseconds / 1000);
+    }
     if (result != null) {
       // T87: 방향은 각도 모델이 정한다 — 분류기 결과는 "없음/앞/위"로만 쓴다.
       // 여기서 정한 상태를 문구·화살표·음성·진동이 전부 공유한다.
@@ -453,7 +470,33 @@ class _CameraScreenState extends State<CameraScreen>
     _updateAngleEstimate(image);
     _updatePositionEstimate(image);
 
+    if (_benchEnabled && _segBench.isReady) {
+      _benchFrameCount++;
+      if (_benchFrameCount % 10 == 9) {
+        final rot = _controller?.description.sensorOrientation ?? 90;
+        _segBench.runTimed(image, rot, _frameBench);
+      }
+    }
+    if (frameSw != null) {
+      _frameBench.add('frame', frameSw.elapsedMicroseconds / 1000);
+    }
+
     _isProcessing = false;
+  }
+
+  /// T104: 디버그 박스 길게 누르기 — 측정 켜기/끄기. 켤 때 분할 후보를 로드한다.
+  Future<void> _toggleBench() async {
+    if (!_benchEnabled) {
+      try {
+        await _segBench.init();
+      } catch (e) {
+        debugPrint('[T104] 분할 측정 모델 로드 실패: $e');
+        return;
+      }
+      _frameBench.clear();
+      _benchFrameCount = 0;
+    }
+    if (mounted) setState(() => _benchEnabled = !_benchEnabled);
   }
 
   // T70: 화살표가 따라갈 각도. **학습된 회귀 모델**(`AngleEstimator`)이 낸다.
@@ -495,7 +538,9 @@ class _CameraScreenState extends State<CameraScreen>
       // 넣으면 약 90도 계통 오차가 난다. sensorOrientation만큼 시계방향
       // 회전을 적용해 맞춘다(angle_estimator.dart의 sensorCoord).
       final rot = _controller?.description.sensorOrientation ?? 90;
+      final sw = _benchEnabled ? (Stopwatch()..start()) : null;
       raw = _angleEstimator.estimate(image, rot);
+      if (sw != null) _frameBench.add('angle', sw.elapsedMicroseconds / 1000);
     }
 
     if (kDebugMode) {
@@ -658,7 +703,9 @@ class _CameraScreenState extends State<CameraScreen>
     double? raw;
     if (DirectionResolver.isOnCrosswalk(_guidanceLabel) && !_noCall) {
       final rot = _controller?.description.sensorOrientation ?? 90;
+      final sw = _benchEnabled ? (Stopwatch()..start()) : null;
       raw = _positionEstimator.estimate(image, rot);
+      if (sw != null) _frameBench.add('pos', sw.elapsedMicroseconds / 1000);
     }
     if (kDebugMode) {
       debugPrint('[T98 position] label=$_guidanceLabel raw=$raw');
@@ -727,6 +774,7 @@ class _CameraScreenState extends State<CameraScreen>
     _classifier.dispose();
     _angleEstimator.dispose();
     _positionEstimator.dispose();
+    _segBench.dispose();
     // Reviewer fix (T40 follow-up): only dispose the instance this screen
     // created itself. A shared instance is owned by CrosswalkApp (see
     // main.dart) and must outlive this screen — e.g. across
@@ -1326,7 +1374,10 @@ class _CameraScreenState extends State<CameraScreen>
                         if (!dense && !_hasError)
                           Padding(
                             padding: const EdgeInsets.only(top: 10),
-                            child: DecoratedBox(
+                            // T104: 길게 누르면 실기기 속도 측정을 켜고 끈다.
+                            child: GestureDetector(
+                              onLongPress: _toggleBench,
+                              child: DecoratedBox(
                               decoration: BoxDecoration(
                                 border: Border.all(
                                   color: _colorTextDim.withValues(alpha: 0.4),
@@ -1341,7 +1392,8 @@ class _CameraScreenState extends State<CameraScreen>
                                   // T99: 어느 커밋의 APK인지 실기기 테스트
                                   // 중 메인 화면에서 바로 보이게 한다
                                   // (설정 화면의 T45 값과 같은 출처).
-                                  '${_stripeDebugText()}  ·  빌드 $buildShaShort',
+                                  '${_stripeDebugText()}  ·  빌드 $buildShaShort'
+                                  '${_benchEnabled ? '\n${_frameBench.summary()}' : ''}',
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     color: _colorTextDim.withValues(alpha: 0.8),
@@ -1349,6 +1401,7 @@ class _CameraScreenState extends State<CameraScreen>
                                   ),
                                 ),
                               ),
+                            ),
                             ),
                           ),
                         Padding(
