@@ -118,6 +118,15 @@ class AppStrings {
   // 들려 끝에 머물게 할 수 있어 쓰지 않는다.
   final String edgeTurnedMessage;
 
+  // T104: 노면 안내 음성(`docs/SurfaceGuidance.md`, 사용자 확정 2026-09-30).
+  // 선형 방향은 위치를 말한다("점자블록 오른쪽") — "오른쪽으로"는 횡단보도
+  // 이탈 경고와 같은 말이라 헷갈린다(Q2).
+  final String surfaceRoadMessage;
+  final String surfaceDotBlockMessage;
+  final String surfaceLinearRightMessage;
+  final String surfaceLinearLeftMessage;
+  final String surfaceLinearLostMessage;
+
   // 상태 전이 안내 — 반복 경고가 아니라 "구간이 바뀌었다"는 1회성 사실.
   final String enteredCrosswalkMessage;
   final String crossedCrosswalkMessage;
@@ -172,6 +181,10 @@ class AppStrings {
   final String settingsBatterySectionHeader;
   final String settingsPowerSaveLabel;
   final String settingsPowerSaveNote;
+  // T104: 실험 기능 — 노면 안내 켜기/끄기(기본 꺼짐).
+  final String settingsExperimentalSectionHeader;
+  final String settingsSurfaceGuidanceLabel;
+  final String settingsSurfaceGuidanceNote;
 
   // T40: OnboardingScreen — integrates T19 (chest-mount posture guidance)
   // + T36 (first-launch legal safety disclaimer) into one first-run
@@ -264,6 +277,11 @@ class AppStrings {
     required this.leftEdgeMessage,
     required this.rightEdgeMessage,
     required this.edgeTurnedMessage,
+    required this.surfaceRoadMessage,
+    required this.surfaceDotBlockMessage,
+    required this.surfaceLinearRightMessage,
+    required this.surfaceLinearLeftMessage,
+    required this.surfaceLinearLostMessage,
     required this.enteredCrosswalkMessage,
     required this.crossedCrosswalkMessage,
     required this.approachAheadMessage,
@@ -288,6 +306,9 @@ class AppStrings {
     required this.settingsBatterySectionHeader,
     required this.settingsPowerSaveLabel,
     required this.settingsPowerSaveNote,
+    required this.settingsExperimentalSectionHeader,
+    required this.settingsSurfaceGuidanceLabel,
+    required this.settingsSurfaceGuidanceNote,
     required this.onboardingEyebrow,
     required this.onboardingTitle,
     required this.onboardingPostureHeading,
@@ -352,6 +373,11 @@ class AppStrings {
     leftEdgeMessage: '오른쪽으로 이동하세요. 가장자리입니다',
     rightEdgeMessage: '왼쪽으로 이동하세요. 가장자리입니다',
     edgeTurnedMessage: '그대로 가세요',
+    surfaceRoadMessage: '차도입니다',
+    surfaceDotBlockMessage: '멈춤 블록입니다',
+    surfaceLinearRightMessage: '점자블록 오른쪽',
+    surfaceLinearLeftMessage: '점자블록 왼쪽',
+    surfaceLinearLostMessage: '점자블록을 벗어났습니다',
     enteredCrosswalkMessage: '횡단보도에 진입했습니다.',
     crossedCrosswalkMessage: '횡단보도를 건넜습니다.',
     approachAheadMessage: '앞에 횡단보도가 있습니다.',
@@ -378,6 +404,10 @@ class AppStrings {
     settingsPowerSaveLabel: '배터리 절약 모드',
     settingsPowerSaveNote: '켜면 화면에 화살표만 표시합니다(카메라 화면 없음). '
         '끄면 카메라 화면도 함께 보여줍니다 — 배터리를 더 씁니다.',
+    settingsExperimentalSectionHeader: '실험 기능',
+    settingsSurfaceGuidanceLabel: '노면 안내 (실험)',
+    settingsSurfaceGuidanceNote: '점자블록·차도를 음성으로 알려줍니다. '
+        '횡단보도 안내 중에는 말하지 않습니다. 배터리를 더 씁니다.',
     onboardingEyebrow: '시작하기 전에',
     onboardingTitle: '안전 이용 안내',
     onboardingPostureHeading: '가슴거치 착용 방법',
@@ -465,6 +495,11 @@ class AppStrings {
     leftEdgeMessage: "Move to the right. You're at the edge",
     rightEdgeMessage: "Move to the left. You're at the edge",
     edgeTurnedMessage: 'Keep going',
+    surfaceRoadMessage: 'Road ahead',
+    surfaceDotBlockMessage: 'Stop blocks',
+    surfaceLinearRightMessage: 'Guide blocks on the right',
+    surfaceLinearLeftMessage: 'Guide blocks on the left',
+    surfaceLinearLostMessage: 'You left the guide blocks',
     enteredCrosswalkMessage: 'You have entered the crosswalk.',
     crossedCrosswalkMessage: 'You have crossed the crosswalk.',
     approachAheadMessage: 'Crosswalk ahead.',
@@ -491,6 +526,10 @@ class AppStrings {
     settingsPowerSaveLabel: 'Battery saver',
     settingsPowerSaveNote: 'On: shows arrows only (no camera view). '
         'Off: also shows the camera view — uses more battery.',
+    settingsExperimentalSectionHeader: 'Experimental',
+    settingsSurfaceGuidanceLabel: 'Surface guidance (experimental)',
+    settingsSurfaceGuidanceNote: 'Announces guide blocks and roads. '
+        'Silent while crosswalk guidance is active. Uses more battery.',
     onboardingEyebrow: 'Before you start',
     onboardingTitle: 'Safety Guide',
     onboardingPostureHeading: 'How to Wear the Chest Mount',

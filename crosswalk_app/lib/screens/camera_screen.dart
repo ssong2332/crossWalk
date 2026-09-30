@@ -9,6 +9,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../services/classifier.dart';
 import '../services/crossing_hold.dart';
+import '../services/surface_estimator.dart';
+import '../services/surface_guide.dart';
 import '../services/direction_resolver.dart';
 import '../services/feedback_service.dart';
 import '../services/angle_estimator.dart';
@@ -469,8 +471,51 @@ class _CameraScreenState extends State<CameraScreen>
 
     _updateAngleEstimate(image);
     _updatePositionEstimate(image);
+    _updateSurfaceGuidance(image);
 
     _isProcessing = false;
+  }
+
+  // T104: 노면 안내(실험, 설정에서 켬 — 기본 꺼짐). 판정표는
+  // `docs/SurfaceGuidance.md`, 로직은 `SurfaceGuide`. 분할은 처리 프레임 10개 중
+  // 9번째에 돈다 — 분류기(0·5)·각도(3)·위치(7)와 겹치지 않게.
+  final SurfaceEstimator _surfaceEstimator = SurfaceEstimator();
+  final SurfaceGuide _surfaceGuide = SurfaceGuide();
+  bool _surfaceEnabled = false;
+  int _surfaceFrameCount = 0;
+  SurfaceFeatures? _lastSurface;
+
+  void _updateSurfaceGuidance(CameraImage image) {
+    if (!_surfaceEnabled || !_surfaceEstimator.isReady) return;
+    _surfaceFrameCount++;
+    if (_surfaceFrameCount % 10 != 9) return;
+    final rot = _controller?.description.sensorOrientation ?? 90;
+    final f = _surfaceEstimator.estimate(image, rot);
+    if (f == null) return;
+    // 상태 게이트(판정표 §2): none/crossed에서만 말한다. 무판정·오류·횡단보도
+    // 위·hold·approach면 SurfaceGuide가 상태를 비우고 아무것도 내지 않는다.
+    final events = _surfaceGuide.update(f, _fieldState, DateTime.now());
+    if (events.isNotEmpty) unawaited(_feedback.surfaceAlert(events));
+    if (mounted) setState(() => _lastSurface = f);
+  }
+
+  Future<void> _setSurfaceEnabled(bool enabled) async {
+    if (enabled) {
+      try {
+        await _surfaceEstimator.init();
+      } catch (e) {
+        debugPrint('[T104] 노면 모델 초기화 실패: $e');
+        return;
+      }
+    }
+    _surfaceGuide.reset();
+    _surfaceFrameCount = 0;
+    if (mounted) {
+      setState(() {
+        _surfaceEnabled = enabled;
+        _lastSurface = null;
+      });
+    }
   }
 
   // T70: 화살표가 따라갈 각도. **학습된 회귀 모델**(`AngleEstimator`)이 낸다.
@@ -768,6 +813,7 @@ class _CameraScreenState extends State<CameraScreen>
     _classifier.dispose();
     _angleEstimator.dispose();
     _positionEstimator.dispose();
+    _surfaceEstimator.dispose();
     // Reviewer fix (T40 follow-up): only dispose the instance this screen
     // created itself. A shared instance is owned by CrosswalkApp (see
     // main.dart) and must outlive this screen — e.g. across
@@ -980,6 +1026,8 @@ class _CameraScreenState extends State<CameraScreen>
                   onTorchChanged: _setTorch,
                   powerSaveMode: _powerSaveMode,
                   onPowerSaveModeChanged: _setPowerSaveMode,
+                  surfaceGuidanceEnabled: _surfaceEnabled,
+                  onSurfaceGuidanceChanged: _setSurfaceEnabled,
                 ),
               ),
             );
@@ -1386,7 +1434,9 @@ class _CameraScreenState extends State<CameraScreen>
                                   // T99: 어느 커밋의 APK인지 실기기 테스트
                                   // 중 메인 화면에서 바로 보이게 한다
                                   // (설정 화면의 T45 값과 같은 출처).
-                                  '${_stripeDebugText()}  ·  빌드 $buildShaShort',
+                                  '${_stripeDebugText()}  ·  빌드 $buildShaShort'
+                                  // T104: 노면 안내가 켜져 있으면 발 앞 칸 비율(%).
+                                  '${_surfaceEnabled ? '\n노면 앞: ${_lastSurface?.front ?? '-'}' : ''}',
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     color: _colorTextDim.withValues(alpha: 0.8),

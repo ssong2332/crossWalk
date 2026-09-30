@@ -738,6 +738,14 @@ void main() {
     });
   });
 
+  // T104: 차도 진동은 짧게 3번 — 기존 좌(2번)·우(1번 길게)·복귀(1번)와 겹치지 않는다.
+  test('surfaceRoadPattern: 짧게 3번 (T104)', () {
+    final p = FeedbackService.surfaceRoadPattern(125);
+    expect(p, [0, 125, 125, 125, 125, 125]);
+    // [대기, 켜짐, 꺼짐, 켜짐, 꺼짐, 켜짐] -> 켜짐 3번
+    expect([for (var i = 1; i < p.length; i += 2) p[i]].length, 3);
+  });
+
   // T40: OnboardingScreen's general-purpose read-aloud, reusing _speak().
   group('FeedbackService — speak (T40)', () {
     test('drives the same isSpeaking generation guard as alert()', () async {

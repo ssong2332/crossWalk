@@ -6,6 +6,7 @@ import 'package:vibration/vibration.dart';
 import '../localization/app_strings.dart';
 import 'audio_policy.dart';
 import 'severity_latch.dart';
+import 'surface_guide.dart';
 
 class FeedbackService {
   final FlutterTts _tts = FlutterTts();
@@ -527,6 +528,53 @@ class FeedbackService {
       activateVibrationIndicator(total > 0 ? total : _vibrationDurationMs);
     }
   }
+
+  /// T104: 노면 안내(`SurfaceGuide` 이벤트)를 말하고 진동한다.
+  /// 등급·진동은 `docs/AudioPolicy.md` 노면 안내 표(사용자 확정 2026-09-30):
+  ///   차도 P0 + 짧게 3번 / 멈춤 블록 P1 / 선형 방향·벗어남 P2 / 블록 위 = 진동만(짧게 1번).
+  Future<void> surfaceAlert(List<SurfaceEvent> events) async {
+    if (events.isEmpty) return;
+    final strings = AppStrings.of(_language);
+    final shortMs = (_vibrationDurationMs ~/ 4).clamp(80, _vibrationDurationMs);
+    List<int>? pattern;
+    for (final e in events) {
+      switch (e) {
+        case SurfaceEvent.road:
+          unawaited(_speak(strings.surfaceRoadMessage,
+              priority: FeedbackPriority.p0));
+          pattern = surfaceRoadPattern(shortMs);
+        case SurfaceEvent.dotBlock:
+          unawaited(_speak(strings.surfaceDotBlockMessage,
+              priority: FeedbackPriority.p1));
+        case SurfaceEvent.linearRight:
+          unawaited(_speak(strings.surfaceLinearRightMessage,
+              priority: FeedbackPriority.p2));
+        case SurfaceEvent.linearLeft:
+          unawaited(_speak(strings.surfaceLinearLeftMessage,
+              priority: FeedbackPriority.p2));
+        case SurfaceEvent.linearLost:
+          unawaited(_speak(strings.surfaceLinearLostMessage,
+              priority: FeedbackPriority.p2));
+        case SurfaceEvent.linearOn:
+          pattern ??= <int>[0, shortMs];
+      }
+    }
+    if (pattern == null) return;
+    if (await Vibration.hasVibrator()) {
+      if (await Vibration.hasCustomVibrationsSupport()) {
+        Vibration.vibrate(pattern: pattern);
+      } else {
+        Vibration.vibrate(duration: _vibrationDurationMs);
+      }
+      final total = pattern.fold<int>(0, (a, b) => a + b);
+      activateVibrationIndicator(total > 0 ? total : _vibrationDurationMs);
+    }
+  }
+
+  /// T104: 차도 진동 — 짧게 3번(‧‧‧). 기존 좌(‧‧)·우(—)·복귀(짧게 1번)와 겹치지 않는다.
+  @visibleForTesting
+  static List<int> surfaceRoadPattern(int shortMs) =>
+      <int>[0, shortMs, shortMs, shortMs, shortMs, shortMs];
 
   // 앱 초기화 실패 시 사용자에게 오류 상황을 음성으로 안내
   Future<void> announceError(String message) async {
