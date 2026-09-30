@@ -45,6 +45,8 @@ class SettingsScreen extends StatefulWidget {
     required this.onTorchChanged,
     required this.powerSaveMode,
     required this.onPowerSaveModeChanged,
+    this.surfaceGuidanceEnabled = false,
+    this.onSurfaceGuidanceChanged,
   });
 
   final FeedbackService feedback;
@@ -61,6 +63,10 @@ class SettingsScreen extends StatefulWidget {
   // Scaffold body의 Stack에 얹는 주체가 CameraScreen이므로).
   final bool powerSaveMode;
   final ValueChanged<bool> onPowerSaveModeChanged;
+
+  // T104: 노면 안내(실험, 기본 꺼짐). 콜백이 없으면 스위치를 그리지 않는다.
+  final bool surfaceGuidanceEnabled;
+  final ValueChanged<bool>? onSurfaceGuidanceChanged;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -82,6 +88,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late int _vibrationDurationMs;
   late bool _torchEnabled;
   late bool _powerSaveMode;
+  late bool _surfaceGuidance;
 
   @override
   void initState() {
@@ -92,6 +99,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _vibrationDurationMs = widget.feedback.vibrationDurationMs;
     _torchEnabled = widget.torchEnabled;
     _powerSaveMode = widget.powerSaveMode;
+    _surfaceGuidance = widget.surfaceGuidanceEnabled;
   }
 
   void _selectLanguage(AppLanguage language) {
@@ -128,6 +136,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _togglePowerSave(bool value) {
     setState(() => _powerSaveMode = value);
     widget.onPowerSaveModeChanged(value);
+  }
+
+  void _toggleSurfaceGuidance(bool value) {
+    setState(() => _surfaceGuidance = value);
+    widget.onSurfaceGuidanceChanged?.call(value);
   }
 
   Widget _buildSectionHeader(String title) {
@@ -277,6 +290,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ),
+          if (widget.onSurfaceGuidanceChanged != null) ...[
+            _buildSectionHeader(_strings.settingsExperimentalSectionHeader),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: SwitchListTile(
+                value: _surfaceGuidance,
+                onChanged: _toggleSurfaceGuidance,
+                activeColor: _colorAccent,
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  _strings.settingsSurfaceGuidanceLabel,
+                  style: const TextStyle(color: Colors.white70),
+                ),
+                subtitle: Text(
+                  _strings.settingsSurfaceGuidanceNote,
+                  style: const TextStyle(color: Colors.white38, fontSize: 12),
+                ),
+              ),
+            ),
+          ],
           _buildSectionHeader(_strings.settingsAccessibilitySectionHeader),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
