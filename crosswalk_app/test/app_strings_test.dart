@@ -54,6 +54,19 @@ void main() {
       expect(strings.rightDeviationMessageMild, '왼쪽으로 이동하세요');
       expect(strings.rightDeviationMessageSevere, '즉시 왼쪽으로 이동하세요');
       expect(strings.recoveredMessage, '직진하세요');
+      // T102: 끝 전용 문구.
+      expect(strings.labelLeftEdge, '왼쪽 끝');
+      expect(strings.labelRightEdge, '오른쪽 끝');
+      expect(strings.leftEdgeMessage, '오른쪽으로 이동하세요. 가장자리입니다');
+      expect(strings.rightEdgeMessage, '왼쪽으로 이동하세요. 가장자리입니다');
+      expect(strings.edgeTurnedMessage, '그대로 가세요');
+      // T104: 노면 안내(사용자 확정 2026-09-30).
+      expect(strings.surfaceRoadMessage, '차도입니다');
+      expect(strings.surfaceDotBlockMessage, '멈춤 블록입니다');
+      expect(strings.surfaceLinearRightMessage, '점자블록 오른쪽');
+      expect(strings.surfaceLinearLeftMessage, '점자블록 왼쪽');
+      expect(strings.surfaceLinearLostMessage, '점자블록을 벗어났습니다');
+      expect(strings.settingsSurfaceGuidanceLabel, '노면 안내 (실험)');
       expect(strings.enteredCrosswalkMessage, '횡단보도에 진입했습니다.');
       expect(strings.crossedCrosswalkMessage, '횡단보도를 건넜습니다.');
     });
@@ -68,6 +81,15 @@ void main() {
       expect(strings.rightDeviationMessageMild, 'Move to the left');
       expect(strings.rightDeviationMessageSevere, 'Move left now');
       expect(strings.recoveredMessage, 'Go straight');
+      expect(strings.labelLeftEdge, 'Left edge');
+      expect(strings.labelRightEdge, 'Right edge');
+      expect(strings.leftEdgeMessage, "Move to the right. You're at the edge");
+      expect(strings.rightEdgeMessage, "Move to the left. You're at the edge");
+      expect(strings.edgeTurnedMessage, 'Keep going');
+      expect(strings.surfaceRoadMessage, 'Road ahead');
+      expect(strings.surfaceLinearRightMessage, 'Guide blocks on the right');
+      expect(strings.settingsSurfaceGuidanceLabel,
+          'Surface guidance (experimental)');
       expect(
         strings.enteredCrosswalkMessage,
         'You have entered the crosswalk.',

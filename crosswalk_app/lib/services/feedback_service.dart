@@ -6,6 +6,7 @@ import 'package:vibration/vibration.dart';
 import '../localization/app_strings.dart';
 import 'audio_policy.dart';
 import 'severity_latch.dart';
+import 'surface_guide.dart';
 
 class FeedbackService {
   final FlutterTts _tts = FlutterTts();
@@ -37,6 +38,9 @@ class FeedbackService {
   DateTime? _lastAlertTime;
   String? _lastAlertClass;
   bool? _lastAlertSevere;
+  // T102: 끝 안내 여부도 쿨다운 키에 넣는다 — 같은 'left'라도 일반 이탈에서
+  // 끝으로 바뀌면 "가장자리입니다"를 바로 알려야 한다.
+  bool? _lastAlertEdge;
 
   // T63: 매 alert() 호출마다(메시지가 실제로 나갔는지와 무관하게) 갱신되는
   // "직전 판정 클래스". 구간 전이(진입/이탈 완료/복귀)를 감지하려면 발화
@@ -51,6 +55,10 @@ class FeedbackService {
 
   DateTime? _lastPhaseAt;
   DateTime? _lastRecoveryAt;
+
+  // T102: 직전 alert()가 "끝 + 이미 중앙 쪽으로 틀었음(front)"이었는가.
+  bool _lastEdgeTurned = false;
+  DateTime? _lastEdgeTurnedAt;
 
   // T38 fix: guards against isSpeaking/isVibrating being reset by a stale
   // await/timer from an earlier alert() call. decideMessage() bypasses
@@ -161,8 +169,13 @@ class FeedbackService {
   /// — 화면·화살표·음성이 같은 값을 보게 하려는 것. null(각도 모델 미준비·
   /// 미검출)이면 보수적으로 약함으로 본다.
   @visibleForTesting
+  ///
+  /// T102: [atEdge]면(끝 규칙이 낸 left/right) 강도와 무관하게 끝 전용 문구
+  /// ("오른쪽으로 이동하세요. 가장자리입니다")를 낸다. 끝 각도는 ±20으로
+  /// 고정돼 심함(25) 기준에 닿지 않으므로 "즉시" 변형은 없다.
   String? decideMessage(
-      String detectedClass, double? angleDegrees, DateTime now) {
+      String detectedClass, double? angleDegrees, DateTime now,
+      {bool atEdge = false}) {
     if (detectedClass != 'left' && detectedClass != 'right') {
       severityLatch.reset();
       _lastSeverityClass = null;
@@ -182,6 +195,7 @@ class FeedbackService {
     if (_lastAlertTime != null &&
         _lastAlertClass == detectedClass &&
         _lastAlertSevere == severe &&
+        _lastAlertEdge == atEdge &&
         now.difference(_lastAlertTime!).inSeconds < _cooldownSeconds) {
       return null;
     }
@@ -189,8 +203,14 @@ class FeedbackService {
     _lastAlertTime = now;
     _lastAlertClass = detectedClass;
     _lastAlertSevere = severe;
+    _lastAlertEdge = atEdge;
 
     final strings = AppStrings.of(_language);
+    if (atEdge) {
+      return detectedClass == 'left'
+          ? strings.leftEdgeMessage
+          : strings.rightEdgeMessage;
+    }
     if (detectedClass == 'left') {
       return severe
           ? strings.leftDeviationMessageSevere
@@ -216,10 +236,14 @@ class FeedbackService {
         (detectedClass == 'front' ||
             detectedClass == 'left' ||
             detectedClass == 'right');
+    // T103(2026-09-27, 사용자 확정): 다 건넘은 **위 -> crossed** 순간에 안내한다.
+    // 위 -> none은 **안내하지 않는다** — 줄무늬가 잠깐 안 보이거나(X형 교차
+    // 횡단보도 가운데) 오판일 수 있어서다. 다 건넌 과정은 위 -> crossed -> none
+    // 이고, crossed -> none/approach, none/approach -> crossed도 침묵이다.
     final exiting = (previousClass == 'front' ||
             previousClass == 'left' ||
             previousClass == 'right') &&
-        detectedClass == 'none';
+        detectedClass == 'crossed';
     // T93(2026-09-15, 사용자 요청): approach로 **들어올 때** "앞에 횡단보도가
     // 있습니다"를 1회 안내한다. T51에서 approach를 침묵시켰던 것을 뒤집는다
     // (이탈 경고 decideMessage는 여전히 approach에서 침묵 — 방향 경고가 아니라
@@ -250,13 +274,18 @@ class FeedbackService {
   // front에는 반응하지 않음) 이 함수를 거치지 않으면 "직진하세요"가 나갈
   // 방법이 없다 — 회복 여부는 반드시 직전 클래스를 봐야 알 수 있다.
   @visibleForTesting
+  ///
+  /// T102: [atEdge](끝 + 이미 중앙 쪽으로 틀어 front)면 "직진하세요" 대신
+  /// [decideEdgeTurnedMessage]가 "그대로 가세요"를 낸다 — 여기서는 침묵.
   String? decideRecoveryMessage(
     String previousClass,
     String detectedClass,
-    DateTime now,
-  ) {
+    DateTime now, {
+    bool atEdge = false,
+  }) {
     final recovered = (previousClass == 'left' || previousClass == 'right') &&
-        detectedClass == 'front';
+        detectedClass == 'front' &&
+        !atEdge;
     if (!recovered) return null;
 
     if (_lastRecoveryAt != null &&
@@ -266,6 +295,30 @@ class FeedbackService {
     _lastRecoveryAt = now;
 
     return AppStrings.of(_language).recoveredMessage;
+  }
+
+  // T102(사용자 확정 2026-09-27): 끝인데 이미 중앙 쪽으로 틀어 직진 판정
+  // (T100 a안)이 나면 "그대로 가세요"를 1회 안내한다. front는 원래 무음이라
+  // 안내가 없으면 사용자는 방향이 맞는지 알 수 없었다. 그 상태로 **들어올
+  // 때만** 내고(머무는 동안 반복하지 않음), 경계에서 떨릴 때 반복되지 않게
+  // 다른 1회성 안내와 같은 3초 재쿨다운을 둔다.
+  @visibleForTesting
+  String? decideEdgeTurnedMessage(
+    String detectedClass,
+    DateTime now, {
+    required bool atEdge,
+  }) {
+    final edgeTurned = detectedClass == 'front' && atEdge;
+    final entering = edgeTurned && !_lastEdgeTurned;
+    _lastEdgeTurned = edgeTurned;
+    if (!entering) return null;
+
+    if (_lastEdgeTurnedAt != null &&
+        now.difference(_lastEdgeTurnedAt!).inSeconds < _cooldownSeconds) {
+      return null;
+    }
+    _lastEdgeTurnedAt = now;
+    return AppStrings.of(_language).edgeTurnedMessage;
   }
 
   // T39: runtime setters used by SettingsScreen. Each applies immediately
@@ -414,7 +467,7 @@ class FeedbackService {
   // speech without the vibration branch waiting on its completion; the
   // two feedback channels now run independently.
   Future<void> alert(String detectedClass, double confidence,
-      {double? angleDegrees}) async {
+      {double? angleDegrees, bool atEdge = false}) async {
     final now = DateTime.now();
 
     // T63: 발화 여부와 무관하게 진짜 직전 클래스를 먼저 뽑아 둔다 —
@@ -431,15 +484,25 @@ class FeedbackService {
 
     // 이탈에서 회복했을 때의 확인 안내(P0) — 이탈 경고와 같은 채널이므로
     // 같은 우선순위를 준다. 처음부터 똑바로 가는 경우는 절대 나가지 않는다.
-    final recoveryMessage = decideRecoveryMessage(previous, detectedClass, now);
+    final recoveryMessage =
+        decideRecoveryMessage(previous, detectedClass, now, atEdge: atEdge);
     if (recoveryMessage != null) {
       unawaited(_speak(recoveryMessage, priority: FeedbackPriority.p0));
+    }
+
+    // T102: 끝에서 이미 중앙 쪽으로 틀었을 때의 확인 안내(P0, 회복 안내와 같은
+    // 채널). 위 회복 안내는 atEdge면 침묵하므로 둘이 함께 나가지 않는다.
+    final edgeTurnedMessage =
+        decideEdgeTurnedMessage(detectedClass, now, atEdge: atEdge);
+    if (edgeTurnedMessage != null) {
+      unawaited(_speak(edgeTurnedMessage, priority: FeedbackPriority.p0));
     }
 
     // 음성 — 이탈 경고는 P0다. 무음 예산·최소 간격에서 면제되며, 재생 중인
     // 하위 등급 안내를 끊는다. T84: 강도는 각도로 판정한다(confidence는
     // 더 이상 강도에 쓰지 않는다 — 호출부 호환을 위해 인자는 남겨 둔다).
-    final message = decideMessage(detectedClass, angleDegrees, now);
+    final message =
+        decideMessage(detectedClass, angleDegrees, now, atEdge: atEdge);
     if (message != null) {
       unawaited(_speak(message, priority: FeedbackPriority.p0));
     }
@@ -465,6 +528,53 @@ class FeedbackService {
       activateVibrationIndicator(total > 0 ? total : _vibrationDurationMs);
     }
   }
+
+  /// T104: 노면 안내(`SurfaceGuide` 이벤트)를 말하고 진동한다.
+  /// 등급·진동은 `docs/AudioPolicy.md` 노면 안내 표(사용자 확정 2026-09-30):
+  ///   차도 P0 + 짧게 3번 / 멈춤 블록 P1 / 선형 방향·벗어남 P2 / 블록 위 = 진동만(짧게 1번).
+  Future<void> surfaceAlert(List<SurfaceEvent> events) async {
+    if (events.isEmpty) return;
+    final strings = AppStrings.of(_language);
+    final shortMs = (_vibrationDurationMs ~/ 4).clamp(80, _vibrationDurationMs);
+    List<int>? pattern;
+    for (final e in events) {
+      switch (e) {
+        case SurfaceEvent.road:
+          unawaited(_speak(strings.surfaceRoadMessage,
+              priority: FeedbackPriority.p0));
+          pattern = surfaceRoadPattern(shortMs);
+        case SurfaceEvent.dotBlock:
+          unawaited(_speak(strings.surfaceDotBlockMessage,
+              priority: FeedbackPriority.p1));
+        case SurfaceEvent.linearRight:
+          unawaited(_speak(strings.surfaceLinearRightMessage,
+              priority: FeedbackPriority.p2));
+        case SurfaceEvent.linearLeft:
+          unawaited(_speak(strings.surfaceLinearLeftMessage,
+              priority: FeedbackPriority.p2));
+        case SurfaceEvent.linearLost:
+          unawaited(_speak(strings.surfaceLinearLostMessage,
+              priority: FeedbackPriority.p2));
+        case SurfaceEvent.linearOn:
+          pattern ??= <int>[0, shortMs];
+      }
+    }
+    if (pattern == null) return;
+    if (await Vibration.hasVibrator()) {
+      if (await Vibration.hasCustomVibrationsSupport()) {
+        Vibration.vibrate(pattern: pattern);
+      } else {
+        Vibration.vibrate(duration: _vibrationDurationMs);
+      }
+      final total = pattern.fold<int>(0, (a, b) => a + b);
+      activateVibrationIndicator(total > 0 ? total : _vibrationDurationMs);
+    }
+  }
+
+  /// T104: 차도 진동 — 짧게 3번(‧‧‧). 기존 좌(‧‧)·우(—)·복귀(짧게 1번)와 겹치지 않는다.
+  @visibleForTesting
+  static List<int> surfaceRoadPattern(int shortMs) =>
+      <int>[0, shortMs, shortMs, shortMs, shortMs, shortMs];
 
   // 앱 초기화 실패 시 사용자에게 오류 상황을 음성으로 안내
   Future<void> announceError(String message) async {

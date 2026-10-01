@@ -38,6 +38,8 @@ void main() {
     Future<void> Function(bool enabled)? onTorchChanged,
     bool powerSaveMode = true,
     ValueChanged<bool>? onPowerSaveModeChanged,
+    bool surfaceGuidanceEnabled = false,
+    ValueChanged<bool>? onSurfaceGuidanceChanged,
   }) {
     return MaterialApp(
       home: SettingsScreen(
@@ -48,6 +50,8 @@ void main() {
         onTorchChanged: onTorchChanged ?? (_) async {},
         powerSaveMode: powerSaveMode,
         onPowerSaveModeChanged: onPowerSaveModeChanged ?? (_) {},
+        surfaceGuidanceEnabled: surfaceGuidanceEnabled,
+        onSurfaceGuidanceChanged: onSurfaceGuidanceChanged,
       ),
     );
   }
@@ -133,6 +137,37 @@ void main() {
         expect(toggledTo, isFalse);
       },
     );
+  });
+
+  group('SettingsScreen — 노면 안내 토글 (T104)', () {
+    testWidgets('콜백이 없으면 스위치를 그리지 않는다', (tester) async {
+      await tester.pumpWidget(buildSettingsScreen(
+        feedback: FeedbackService(),
+        language: AppLanguage.ko,
+        onLanguageChanged: (_) {},
+      ));
+      await tester.pumpAndSettle();
+      expect(find.text('노면 안내 (실험)'), findsNothing);
+    });
+
+    testWidgets('기본 꺼짐이고, 켜면 onSurfaceGuidanceChanged(true)를 호출한다',
+        (tester) async {
+      bool? toggledTo;
+      await tester.pumpWidget(buildSettingsScreen(
+        feedback: FeedbackService(),
+        language: AppLanguage.ko,
+        onLanguageChanged: (_) {},
+        onSurfaceGuidanceChanged: (v) => toggledTo = v,
+      ));
+      await tester.pumpAndSettle();
+      final finder = find.widgetWithText(SwitchListTile, '노면 안내 (실험)');
+      await tester.ensureVisible(finder);
+      await tester.pumpAndSettle();
+      expect(tester.widget<SwitchListTile>(finder).value, isFalse);
+      await tester.tap(finder);
+      await tester.pumpAndSettle();
+      expect(toggledTo, isTrue);
+    });
   });
 
   group('SettingsScreen — low-light torch toggle (T37)', () {

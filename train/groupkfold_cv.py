@@ -95,6 +95,23 @@ EXTRA_SAMPLE_SHARE = (float(os.environ["EXTRA_SAMPLE_SHARE"])
 CLASS_DIRS = ["0_none", "1_approach", "2_front", "3_left", "4_right"]
 CLASSES = ["none", "approach", "front", "left", "right"]
 
+# T102: `image/5_crossed/`(다 건넘, T92에서 보관 폴더로 분리) 처리 방식.
+#   미설정  = 제외 (기존 동작, 5-class)
+#   "none"  = none으로 합쳐 5-class (앱의 현재 가정: 다 건넘 = none -> '건넜습니다')
+#   "class" = 6번째 클래스 "crossed" (6-class 전환 후보)
+# "none"과 "class"는 같은 사진 집합이라 fold가 같다 — 두 결과를 그대로 비교한다.
+# 추가 소스(EXTRA_TRAIN_DIRS)의 `5_crossed*` 폴더도 같은 규칙을 따른다.
+CROSSED_MODE = os.environ.get("CROSSED_MODE", "")
+if CROSSED_MODE not in ("", "none", "class"):
+    raise RuntimeError(f"CROSSED_MODE는 '', 'none', 'class' 중 하나: {CROSSED_MODE}")
+if CROSSED_MODE == "class":
+    CLASS_DIRS = CLASS_DIRS + ["5_crossed"]
+    CLASSES = CLASSES + ["crossed"]
+# (폴더, 라벨) 목록 — load_images/load_extra_train이 읽는다.
+SOURCES = list(zip(CLASS_DIRS, CLASSES))
+if CROSSED_MODE == "none":
+    SOURCES.append(("5_crossed", "none"))
+
 IMG_SIZE = 224
 BATCH_SIZE = 32
 EPOCHS_FROZEN = 10
@@ -177,7 +194,7 @@ def load_extra_train():
     out = []
     for d in EXTRA_TRAIN_DIRS:
         d = d if d.is_absolute() else REPO / d
-        cls = next((c for cd, c in zip(CLASS_DIRS, CLASSES) if d.name.startswith(cd)), None)
+        cls = next((c for cd, c in SOURCES if d.name.startswith(cd)), None)
         if cls is None:
             raise RuntimeError(f"추가 소스 폴더명이 CLASS_DIRS로 시작하지 않음: {d}")
         n = 0
@@ -193,7 +210,8 @@ def load_extra_train():
 def load_images():
     """EXIF 촬영시각과 함께 전체 이미지 목록을 만든다."""
     out = []
-    for ci, (cls_dir, cls) in enumerate(zip(CLASS_DIRS, CLASSES)):
+    for cls_dir, cls in SOURCES:
+        ci = CLASSES.index(cls)
         for f in sorted(os.listdir(DATA_DIR / cls_dir)):
             if not f.lower().endswith((".jpg", ".jpeg", ".png")):
                 continue
@@ -205,7 +223,8 @@ def load_images():
                     dt = datetime.strptime(v, "%Y:%m:%d %H:%M:%S")
             if dt is None:
                 raise RuntimeError(f"EXIF 촬영시각 없음: {p} — 세션 분할 불가")
-            out.append({"path": str(p), "cls": cls, "ci": ci, "file": f, "dt": dt})
+            out.append({"path": str(p), "cls": cls, "ci": ci, "file": f, "dt": dt,
+                        "src": cls_dir})
     return out
 
 
@@ -414,6 +433,7 @@ def run_fold(k, items, device, extra=()):
                 r = test_items[idx]
                 recs.append({
                     "file": r["file"], "true": r["cls"], "fold": k,
+                    "src": r["src"],
                     "session": r["session"], "dupc": r["dupc"],
                     "probs": {CLASSES[j]: float(row[j]) for j in range(len(CLASSES))},
                 })

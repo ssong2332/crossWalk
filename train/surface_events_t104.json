@@ -1,0 +1,37 @@
+{
+ "tol": 2,
+ "folders": 80,
+ "images": 4718,
+ "events": {
+  "road_trans": [
+   222,
+   290,
+   279
+  ],
+  "road_first": [
+   46,
+   63,
+   56
+  ],
+  "dot_appear": [
+   5,
+   5,
+   5
+  ],
+  "lin_right": [
+   0,
+   0,
+   0
+  ],
+  "lin_left": [
+   0,
+   0,
+   0
+  ],
+  "lin_lost": [
+   4,
+   4,
+   4
+  ]
+ }
+}

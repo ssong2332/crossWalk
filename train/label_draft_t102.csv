@@ -1,0 +1,76 @@
+﻿idx,class,filename,angle_deg,position,pred_pos,source,flag
+0,1_approach,20260921_212736.jpg,38.4,1,1.1,model_draft_t100,
+1,1_approach,20260921_212804.jpg,66.7,0,-0.12,model_draft_t100,극단값 |a|>60
+2,1_approach,20260921_212920.jpg,30.3,0,0.14,model_draft_t100,
+3,1_approach,20260921_213452.jpg,-8.3,-1,-1.02,model_draft_t100,
+4,1_approach,20260921_215818.jpg,15.1,0,0.43,model_draft_t100,
+5,1_approach,20260922_181312.jpg,2.7,2,1.68,model_draft_t100,분류기=none 0.95
+6,1_approach,20260922_181508.jpg,2.3,0,-0.44,model_draft_t100,
+7,1_approach,20260923_233729.jpg,42.8,1,0.86,model_draft_t100,
+8,1_approach,20260924_220127.jpg,-15.3,0,-0.41,model_draft_t100,
+9,1_approach,20260924_221345.jpg,-28.2,-1,-1.42,model_draft_t100,
+10,1_approach,20260924_222244.jpg,-23.5,-1,-1.26,model_draft_t100,
+11,1_approach,20260924_222531.jpg,18.5,0,-0.15,model_draft_t100,
+12,1_approach,20260924_222607.jpg,66.8,1,1.41,model_draft_t100,극단값 |a|>60
+13,1_approach,20260924_222617.jpg,-30.3,-1,-0.7,model_draft_t100,
+14,1_approach,20260925_153742.jpg,18.8,2,1.65,model_draft_t100,
+15,1_approach,20260925_153939.jpg,-12.1,-1,-0.62,model_draft_t100,
+16,1_approach,20260926_164125.jpg,-32.6,-1,-0.97,model_draft_t100,
+17,1_approach,20260926_164227.jpg,4.5,0,-0.06,model_draft_t100,
+18,1_approach,20260926_164636.jpg,1.8,0,-0.31,model_draft_t100,
+19,1_approach,20260926_203041.jpg,6.3,0,0.06,model_draft_t100,
+20,2_front,20260921_212704.jpg,6.4,-2,-2.04,model_draft_t100,
+21,2_front,20260921_212713.jpg,-17.8,1,0.95,model_draft_t100,규칙: front인데 |a|>=15
+22,2_front,20260922_181603.jpg,-2.1,-1,-1.16,model_draft_t100,
+23,2_front,20260923_233733.jpg,7.4,2,1.85,model_draft_t100,
+24,2_front,20260924_220131.jpg,2.0,0,-0.42,model_draft_t100,
+25,2_front,20260924_220133.jpg,3.4,-1,-1.27,model_draft_t100,
+26,2_front,20260924_221351.jpg,-8.1,0,-0.43,model_draft_t100,
+27,2_front,20260924_222333.jpg,-1.1,2,2.02,model_draft_t100,
+28,2_front,20260924_222342.jpg,8.8,0,-0.43,model_draft_t100,
+29,2_front,20260924_222345.jpg,1.8,0,-0.0,model_draft_t100,
+30,2_front,20260924_222610.jpg,0.0,0,-0.42,model_draft_t100,
+31,2_front,20260926_164023.jpg,4.6,0,-0.07,model_draft_t100,
+32,2_front,20260926_164237.jpg,-4.9,-1,-1.2,model_draft_t100,
+33,2_front,20260926_164258.jpg,-3.8,-1,-1.22,model_draft_t100,
+34,2_front,20260926_164351.jpg,-17.1,0,0.34,model_draft_t100,규칙: front인데 |a|>=15
+35,2_front,20260926_164444.jpg,-2.0,-1,-0.94,model_draft_t100,
+36,2_front,20260926_164716.jpg,-11.3,2,1.51,model_draft_t100,
+37,3_left,20260921_212707.jpg,13.8,-2,-2.09,model_draft_t100,규칙: left인데 a<15
+38,3_left,20260921_212715.jpg,-9.9,0,0.06,model_draft_t100,규칙: left인데 a<15
+39,3_left,20260923_233608.jpg,43.0,0,0.01,model_draft_t100,
+40,3_left,20260923_233610.jpg,28.8,0,0.09,model_draft_t100,
+41,3_left,20260923_233735.jpg,31.9,1,0.9,model_draft_t100,
+42,3_left,20260923_233742.jpg,46.6,1,0.71,model_draft_t100,
+43,3_left,20260924_182706.jpg,12.3,0,-0.22,model_draft_t100,규칙: left인데 a<15
+44,3_left,20260924_182711.jpg,45.4,-1,-0.54,model_draft_t100,
+45,3_left,20260924_182713.jpg,43.3,0,-0.21,model_draft_t100,
+46,3_left,20260924_222310.jpg,33.3,0,-0.42,model_draft_t100,
+47,3_left,20260924_222336.jpg,55.0,0,-0.47,model_draft_t100,
+48,3_left,20260924_222350.jpg,34.7,0,-0.39,model_draft_t100,
+49,3_left,20260924_222533.jpg,48.7,0,0.44,model_draft_t100,
+50,3_left,20260924_222534.jpg,6.5,-1,-0.55,model_draft_t100,규칙: left인데 a<15 / 분류기=front 0.87
+51,3_left,20260926_164027.jpg,30.2,0,0.02,model_draft_t100,
+52,3_left,20260926_164135.jpg,50.0,1,0.67,model_draft_t100,
+53,3_left,20260926_164231.jpg,46.3,0,0.24,model_draft_t100,
+54,3_left,20260926_164232.jpg,40.7,0,0.08,model_draft_t100,
+55,3_left,20260926_164352.jpg,18.6,0,-0.44,model_draft_t100,
+56,3_left,20260926_164354.jpg,43.6,0,-0.07,model_draft_t100,
+57,3_left,20260926_164721.jpg,9.6,1,1.06,model_draft_t100,규칙: left인데 a<15 / 사진상 줄무늬가 왼쪽에 있고 사용자는 오른쪽 밖으로 보임 — 3_left(오른쪽으로 가라)가 맞는지 클래스 확인 필요
+58,4_right,20260921_212706.jpg,-19.5,-1,-0.74,model_draft_t100,분류기=front 0.88
+59,4_right,20260921_212709.jpg,-30.9,0,-0.23,model_draft_t100,분류기=front 0.58
+60,4_right,20260921_212721.jpg,-25.2,2,1.95,model_draft_t100,
+61,4_right,20260923_233556.jpg,-54.3,-1,-1.17,model_draft_t100,
+62,4_right,20260924_182648.jpg,-20.7,-1,-0.99,model_draft_t100,분류기=front 0.98
+63,4_right,20260924_182658.jpg,-57.4,-2,-1.89,model_draft_t100,
+64,4_right,20260924_182717.jpg,-35.9,0,-0.42,model_draft_t100,
+65,4_right,20260924_221347.jpg,-52.3,0,-0.4,model_draft_t100,
+66,4_right,20260924_222256.jpg,-40.4,-1,-0.83,model_draft_t100,
+67,4_right,20260924_222352.jpg,-38.7,0,-0.25,model_draft_t100,
+68,4_right,20260924_222536.jpg,-49.4,0,-0.31,model_draft_t100,
+69,4_right,20260926_164025.jpg,-11.8,0,0.17,model_draft_t100,규칙: right인데 a>-15 / 분류기=front 0.79
+70,4_right,20260926_164127.jpg,-26.8,0,-0.01,model_draft_t100,
+71,4_right,20260926_164132.jpg,-40.3,1,0.52,model_draft_t100,
+72,4_right,20260926_164300.jpg,-18.8,-1,-1.2,model_draft_t100,
+73,4_right,20260926_164302.jpg,-61.6,0,0.01,model_draft_t100,극단값 |a|>60
+74,4_right,20260926_164722.jpg,-17.5,2,1.73,model_draft_t100,
