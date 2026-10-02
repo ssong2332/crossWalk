@@ -38,6 +38,11 @@ void main() {
     Future<void> Function(bool enabled)? onTorchChanged,
     bool powerSaveMode = true,
     ValueChanged<bool>? onPowerSaveModeChanged,
+    bool surfaceGuidanceEnabled = false,
+    ValueChanged<bool>? onSurfaceGuidanceChanged,
+    bool eventLogEnabled = true,
+    ValueChanged<bool>? onEventLogChanged,
+    Future<String?> Function()? onShareEventLog,
   }) {
     return MaterialApp(
       home: SettingsScreen(
@@ -48,6 +53,11 @@ void main() {
         onTorchChanged: onTorchChanged ?? (_) async {},
         powerSaveMode: powerSaveMode,
         onPowerSaveModeChanged: onPowerSaveModeChanged ?? (_) {},
+        surfaceGuidanceEnabled: surfaceGuidanceEnabled,
+        onSurfaceGuidanceChanged: onSurfaceGuidanceChanged,
+        eventLogEnabled: eventLogEnabled,
+        onEventLogChanged: onEventLogChanged,
+        onShareEventLog: onShareEventLog,
       ),
     );
   }
@@ -133,6 +143,106 @@ void main() {
         expect(toggledTo, isFalse);
       },
     );
+  });
+
+  group('SettingsScreen — 노면 안내 토글 (T104)', () {
+    testWidgets('콜백이 없으면 스위치를 그리지 않는다', (tester) async {
+      await tester.pumpWidget(buildSettingsScreen(
+        feedback: FeedbackService(),
+        language: AppLanguage.ko,
+        onLanguageChanged: (_) {},
+      ));
+      await tester.pumpAndSettle();
+      expect(find.text('노면 안내 (실험)'), findsNothing);
+    });
+
+    testWidgets('기본 꺼짐이고, 켜면 onSurfaceGuidanceChanged(true)를 호출한다',
+        (tester) async {
+      bool? toggledTo;
+      await tester.pumpWidget(buildSettingsScreen(
+        feedback: FeedbackService(),
+        language: AppLanguage.ko,
+        onLanguageChanged: (_) {},
+        onSurfaceGuidanceChanged: (v) => toggledTo = v,
+      ));
+      await tester.pumpAndSettle();
+      final finder = find.widgetWithText(SwitchListTile, '노면 안내 (실험)');
+      await tester.ensureVisible(finder);
+      await tester.pumpAndSettle();
+      expect(tester.widget<SwitchListTile>(finder).value, isFalse);
+      await tester.tap(finder);
+      await tester.pumpAndSettle();
+      expect(toggledTo, isTrue);
+    });
+  });
+
+  group('SettingsScreen — 개발용 기록 (T106)', () {
+    testWidgets('콜백이 없으면 구역을 그리지 않는다', (tester) async {
+      // 목록 전체가 한 화면에 빌드되게 크게 잡는다 — 그래야 "없음"이 의미가 있다
+      // (ListView는 화면 밖 자식을 아예 만들지 않는다).
+      tester.view.physicalSize = const Size(800, 5000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(buildSettingsScreen(
+        feedback: FeedbackService(),
+        language: AppLanguage.ko,
+        onLanguageChanged: (_) {},
+      ));
+      await tester.pumpAndSettle();
+      expect(find.text('빌드 dev'), findsOneWidget, reason: '목록 끝까지 빌드됨');
+      expect(find.text('기록 남기기'), findsNothing);
+      expect(find.text('기록 보내기'), findsNothing);
+    });
+
+    testWidgets('기본 켬이고, 끄면 onEventLogChanged(false)를 호출한다',
+        (tester) async {
+      bool? toggledTo;
+      await tester.pumpWidget(buildSettingsScreen(
+        feedback: FeedbackService(),
+        language: AppLanguage.ko,
+        onLanguageChanged: (_) {},
+        onEventLogChanged: (v) => toggledTo = v,
+      ));
+      await tester.pumpAndSettle();
+      final finder = find.widgetWithText(SwitchListTile, '기록 남기기');
+      await tester.scrollUntilVisible(
+        finder,
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      expect(tester.widget<SwitchListTile>(finder).value, isTrue);
+      await tester.tap(finder);
+      await tester.pumpAndSettle();
+      expect(toggledTo, isFalse);
+    });
+
+    testWidgets('기록 보내기를 누르면 onShareEventLog를 부르고, 돌려준 문구를 띄운다',
+        (tester) async {
+      var calls = 0;
+      await tester.pumpWidget(buildSettingsScreen(
+        feedback: FeedbackService(),
+        language: AppLanguage.ko,
+        onLanguageChanged: (_) {},
+        onEventLogChanged: (_) {},
+        onShareEventLog: () async {
+          calls++;
+          return '보낼 기록이 없습니다';
+        },
+      ));
+      await tester.pumpAndSettle();
+      final button = find.text('기록 보내기');
+      await tester.scrollUntilVisible(
+        button,
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      expect(calls, 1);
+      expect(find.text('보낼 기록이 없습니다'), findsOneWidget);
+    });
   });
 
   group('SettingsScreen — low-light torch toggle (T37)', () {

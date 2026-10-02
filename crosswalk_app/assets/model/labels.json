@@ -4,15 +4,17 @@
     "approach",
     "front",
     "left",
-    "right"
+    "right",
+    "crossed"
   ],
   "class_dirs": [
     "0_none",
     "1_approach",
     "2_front",
     "3_left",
-    "4_right"
+    "4_right",
+    "5_crossed"
   ],
-  "num_classes": 5,
-  "model_sha256": "5491aff5c0887c7b02394be4de360b4b572c5bf72141ff64096680480e21b7a2"
+  "num_classes": 6,
+  "model_sha256": "be0760b94af921abff20c302a3341c4af96e7398240c406c042b62224d18ae94"
 }

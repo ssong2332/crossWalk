@@ -42,6 +42,8 @@ Offline claim is **confirmed by code** (no network surface). "Intended to stay o
 | Permissions | `permission_handler ^11.3.0` | `pubspec.yaml:18`; `camera_screen.dart:4,62` |
 | Screen-on | `wakelock_plus ^1.2.5` | `pubspec.yaml:19`; `camera_screen.dart:5,48,163` |
 | Integrity hash | `crypto ^3.0.3` (SHA-256) | `pubspec.yaml:20`; `classifier.dart:3,55` |
+| Developer log files (T106) | `path_provider ^2.1.5` | `pubspec.yaml:21`; `event_log.dart` (`getApplicationSupportDirectory`) |
+| Developer log export (T106) | `share_plus ^12.0.2` | `pubspec.yaml:22`; `camera_screen.dart` `_shareEventLog` (Android share sheet) |
 | Lint | `flutter_lints ^3.0.0` | `pubspec.yaml:25` |
 | Model training (offline, not shipped) | PyTorch + torchvision MobileNetV3-Small | `train/train_model.py:10,106` |
 
@@ -56,6 +58,8 @@ Offline claim is **confirmed by code** (no network surface). "Intended to stay o
 | permission_handler | Runtime camera permission (PRD F10) | No |
 | wakelock_plus | Keep screen on during crossing (PRD F11) | No |
 | crypto | Model integrity SHA-256 (PRD F12, currently disabled) | Yes, but drops tamper check |
+| path_provider | T106 developer log: app-private folder for `logs/*.jsonl` (`docs/EventLog.md`) | Yes, but logging stops (no writable folder) |
+| share_plus | T106 developer log: "기록 보내기" hands files to the Android share sheet (user decision Q2, 2026-10-02). No INTERNET permission added — the user picks the target app | Yes, but logs can only leave the phone by USB |
 
 ---
 

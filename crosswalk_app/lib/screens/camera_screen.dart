@@ -6,8 +6,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../services/classifier.dart';
+import '../services/crossing_hold.dart';
+import '../services/event_log.dart';
+import '../services/surface_estimator.dart';
+import '../services/surface_guide.dart';
 import '../services/direction_resolver.dart';
 import '../services/feedback_service.dart';
 import '../services/angle_estimator.dart';
@@ -158,6 +163,8 @@ class _CameraScreenState extends State<CameraScreen>
         'right': _strings.labelRight,
         'none': _strings.labelNone,
         'approach': _strings.labelApproach,
+        'crossed': _strings.labelCrossed,
+        CrossingHold.holdLabel: _strings.labelCrossingHold,
       };
 
   // 마지막으로 받은 분류 라벨. `_fieldState`가 오류/로딩/무판정이 아닐 때
@@ -188,6 +195,8 @@ class _CameraScreenState extends State<CameraScreen>
           ? false
           : DateTime.now().difference(last) >= _noCallAfter;
       if (stale != _noCall && mounted) setState(() => _noCall = stale);
+      // T106: 무판정·오류·로딩처럼 프레임 밖에서 바뀌는 상태도 1초 안에 남긴다.
+      _logStateIfChanged();
     });
     _feedback = widget.feedback ?? FeedbackService();
     _ownsFeedback = widget.feedback == null;
@@ -238,6 +247,10 @@ class _CameraScreenState extends State<CameraScreen>
 
         final status = await Permission.camera.request();
         if (!status.isGranted) {
+          EventLog.instance.log('error', {
+            'where': 'permission',
+            'permanent': status.isPermanentlyDenied,
+          });
           if (status.isPermanentlyDenied) {
             await _feedback.announceError(
               _strings.cameraPermissionPermanentlyDeniedAnnouncement,
@@ -263,24 +276,38 @@ class _CameraScreenState extends State<CameraScreen>
         }
 
         setState(() => _statusLabel = _strings.loadingModel);
+        final loadClock = Stopwatch()..start();
         await _classifier.init();
+        EventLog.instance.log(
+            'model', {'name': 'cls', 'ok': true, 'dur': loadClock.elapsedMilliseconds});
         // 각도 모델 초기화 실패는 치명적이지 않다 — 각도만 못 쓰고
         // 화살표는 기존 좌/우 표시로 동작한다. 앱 전체를 막지 않는다.
+        loadClock.reset();
         try {
           await _angleEstimator.init();
+          EventLog.instance.log('model',
+              {'name': 'angle', 'ok': true, 'dur': loadClock.elapsedMilliseconds});
         } catch (e) {
           debugPrint('[T70] 각도 모델 초기화 실패(각도 없이 계속 진행): $e');
+          EventLog.instance
+              .log('model', {'name': 'angle', 'ok': false, 'err': '$e'});
         }
         // T98: 위치 모델도 마찬가지 — 실패하면 끝 규칙만 빠지고 각도로 동작한다.
+        loadClock.reset();
         try {
           await _positionEstimator.init();
+          EventLog.instance.log('model',
+              {'name': 'pos', 'ok': true, 'dur': loadClock.elapsedMilliseconds});
         } catch (e) {
           debugPrint('[T98] 위치 모델 초기화 실패(끝 규칙 없이 계속 진행): $e');
+          EventLog.instance
+              .log('model', {'name': 'pos', 'ok': false, 'err': '$e'});
         }
 
         setState(() => _statusLabel = _strings.connectingCamera);
         final cameras = await availableCameras();
         if (cameras.isEmpty) {
+          EventLog.instance.log('error', {'where': 'camera', 'msg': 'no camera'});
           await _feedback.announceError(_strings.cameraNotFoundAnnouncement);
           if (mounted) {
             setState(() {
@@ -332,8 +359,15 @@ class _CameraScreenState extends State<CameraScreen>
         if (!mounted) return;
 
         _controller!.startImageStream(_onFrame);
+        EventLog.instance.log('camera', {
+          'ok': true,
+          'sensor': back.sensorOrientation,
+          'preview': '${_controller!.value.previewSize}',
+        });
         setState(() => _statusLabel = _strings.detecting);
-      } on ModelIntegrityException {
+      } on ModelIntegrityException catch (e) {
+        EventLog.instance
+            .log('error', {'where': 'model_integrity', 'msg': e.message});
         await _feedback.announceError(_strings.modelCorruptedAnnouncement);
         if (mounted) {
           setState(() {
@@ -342,6 +376,7 @@ class _CameraScreenState extends State<CameraScreen>
           });
         }
       } catch (e) {
+        EventLog.instance.log('error', {'where': 'init', 'msg': '$e'});
         await _feedback.announceError(_strings.detectionErrorAnnouncement);
         if (mounted) {
           setState(() {
@@ -408,6 +443,7 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   void _setPowerSaveMode(bool enabled) {
+    EventLog.instance.log('set', {'key': 'powerSave', 'value': enabled});
     if (mounted) setState(() => _powerSaveMode = enabled);
   }
 
@@ -416,6 +452,7 @@ class _CameraScreenState extends State<CameraScreen>
     try {
       await _controller!
           .setFlashMode(enabled ? FlashMode.torch : FlashMode.off);
+      EventLog.instance.log('set', {'key': 'torch', 'value': enabled});
       if (mounted) setState(() => _torchEnabled = enabled);
     } catch (_) {
       // 기기가 손전등 제어를 지원하지 않을 수 있음 — 상태 변경 없이 무시
@@ -426,20 +463,47 @@ class _CameraScreenState extends State<CameraScreen>
     if (_isProcessing) return;
     _isProcessing = true;
 
+    final runsBefore = _classifier.runCount;
+    final clsClock = Stopwatch()..start();
     final result = _classifier.processFrame(image);
+    if (_classifier.runCount != runsBefore) {
+      // T106: 분류기가 실제로 돈 프레임만. ok=false면 임계값 미달(무판정 쪽).
+      EventLog.instance.log('cls', {
+        'best': _classifier.lastBestLabel,
+        'conf': _classifier.lastBestConf,
+        'ok': result != null,
+        'probs': _classifier.lastProbs,
+        'avg': _classifier.lastAvgProbs,
+        'dur': clsClock.elapsedMilliseconds,
+      });
+    }
     if (result != null) {
       // T87: 방향은 각도 모델이 정한다 — 분류기 결과는 "없음/앞/위"로만 쓴다.
       // 여기서 정한 상태를 문구·화살표·음성·진동이 전부 공유한다.
       // 각도는 화살표와 같은 보정값(`_arrowStripeAngle`, 최대 10프레임 전).
       // T98: 끝이면 위치 규칙이 각도보다 앞선다(DirectionResolver 표).
-      final label = DirectionResolver.resolve(result.label, _arrowStripeAngle,
-          position: _smoothedPosition);
-      // T84: 강도 판정용 각도 — 화살표와 같은 보정값을 넘긴다.
-      _feedback.alert(label, result.confidence,
-          angleDegrees: _effectiveAngle);
+      final resolved = DirectionResolver.resolve(
+          result.label, _arrowStripeAngle,
+          position: _smoothedPosition, previous: _guidanceLabel);
+      // T103: 횡단보도 위에서 줄무늬가 사라지면(none/approach) 10초 동안
+      // "횡단 중"으로 붙잡는다(CrossingHold 표). 그동안 방향 안내는 멈추고
+      // alert도 부르지 않는다 — 각도·위치 갱신은 `_guidanceLabel`이 위가
+      // 아니라서 스스로 멈춘다.
+      final label =
+          _crossingHold.apply(_guidanceLabel, resolved, DateTime.now());
+      // T102: 끝 규칙에서 나온 상태면 끝 전용 음성·화면 문구를 쓴다.
+      // (hold는 위가 아니므로 isEdge가 false다.)
+      final atEdge = DirectionResolver.isEdge(
+          label, _smoothedPosition, _arrowStripeAngle);
+      if (label != CrossingHold.holdLabel) {
+        // T84: 강도 판정용 각도 — 화살표와 같은 보정값을 넘긴다.
+        _feedback.alert(label, result.confidence,
+            angleDegrees: _effectiveAngle, atEdge: atEdge);
+      }
       if (mounted) {
         setState(() {
           _statusLabel = _labelText[label] ?? label;
+          _atEdge = atEdge;
           // 신뢰도는 분류기가 낸 값 그대로다 — 방향은 각도가 정하므로 이
           // 숫자는 "횡단보도 위/앞/없음" 판정에 대한 확신이다.
           _confidence = result.confidence;
@@ -452,8 +516,95 @@ class _CameraScreenState extends State<CameraScreen>
 
     _updateAngleEstimate(image);
     _updatePositionEstimate(image);
+    _updateSurfaceGuidance(image);
+    _logStateIfChanged();
 
     _isProcessing = false;
+  }
+
+  // T106: 화면 상태(`_fieldState`)가 바뀔 때만 한 줄 남긴다.
+  String? _loggedState;
+  void _logStateIfChanged() {
+    final s = _fieldState;
+    if (s == _loggedState) return;
+    EventLog.instance.log('state', {
+      'from': _loggedState,
+      'to': s,
+      'edge': _atEdge,
+      'conf': _confidence,
+    });
+    _loggedState = s;
+  }
+
+  // T104: 노면 안내(실험, 설정에서 켬 — 기본 꺼짐). 판정표는
+  // `docs/SurfaceGuidance.md`, 로직은 `SurfaceGuide`. 분할은 처리 프레임 10개 중
+  // 9번째에 돈다 — 분류기(0·5)·각도(3)·위치(7)와 겹치지 않게.
+  final SurfaceEstimator _surfaceEstimator = SurfaceEstimator();
+  final SurfaceGuide _surfaceGuide = SurfaceGuide();
+  bool _surfaceEnabled = false;
+  int _surfaceFrameCount = 0;
+  SurfaceFeatures? _lastSurface;
+
+  void _updateSurfaceGuidance(CameraImage image) {
+    if (!_surfaceEnabled || !_surfaceEstimator.isReady) return;
+    _surfaceFrameCount++;
+    if (_surfaceFrameCount % 10 != 9) return;
+    final rot = _controller?.description.sensorOrientation ?? 90;
+    final surfClock = Stopwatch()..start();
+    final f = _surfaceEstimator.estimate(image, rot);
+    if (f == null) {
+      EventLog.instance.log('surf', {'ok': false, 'dur': surfClock.elapsedMilliseconds});
+      return;
+    }
+    // T106: 세 칸의 비율 — 순서 [인도, 차도, 선형, 점형] (docs/EventLog.md).
+    List<double> ratios(SurfaceRegion r) =>
+        [r.sidewalk, r.road, r.linear, r.dot];
+    EventLog.instance.log('surf', {
+      'ok': true,
+      'L': ratios(f.left),
+      'F': ratios(f.front),
+      'R': ratios(f.right),
+      'st': _fieldState,
+      'dur': surfClock.elapsedMilliseconds,
+    });
+    // 상태 게이트(판정표 §2): none/crossed에서만 말한다. 무판정·오류·횡단보도
+    // 위·hold·approach면 SurfaceGuide가 상태를 비우고 아무것도 내지 않는다.
+    final events = _surfaceGuide.update(f, _fieldState, DateTime.now());
+    if (events.isNotEmpty) {
+      EventLog.instance.log('surf.ev',
+          {'names': [for (final e in events) e.name], 'st': _fieldState});
+    }
+    if (events.isNotEmpty) unawaited(_feedback.surfaceAlert(events));
+    if (mounted) setState(() => _lastSurface = f);
+  }
+
+  Future<void> _setSurfaceEnabled(bool enabled) async {
+    EventLog.instance.log('set', {'key': 'surface', 'value': enabled});
+    if (enabled) {
+      final loadClock = Stopwatch()..start();
+      try {
+        await _surfaceEstimator.init();
+        EventLog.instance.log('model', {
+          'name': 'surface',
+          'ok': true,
+          'dur': loadClock.elapsedMilliseconds,
+        });
+      } catch (e) {
+        debugPrint('[T104] 노면 모델 초기화 실패: $e');
+        // T106: 화면에는 안 보이던 실패 — 기록에는 남긴다.
+        EventLog.instance
+            .log('model', {'name': 'surface', 'ok': false, 'err': '$e'});
+        return;
+      }
+    }
+    _surfaceGuide.reset();
+    _surfaceFrameCount = 0;
+    if (mounted) {
+      setState(() {
+        _surfaceEnabled = enabled;
+        _lastSurface = null;
+      });
+    }
   }
 
   // T70: 화살표가 따라갈 각도. **학습된 회귀 모델**(`AngleEstimator`)이 낸다.
@@ -490,12 +641,15 @@ class _CameraScreenState extends State<CameraScreen>
         _guidanceLabel == 'approach';
 
     double? raw;
+    int? angleMs;
     if (hasCrosswalk && !_noCall) {
       // 학습 라벨이 EXIF 보정된 화면(세로) 방향 기준이라, 센서 버퍼를 그대로
       // 넣으면 약 90도 계통 오차가 난다. sensorOrientation만큼 시계방향
       // 회전을 적용해 맞춘다(angle_estimator.dart의 sensorCoord).
       final rot = _controller?.description.sensorOrientation ?? 90;
+      final angleClock = Stopwatch()..start();
       raw = _angleEstimator.estimate(image, rot);
+      angleMs = angleClock.elapsedMilliseconds;
     }
 
     if (kDebugMode) {
@@ -505,6 +659,14 @@ class _CameraScreenState extends State<CameraScreen>
     final smoothed = _angleSmoother.add(
       raw == null ? null : StripeDirectionEstimate(raw, 1.0),
     );
+    if (angleMs != null) {
+      EventLog.instance.log('angle', {
+        'raw': raw,
+        'smooth': smoothed,
+        'label': _guidanceLabel,
+        'dur': angleMs,
+      });
+    }
 
     // T87: 각도가 바뀌면 방향도 다시 정한다. 분류기가 저신뢰로 결과를 안
     // 내는 동안(classifier.dart:244 -> null) 문구는 옛 방향에 멈춰 있고
@@ -514,20 +676,29 @@ class _CameraScreenState extends State<CameraScreen>
     String? relabel;
     if (DirectionResolver.isOnCrosswalk(_guidanceLabel) && !_noCall) {
       final next = DirectionResolver.resolve(_guidanceLabel, smoothed,
-          position: _smoothedPosition);
+          position: _smoothedPosition, previous: _guidanceLabel);
       if (next != _guidanceLabel) relabel = next;
     }
-    if (relabel != null) {
-      _feedback.alert(relabel, _confidence,
+    // T102: 끝 여부는 상태 라벨이 그대로여도 바뀔 수 있다(예: left가 일반
+    // 이탈에서 끝 규칙으로). 그때도 끝 안내가 나가도록 alert를 부른다.
+    final atEdge = DirectionResolver.isEdge(
+        relabel ?? _guidanceLabel, _smoothedPosition, smoothed);
+    final edgeChanged = atEdge != _atEdge &&
+        DirectionResolver.isOnCrosswalk(_guidanceLabel) &&
+        !_noCall;
+    if (relabel != null || edgeChanged) {
+      _feedback.alert(relabel ?? _guidanceLabel, _confidence,
           angleDegrees:
               DirectionResolver.edgeSteerAngle(_smoothedPosition, smoothed) ??
-                  smoothed);
+                  smoothed,
+          atEdge: atEdge);
     }
 
     if (mounted) {
       setState(() {
         _lastRawAngle = raw;
         _arrowStripeAngle = smoothed;
+        _atEdge = atEdge;
         if (relabel != null) {
           _statusLabel = _labelText[relabel] ?? relabel;
           _guidanceLabel = relabel;
@@ -642,6 +813,13 @@ class _CameraScreenState extends State<CameraScreen>
       StripeAngleSmoother(minConfidence: 0.0, smoothingFactor: 0.6);
   double? _smoothedPosition;
 
+  // T102: 지금 상태가 끝 규칙에서 나왔는가. 화면 제목을 "왼쪽 끝"/"오른쪽 끝"
+  // 으로 바꾸는 데 쓴다(음성은 alert(atEdge:)가 따로 받는다).
+  bool _atEdge = false;
+
+  // T103: X형 교차 횡단보도처럼 줄무늬 없는 구간에서 "횡단 중"을 유지한다.
+  final CrossingHold _crossingHold = CrossingHold();
+
   /// 화살표·강도 판정에 실제로 쓰는 각도: 끝이면 중앙 쪽 ±20, 아니면 각도 모델값.
   double? get _effectiveAngle =>
       DirectionResolver.edgeSteerAngle(_smoothedPosition, _arrowStripeAngle) ??
@@ -656,9 +834,12 @@ class _CameraScreenState extends State<CameraScreen>
     // 위치는 "횡단보도 위"에서만 뜻이 있다. approach·none이면 값을 받지 않고
     // 스무더를 비워 옛 끝 판정이 남지 않게 한다.
     double? raw;
+    int? posMs;
     if (DirectionResolver.isOnCrosswalk(_guidanceLabel) && !_noCall) {
       final rot = _controller?.description.sensorOrientation ?? 90;
+      final posClock = Stopwatch()..start();
       raw = _positionEstimator.estimate(image, rot);
+      posMs = posClock.elapsedMilliseconds;
     }
     if (kDebugMode) {
       debugPrint('[T98 position] label=$_guidanceLabel raw=$raw');
@@ -666,24 +847,40 @@ class _CameraScreenState extends State<CameraScreen>
     final smoothed = _positionSmoother.add(
       raw == null ? null : StripeDirectionEstimate(raw, 1.0),
     );
+    if (posMs != null) {
+      EventLog.instance.log('pos', {
+        'raw': raw,
+        'smooth': smoothed,
+        'label': _guidanceLabel,
+        'dur': posMs,
+      });
+    }
 
     // 끝 판정이 바뀌면 상태도 다시 정한다(각도 갱신 때와 같은 경로).
     String? relabel;
     if (DirectionResolver.isOnCrosswalk(_guidanceLabel) && !_noCall) {
       final next = DirectionResolver.resolve(_guidanceLabel, _arrowStripeAngle,
-          position: smoothed);
+          position: smoothed, previous: _guidanceLabel);
       if (next != _guidanceLabel) relabel = next;
     }
-    if (relabel != null) {
-      _feedback.alert(relabel, _confidence,
+    // T102: 각도 경로와 같은 이유로, 라벨이 그대로여도 끝 여부가 바뀌면 alert.
+    final atEdge = DirectionResolver.isEdge(
+        relabel ?? _guidanceLabel, smoothed, _arrowStripeAngle);
+    final edgeChanged = atEdge != _atEdge &&
+        DirectionResolver.isOnCrosswalk(_guidanceLabel) &&
+        !_noCall;
+    if (relabel != null || edgeChanged) {
+      _feedback.alert(relabel ?? _guidanceLabel, _confidence,
           angleDegrees:
               DirectionResolver.edgeSteerAngle(smoothed, _arrowStripeAngle) ??
-                  _arrowStripeAngle);
+                  _arrowStripeAngle,
+          atEdge: atEdge);
     }
 
     if (mounted) {
       setState(() {
         _smoothedPosition = smoothed;
+        _atEdge = atEdge;
         if (relabel != null) {
           _statusLabel = _labelText[relabel] ?? relabel;
           _guidanceLabel = relabel;
@@ -707,6 +904,9 @@ class _CameraScreenState extends State<CameraScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    EventLog.instance.log('app.life', {'state': state.name});
+    // T106: 화면에서 내려가면 곧 프로세스가 끝날 수 있다 — 모인 기록을 바로 쓴다.
+    if (state != AppLifecycleState.resumed) EventLog.instance.flushSync();
     if (state == AppLifecycleState.inactive) {
       if (_controller != null && _controller!.value.isInitialized) {
         _controller!.dispose();
@@ -727,6 +927,7 @@ class _CameraScreenState extends State<CameraScreen>
     _classifier.dispose();
     _angleEstimator.dispose();
     _positionEstimator.dispose();
+    _surfaceEstimator.dispose();
     // Reviewer fix (T40 follow-up): only dispose the instance this screen
     // created itself. A shared instance is owned by CrosswalkApp (see
     // main.dart) and must outlive this screen — e.g. across
@@ -745,6 +946,25 @@ class _CameraScreenState extends State<CameraScreen>
 
   bool get _isLoading =>
       !_hasError && (_controller == null || !_controller!.value.isInitialized);
+
+  /// T106: 기록 파일을 안드로이드 공유 창으로 넘긴다(Q2). 성공이면 null,
+  /// 아니면 설정 화면이 띄울 안내 문구.
+  Future<String?> _shareEventLog() async {
+    final files = await EventLog.instance.filesForExport();
+    if (files.isEmpty) return _strings.settingsDevLogShareEmpty;
+    try {
+      final result = await SharePlus.instance.share(ShareParams(
+        files: [for (final f in files) XFile(f.path, mimeType: 'text/plain')],
+        subject: 'crosswalk log $buildShaShort',
+      ));
+      EventLog.instance.log(
+          'log.share', {'files': files.length, 'status': result.status.name});
+      return null;
+    } catch (e) {
+      EventLog.instance.log('log.share', {'files': files.length, 'err': '$e'});
+      return _strings.settingsDevLogShareFailed;
+    }
+  }
 
   // T38: 음성/진동 활성 상태를 나타내는 아이콘 pill. 활성 시 강조색(#3aa0ff)
   // 배경 + 흰 아이콘, 비활성 시 흐린 테두리만 있는 투명 배경으로 구분.
@@ -939,6 +1159,11 @@ class _CameraScreenState extends State<CameraScreen>
                   onTorchChanged: _setTorch,
                   powerSaveMode: _powerSaveMode,
                   onPowerSaveModeChanged: _setPowerSaveMode,
+                  surfaceGuidanceEnabled: _surfaceEnabled,
+                  onSurfaceGuidanceChanged: _setSurfaceEnabled,
+                  eventLogEnabled: EventLog.instance.enabled,
+                  onEventLogChanged: EventLog.instance.setEnabled,
+                  onShareEventLog: _shareEventLog,
                 ),
               ),
             );
@@ -1005,9 +1230,13 @@ class _CameraScreenState extends State<CameraScreen>
         return _statusLabel;
       // T63: 심한 이탈은 별도 라벨을 쓴다 — 색만으로 강도를 구분하지 않기
       // 위한 텍스트 겹침. 화면은 관측형 문장을 유지한다(1g).
+      // T102: 끝 규칙에서 나온 이탈은 "틀어짐"이 아니라 서 있는 위치를 말한다.
+      // 끝 각도(±20)는 심함 기준(25) 밑이라 강도 라벨보다 먼저 본다.
       case 'left':
+        if (_atEdge) return _strings.labelLeftEdge;
         return _severe ? _strings.labelLeftSevere : _strings.labelLeft;
       case 'right':
+        if (_atEdge) return _strings.labelRightEdge;
         return _severe ? _strings.labelRightSevere : _strings.labelRight;
       default:
         return _labelText[_fieldState] ?? _statusLabel;
@@ -1341,7 +1570,9 @@ class _CameraScreenState extends State<CameraScreen>
                                   // T99: 어느 커밋의 APK인지 실기기 테스트
                                   // 중 메인 화면에서 바로 보이게 한다
                                   // (설정 화면의 T45 값과 같은 출처).
-                                  '${_stripeDebugText()}  ·  빌드 $buildShaShort',
+                                  '${_stripeDebugText()}  ·  빌드 $buildShaShort'
+                                  // T104: 노면 안내가 켜져 있으면 발 앞 칸 비율(%).
+                                  '${_surfaceEnabled ? '\n노면 앞: ${_lastSurface?.front ?? '-'}' : ''}',
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     color: _colorTextDim.withValues(alpha: 0.8),
@@ -1393,7 +1624,8 @@ class StateFieldPainter extends CustomPainter {
     this.projection = const GroundProjection(),
   });
 
-  /// 'front' | 'left' | 'right' | 'approach' | 'none' | 'nocall' | 'error'
+  /// 'front' | 'left' | 'right' | 'approach' | 'none' | 'crossed' | 'nocall' | 'error'
+  /// (T103: crossed는 none과 같은 기본 도형·색으로 그린다)
   final String state;
   final Color color;
 
