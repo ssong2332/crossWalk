@@ -45,6 +45,20 @@ void main() {
     });
   });
 
+  test('공통 키(t·ms·ev)와 겹치는 데이터 키는 덮어쓰지 않고 _를 붙여 남긴다', () {
+    final line = EventLog.encodeLine(
+        DateTime.fromMillisecondsSinceEpoch(1000), 7, 'model',
+        {'ms': 420, 'ev': ['road'], 't': 1, 'name': 'cls'});
+    final m = jsonDecode(line) as Map<String, dynamic>;
+    expect(m['t'], 1000);
+    expect(m['ms'], 7);
+    expect(m['ev'], 'model');
+    expect(m['_ms'], 420);
+    expect(m['_ev'], ['road']);
+    expect(m['_t'], 1);
+    expect(m['name'], 'cls');
+  });
+
   test('fileNameFor — 이름순이 시간순', () {
     expect(EventLog.fileNameFor(DateTime(2026, 10, 2, 7, 5, 9)),
         'log_20261002_070509.jsonl');

@@ -188,6 +188,9 @@ class EventLog {
     }
   }
 
+  /// 모든 줄의 공통 키 — 데이터 키로 쓰지 않는다(쓰면 `_t`·`_ms`·`_ev`로 옮겨 적는다).
+  static const reservedKeys = {'t', 'ms', 'ev'};
+
   /// 한 줄 JSON. 공통 키: `t` 폰 시계(epoch ms), `ms` 프로세스 경과 ms, `ev` 사건 이름.
   @visibleForTesting
   static String encodeLine(DateTime wall, int sinceStartMs, String event,
@@ -197,7 +200,8 @@ class EventLog {
       'ms': sinceStartMs,
       'ev': event,
     };
-    data.forEach((k, v) => m[k] = _clean(v));
+    // 공통 키(t·ms·ev)를 데이터가 덮어쓰지 않게 한다 — 겹치면 앞에 '_'를 붙여 둘 다 남긴다.
+    data.forEach((k, v) => m[reservedKeys.contains(k) ? '_$k' : k] = _clean(v));
     return jsonEncode(m);
   }
 

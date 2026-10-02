@@ -279,14 +279,14 @@ class _CameraScreenState extends State<CameraScreen>
         final loadClock = Stopwatch()..start();
         await _classifier.init();
         EventLog.instance.log(
-            'model', {'name': 'cls', 'ok': true, 'ms': loadClock.elapsedMilliseconds});
+            'model', {'name': 'cls', 'ok': true, 'dur': loadClock.elapsedMilliseconds});
         // 각도 모델 초기화 실패는 치명적이지 않다 — 각도만 못 쓰고
         // 화살표는 기존 좌/우 표시로 동작한다. 앱 전체를 막지 않는다.
         loadClock.reset();
         try {
           await _angleEstimator.init();
           EventLog.instance.log('model',
-              {'name': 'angle', 'ok': true, 'ms': loadClock.elapsedMilliseconds});
+              {'name': 'angle', 'ok': true, 'dur': loadClock.elapsedMilliseconds});
         } catch (e) {
           debugPrint('[T70] 각도 모델 초기화 실패(각도 없이 계속 진행): $e');
           EventLog.instance
@@ -297,7 +297,7 @@ class _CameraScreenState extends State<CameraScreen>
         try {
           await _positionEstimator.init();
           EventLog.instance.log('model',
-              {'name': 'pos', 'ok': true, 'ms': loadClock.elapsedMilliseconds});
+              {'name': 'pos', 'ok': true, 'dur': loadClock.elapsedMilliseconds});
         } catch (e) {
           debugPrint('[T98] 위치 모델 초기화 실패(끝 규칙 없이 계속 진행): $e');
           EventLog.instance
@@ -572,7 +572,7 @@ class _CameraScreenState extends State<CameraScreen>
     final events = _surfaceGuide.update(f, _fieldState, DateTime.now());
     if (events.isNotEmpty) {
       EventLog.instance.log('surf.ev',
-          {'ev': [for (final e in events) e.name], 'st': _fieldState});
+          {'names': [for (final e in events) e.name], 'st': _fieldState});
     }
     if (events.isNotEmpty) unawaited(_feedback.surfaceAlert(events));
     if (mounted) setState(() => _lastSurface = f);
@@ -587,7 +587,7 @@ class _CameraScreenState extends State<CameraScreen>
         EventLog.instance.log('model', {
           'name': 'surface',
           'ok': true,
-          'ms': loadClock.elapsedMilliseconds,
+          'dur': loadClock.elapsedMilliseconds,
         });
       } catch (e) {
         debugPrint('[T104] 노면 모델 초기화 실패: $e');
