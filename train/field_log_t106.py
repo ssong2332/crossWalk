@@ -537,12 +537,31 @@ def judge_scenes(checklist, sessions, analyses, rec_start, offset, C=CRITERIA):
 
 # ---------------------------------------------------------------- 영상 정렬
 
+# 파일 이름 시각은 녹화 '종료'(저장) 시각이다(초 버림). 2026-10-02 상태 표시줄 분 바뀜으로 역산:
+# 131012 시작 13:09:22.43~23.0(이름-길이 +0.53~+1.1초), 205033 시작 20:49:47.0~47.5(+0.5~+1.0초)
+# → 두 범위가 겹치는 가운데 +0.75초(±0.25초, 추정).
+REC_NAME_END_PAD_S = 0.75
+
+
+def video_duration(path):
+    """영상 길이(초) = 프레임 수 / 평균 fps. 9/29 녹화 실측 마지막 프레임 시각과 0.1초 안."""
+    import cv2
+    cap = cv2.VideoCapture(path)
+    n, fps = cap.get(cv2.CAP_PROP_FRAME_COUNT), cap.get(cv2.CAP_PROP_FPS)
+    cap.release()
+    return n / fps if n > 0 and fps > 0 else None
+
+
 def recording_start(path, tz_hours):
     m = re.search(r"(\d{8})_(\d{6})", os.path.basename(path))
     if not m:
         return None
     dt = datetime.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M%S")
-    return dt.replace(tzinfo=timezone(timedelta(hours=tz_hours))).timestamp()
+    end = dt.replace(tzinfo=timezone(timedelta(hours=tz_hours))).timestamp()
+    dur = video_duration(path)
+    if dur is None:
+        return None
+    return end - dur + REC_NAME_END_PAD_S
 
 
 def ffmpeg_exe():
