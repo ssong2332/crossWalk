@@ -5,6 +5,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:vibration/vibration.dart';
 import '../localization/app_strings.dart';
 import 'audio_policy.dart';
+import 'event_log.dart';
 import 'severity_latch.dart';
 import 'surface_guide.dart';
 
@@ -329,6 +330,7 @@ class FeedbackService {
   // than left to become an unhandled async error in the root zone.
   Future<void> updateLanguage(AppLanguage language) async {
     _language = language;
+    EventLog.instance.log('set', {'key': 'lang', 'value': language.name});
     try {
       await _tts.setLanguage(ttsLocaleCode(language));
     } catch (e) {
@@ -338,6 +340,7 @@ class FeedbackService {
 
   Future<void> updateSpeechRate(double rate) async {
     _speechRate = rate;
+    EventLog.instance.log('set', {'key': 'speechRate', 'value': rate});
     try {
       await _tts.setSpeechRate(rate);
     } catch (e) {
@@ -347,6 +350,8 @@ class FeedbackService {
 
   void updateVibrationDuration(int milliseconds) {
     _vibrationDurationMs = milliseconds;
+    EventLog.instance
+        .log('set', {'key': 'vibrationMs', 'value': milliseconds});
   }
 
   // Bumps the speech generation and marks speech as active. Returns the
@@ -403,6 +408,13 @@ class FeedbackService {
   }) async {
     final requestedAt = DateTime.now();
     final action = audioPolicy.decide(priority, requestedAt);
+    // T106: 정책 판단을 그대로 기록한다(재생·대기·버림과 그 이유).
+    EventLog.instance.log('say', {
+      'text': message,
+      'p': priority.index,
+      'act': action.name,
+      'why': audioPolicy.lastReason,
+    });
     if (action == SpeechAction.drop) return;
     if (action == SpeechAction.queue) {
       // 대기는 P1이 P0를 기다리는 한 칸뿐이다. 슬롯은 1개이며 TTL이 지나면 버린다.
@@ -413,20 +425,31 @@ class FeedbackService {
     final generation = beginSpeechGeneration();
     audioPolicy.markStarted(priority);
     final start = DateTime.now();
+    var result = 'done';
     await _tts.stop();
     try {
       await _tts.speak(message).timeout(_speakTimeout);
     } on TimeoutException {
+      result = 'timeout';
       debugPrint(
           'FeedbackService._speak: timed out waiting for TTS completion');
     } catch (e) {
       // alert() fires this via unawaited(), so nothing else observes this
       // Future — any TTS engine error (not just a timeout) must be caught
       // here or it becomes an unhandled async error in the root zone.
+      result = 'error';
       debugPrint('FeedbackService._speak: TTS error: $e');
     } finally {
+      final end = DateTime.now();
+      // T106: 끝난 시각·걸린 시간. 다른 안내가 끊었으면(stop) 짧게 끝난다.
+      EventLog.instance.log('say.end', {
+        'text': message,
+        'p': priority.index,
+        'res': result,
+        'dur': end.difference(start).inMilliseconds,
+      });
       finishSpeechGeneration(generation);
-      audioPolicy.markFinished(priority, start, DateTime.now());
+      audioPolicy.markFinished(priority, start, end);
       _drainPending();
     }
   }
@@ -439,8 +462,30 @@ class FeedbackService {
     final at = audioPolicy.pendingAt;
     if (pri == null || msg == null || at == null) return;
     audioPolicy.clearPending();
-    if (audioPolicy.isExpired(pri, at, DateTime.now())) return;
+    if (audioPolicy.isExpired(pri, at, DateTime.now())) {
+      EventLog.instance.log('say.ttl', {'text': msg, 'p': pri.index});
+      return;
+    }
     unawaited(_speak(msg, priority: pri));
+  }
+
+  /// T106: 진동 기록 한 줄의 내용. [kind]는 left·right·recover·road·line_on.
+  /// 앱이 진동을 **요청한** 기록이다 — 모터가 실제로 떨렸는지는 알 수 없다.
+  @visibleForTesting
+  static Map<String, Object?> vibrationLogData(
+    String kind,
+    List<int> pattern, {
+    required bool hasVibrator,
+    required bool supportsPattern,
+    required int fallbackMs,
+  }) {
+    if (!hasVibrator) return {'kind': kind, 'ok': false, 'why': 'no_vibrator'};
+    return {
+      'kind': kind,
+      'ok': true,
+      'mode': supportsPattern ? 'pattern' : 'single',
+      'pat': supportsPattern ? pattern : <int>[0, fallbackMs],
+    };
   }
 
   // Marks vibration as active and (re)schedules the timer that will clear
@@ -513,8 +558,23 @@ class FeedbackService {
     // 음성이 쿨다운에 걸린 프레임에서도 진동 판단은 별도로 수행한다.
     final pattern =
         vibrationPolicy.decidePattern(detectedClass, now, _vibrationDurationMs);
+
+    // T106: 경고 입력과 이번에 낸 것(음성 문장 여부·진동 여부). 말이 안 나간
+    // 이유(쿨다운)도 이 줄과 'say' 줄을 함께 보면 알 수 있다.
+    EventLog.instance.log('alert', {
+      'cls': detectedClass,
+      'conf': confidence,
+      'ang': angleDegrees,
+      'edge': atEdge,
+      'msg': message,
+      'phase': phaseMessage,
+      'recover': recoveryMessage,
+      'edgeTurned': edgeTurnedMessage,
+      'vib': pattern != null,
+    });
     if (pattern == null) return;
 
+    final kind = detectedClass == 'front' ? 'recover' : detectedClass;
     if (await Vibration.hasVibrator() ?? false) {
       // 패턴 진동을 지원하지 않는 기기에서는 단일 진동으로 내려간다.
       // 방향은 음성으로만 전달되지만, 아무 알림도 없는 것보다는 낫다.
@@ -524,8 +584,21 @@ class FeedbackService {
       } else {
         Vibration.vibrate(duration: _vibrationDurationMs);
       }
+      EventLog.instance.log(
+          'vib',
+          vibrationLogData(kind, pattern,
+              hasVibrator: true,
+              supportsPattern: supportsPattern,
+              fallbackMs: _vibrationDurationMs));
       final total = pattern.fold<int>(0, (a, b) => a + b);
       activateVibrationIndicator(total > 0 ? total : _vibrationDurationMs);
+    } else {
+      EventLog.instance.log(
+          'vib',
+          vibrationLogData(kind, pattern,
+              hasVibrator: false,
+              supportsPattern: false,
+              fallbackMs: _vibrationDurationMs));
     }
   }
 
@@ -560,14 +633,29 @@ class FeedbackService {
       }
     }
     if (pattern == null) return;
+    final kind = events.contains(SurfaceEvent.road) ? 'road' : 'line_on';
     if (await Vibration.hasVibrator()) {
-      if (await Vibration.hasCustomVibrationsSupport()) {
+      final supportsPattern = await Vibration.hasCustomVibrationsSupport();
+      if (supportsPattern) {
         Vibration.vibrate(pattern: pattern);
       } else {
         Vibration.vibrate(duration: _vibrationDurationMs);
       }
+      EventLog.instance.log(
+          'vib',
+          vibrationLogData(kind, pattern,
+              hasVibrator: true,
+              supportsPattern: supportsPattern,
+              fallbackMs: _vibrationDurationMs));
       final total = pattern.fold<int>(0, (a, b) => a + b);
       activateVibrationIndicator(total > 0 ? total : _vibrationDurationMs);
+    } else {
+      EventLog.instance.log(
+          'vib',
+          vibrationLogData(kind, pattern,
+              hasVibrator: false,
+              supportsPattern: false,
+              fallbackMs: _vibrationDurationMs));
     }
   }
 

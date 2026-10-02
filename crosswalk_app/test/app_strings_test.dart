@@ -67,6 +67,11 @@ void main() {
       expect(strings.surfaceLinearLeftMessage, '점자블록 왼쪽');
       expect(strings.surfaceLinearLostMessage, '점자블록을 벗어났습니다');
       expect(strings.settingsSurfaceGuidanceLabel, '노면 안내 (실험)');
+      // T106: 개발용 기록.
+      expect(strings.settingsDevLogSectionHeader, '개발용 기록');
+      expect(strings.settingsDevLogLabel, '기록 남기기');
+      expect(strings.settingsDevLogShare, '기록 보내기');
+      expect(strings.settingsDevLogShareEmpty, '보낼 기록이 없습니다');
       expect(strings.enteredCrosswalkMessage, '횡단보도에 진입했습니다.');
       expect(strings.crossedCrosswalkMessage, '횡단보도를 건넜습니다.');
     });
@@ -90,6 +95,8 @@ void main() {
       expect(strings.surfaceLinearRightMessage, 'Guide blocks on the right');
       expect(strings.settingsSurfaceGuidanceLabel,
           'Surface guidance (experimental)');
+      expect(strings.settingsDevLogLabel, 'Keep a log');
+      expect(strings.settingsDevLogShare, 'Send log');
       expect(
         strings.enteredCrosswalkMessage,
         'You have entered the crosswalk.',

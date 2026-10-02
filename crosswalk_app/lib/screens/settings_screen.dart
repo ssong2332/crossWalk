@@ -47,6 +47,9 @@ class SettingsScreen extends StatefulWidget {
     required this.onPowerSaveModeChanged,
     this.surfaceGuidanceEnabled = false,
     this.onSurfaceGuidanceChanged,
+    this.eventLogEnabled = true,
+    this.onEventLogChanged,
+    this.onShareEventLog,
   });
 
   final FeedbackService feedback;
@@ -67,6 +70,12 @@ class SettingsScreen extends StatefulWidget {
   // T104: 노면 안내(실험, 기본 꺼짐). 콜백이 없으면 스위치를 그리지 않는다.
   final bool surfaceGuidanceEnabled;
   final ValueChanged<bool>? onSurfaceGuidanceChanged;
+
+  // T106: 개발용 기록(기본 켬, 사용자 확정 Q3). 콜백이 없으면 이 구역을 그리지 않는다.
+  // [onShareEventLog]는 성공이면 null, 실패·빈 기록이면 띄울 문구를 돌려준다.
+  final bool eventLogEnabled;
+  final ValueChanged<bool>? onEventLogChanged;
+  final Future<String?> Function()? onShareEventLog;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -89,6 +98,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late bool _torchEnabled;
   late bool _powerSaveMode;
   late bool _surfaceGuidance;
+  late bool _eventLog;
+  bool _sharingLog = false;
 
   @override
   void initState() {
@@ -100,6 +111,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _torchEnabled = widget.torchEnabled;
     _powerSaveMode = widget.powerSaveMode;
     _surfaceGuidance = widget.surfaceGuidanceEnabled;
+    _eventLog = widget.eventLogEnabled;
   }
 
   void _selectLanguage(AppLanguage language) {
@@ -141,6 +153,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _toggleSurfaceGuidance(bool value) {
     setState(() => _surfaceGuidance = value);
     widget.onSurfaceGuidanceChanged?.call(value);
+  }
+
+  void _toggleEventLog(bool value) {
+    setState(() => _eventLog = value);
+    widget.onEventLogChanged?.call(value);
+  }
+
+  Future<void> _shareEventLog() async {
+    final share = widget.onShareEventLog;
+    if (share == null || _sharingLog) return;
+    setState(() => _sharingLog = true);
+    final message = await share();
+    if (!mounted) return;
+    setState(() => _sharingLog = false);
+    if (message != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+    }
   }
 
   Widget _buildSectionHeader(String title) {
@@ -307,6 +337,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _strings.settingsSurfaceGuidanceNote,
                   style: const TextStyle(color: Colors.white38, fontSize: 12),
                 ),
+              ),
+            ),
+          ],
+          if (widget.onEventLogChanged != null) ...[
+            _buildSectionHeader(_strings.settingsDevLogSectionHeader),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SwitchListTile(
+                    value: _eventLog,
+                    onChanged: _toggleEventLog,
+                    activeColor: _colorAccent,
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      _strings.settingsDevLogLabel,
+                      style: const TextStyle(color: Colors.white70),
+                    ),
+                    subtitle: Text(
+                      _strings.settingsDevLogNote,
+                      style:
+                          const TextStyle(color: Colors.white38, fontSize: 12),
+                    ),
+                  ),
+                  if (widget.onShareEventLog != null)
+                    OutlinedButton.icon(
+                      onPressed: _sharingLog ? null : _shareEventLog,
+                      icon: const Icon(Icons.share_outlined, size: 18),
+                      label: Text(_strings.settingsDevLogShare),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        side: const BorderSide(color: Colors.white38),
+                        minimumSize: const Size(48, 48),
+                      ),
+                    ),
+                ],
               ),
             ),
           ],

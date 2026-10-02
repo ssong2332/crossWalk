@@ -185,6 +185,13 @@ class AppStrings {
   final String settingsExperimentalSectionHeader;
   final String settingsSurfaceGuidanceLabel;
   final String settingsSurfaceGuidanceNote;
+  // T106: 개발용 기록 — 켜기/끄기(기본 켬)와 기록 보내기.
+  final String settingsDevLogSectionHeader;
+  final String settingsDevLogLabel;
+  final String settingsDevLogNote;
+  final String settingsDevLogShare;
+  final String settingsDevLogShareEmpty;
+  final String settingsDevLogShareFailed;
 
   // T40: OnboardingScreen — integrates T19 (chest-mount posture guidance)
   // + T36 (first-launch legal safety disclaimer) into one first-run
@@ -309,6 +316,12 @@ class AppStrings {
     required this.settingsExperimentalSectionHeader,
     required this.settingsSurfaceGuidanceLabel,
     required this.settingsSurfaceGuidanceNote,
+    required this.settingsDevLogSectionHeader,
+    required this.settingsDevLogLabel,
+    required this.settingsDevLogNote,
+    required this.settingsDevLogShare,
+    required this.settingsDevLogShareEmpty,
+    required this.settingsDevLogShareFailed,
     required this.onboardingEyebrow,
     required this.onboardingTitle,
     required this.onboardingPostureHeading,
@@ -408,6 +421,13 @@ class AppStrings {
     settingsSurfaceGuidanceLabel: '노면 안내 (실험)',
     settingsSurfaceGuidanceNote: '점자블록·차도를 음성으로 알려줍니다. '
         '횡단보도 안내 중에는 말하지 않습니다. 배터리를 더 씁니다.',
+    settingsDevLogSectionHeader: '개발용 기록',
+    settingsDevLogLabel: '기록 남기기',
+    settingsDevLogNote: '진동·음성·판정 결과를 이 폰에만 기록합니다. '
+        '카메라 영상과 위치는 기록하지 않습니다.',
+    settingsDevLogShare: '기록 보내기',
+    settingsDevLogShareEmpty: '보낼 기록이 없습니다',
+    settingsDevLogShareFailed: '기록을 보내지 못했습니다',
     onboardingEyebrow: '시작하기 전에',
     onboardingTitle: '안전 이용 안내',
     onboardingPostureHeading: '가슴거치 착용 방법',
@@ -530,6 +550,13 @@ class AppStrings {
     settingsSurfaceGuidanceLabel: 'Surface guidance (experimental)',
     settingsSurfaceGuidanceNote: 'Announces guide blocks and roads. '
         'Silent while crosswalk guidance is active. Uses more battery.',
+    settingsDevLogSectionHeader: 'Developer log',
+    settingsDevLogLabel: 'Keep a log',
+    settingsDevLogNote: 'Records vibration, speech and detection results '
+        'on this phone only. Camera images and location are not recorded.',
+    settingsDevLogShare: 'Send log',
+    settingsDevLogShareEmpty: 'No log to send',
+    settingsDevLogShareFailed: 'Could not send the log',
     onboardingEyebrow: 'Before you start',
     onboardingTitle: 'Safety Guide',
     onboardingPostureHeading: 'How to Wear the Chest Mount',

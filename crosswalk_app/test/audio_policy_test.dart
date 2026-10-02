@@ -28,6 +28,32 @@ void main() {
     });
   });
 
+  // T106: 기록용 이유 — 판정 결과는 바꾸지 않고 이유만 남긴다.
+  group('AudioPolicy.lastReason (T106)', () {
+    test('재생 중인 것이 없을 때: p0 / ok / min_gap', () {
+      final p = AudioPolicy();
+      p.decide(FeedbackPriority.p0, t0);
+      expect(p.lastReason, 'p0');
+      p.decide(FeedbackPriority.p2, t0);
+      expect(p.lastReason, 'ok');
+      p.markStarted(FeedbackPriority.p2);
+      p.markFinished(FeedbackPriority.p2, t0, t0);
+      expect(p.decide(FeedbackPriority.p2, t0.add(const Duration(seconds: 1))),
+          SpeechAction.drop);
+      expect(p.lastReason, 'min_gap');
+    });
+
+    test('재생 중: 끊기·대기·버림의 이유', () {
+      final p = AudioPolicy()..markStarted(FeedbackPriority.p0);
+      expect(p.decide(FeedbackPriority.p1, t0), SpeechAction.queue);
+      expect(p.lastReason, 'wait_p0');
+      expect(p.decide(FeedbackPriority.p2, t0), SpeechAction.drop);
+      expect(p.lastReason, 'busy_p0');
+      expect(p.decide(FeedbackPriority.p0, t0), SpeechAction.speakNow);
+      expect(p.lastReason, 'interrupt_p0');
+    });
+  });
+
   group('AudioPolicy.decide — 끊기 판정표 (docs/AudioPolicy.md §2)', () {
     AudioPolicy withActive(FeedbackPriority active) {
       final p = AudioPolicy();

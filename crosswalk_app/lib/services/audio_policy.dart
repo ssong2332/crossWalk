@@ -79,8 +79,14 @@ class AudioPolicy {
     return total;
   }
 
+  /// T106: 직전 [decide]가 그렇게 정한 이유(개발용 기록에만 쓴다 — 판정에는 안 쓴다).
+  /// `interrupt_p1`(재생 중인 p1을 끊음) / `wait_p0` / `busy_p0`(더 높은 등급 재생 중이라 버림) /
+  /// `p0`(즉시) / `min_gap` / `budget` / `ok`.
+  String lastReason = '';
+
   /// docs/AudioPolicy.md §2 판정표. 부수효과가 없으므로 테스트에서 직접 호출해
   /// 전수 검증할 수 있고, `FeedbackService._speak`도 이것만 보고 집행한다.
+  /// ([lastReason] 기록만 예외 — 판정 결과에는 영향이 없다.)
   SpeechAction decide(FeedbackPriority incoming, DateTime now) {
     final active = _active;
 
@@ -89,23 +95,37 @@ class AudioPolicy {
       if (incoming.index <= active.index) {
         // 유일한 예외: P0가 재생 중일 때 들어온 P1은 끊지 않고 기다린다.
         if (incoming == FeedbackPriority.p1 && active == FeedbackPriority.p0) {
+          lastReason = 'wait_p0';
           return SpeechAction.queue;
         }
+        lastReason = 'interrupt_${active.name}';
         return SpeechAction.speakNow;
       }
       // P0 재생 중 + P1 요청 -> 대기 (위 조건에 걸리지 않으므로 여기서 처리)
       if (incoming == FeedbackPriority.p1 && active == FeedbackPriority.p0) {
+        lastReason = 'wait_p0';
         return SpeechAction.queue;
       }
+      lastReason = 'busy_${active.name}';
       return SpeechAction.drop;
     }
 
     // 재생 중인 것이 없다. P0는 예산·간격을 무시하고 즉시 나간다.
-    if (incoming == FeedbackPriority.p0) return SpeechAction.speakNow;
+    if (incoming == FeedbackPriority.p0) {
+      lastReason = 'p0';
+      return SpeechAction.speakNow;
+    }
 
     final last = _lastSpeechEnd;
-    if (last != null && now.difference(last) < minGap) return SpeechAction.drop;
-    if (spokenInWindow(now) >= budgetLimit) return SpeechAction.drop;
+    if (last != null && now.difference(last) < minGap) {
+      lastReason = 'min_gap';
+      return SpeechAction.drop;
+    }
+    if (spokenInWindow(now) >= budgetLimit) {
+      lastReason = 'budget';
+      return SpeechAction.drop;
+    }
+    lastReason = 'ok';
     return SpeechAction.speakNow;
   }
 

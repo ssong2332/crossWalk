@@ -10,10 +10,14 @@
 // time as an explicit parameter. Tests drive this method directly on a
 // fresh FeedbackService() instance and never call init() or touch
 // _tts/Vibration.
+import 'dart:convert';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:crosswalk_app/localization/app_strings.dart';
+import 'package:crosswalk_app/services/event_log.dart';
 import 'package:crosswalk_app/services/feedback_service.dart';
+import 'package:crosswalk_app/services/surface_guide.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -744,6 +748,46 @@ void main() {
     expect(p, [0, 125, 125, 125, 125, 125]);
     // [대기, 켜짐, 꺼짐, 켜짐, 꺼짐, 켜짐] -> 켜짐 3번
     expect([for (var i = 1; i < p.length; i += 2) p[i]].length, 3);
+  });
+
+  // T106: 진동 기록 — 앱이 요청한 패턴을 그대로 남긴다.
+  group('FeedbackService — 진동 기록 (T106)', () {
+    test('패턴 지원 기기: 요청한 패턴 그대로', () {
+      final d = FeedbackService.vibrationLogData('left', [0, 125, 125, 125],
+          hasVibrator: true, supportsPattern: true, fallbackMs: 500);
+      expect(d, {
+        'kind': 'left',
+        'ok': true,
+        'mode': 'pattern',
+        'pat': [0, 125, 125, 125],
+      });
+    });
+
+    test('패턴 미지원 기기: 실제로 나간 단일 진동 길이', () {
+      final d = FeedbackService.vibrationLogData('road', [0, 125, 125, 125],
+          hasVibrator: true, supportsPattern: false, fallbackMs: 500);
+      expect(d['mode'], 'single');
+      expect(d['pat'], [0, 500]);
+    });
+
+    test('진동기가 없으면 ok=false와 이유', () {
+      final d = FeedbackService.vibrationLogData('recover', [0, 125],
+          hasVibrator: false, supportsPattern: false, fallbackMs: 500);
+      expect(d, {'kind': 'recover', 'ok': false, 'why': 'no_vibrator'});
+    });
+
+    test('surfaceAlert(블록 위)는 진동 요청을 기록에 남긴다', () async {
+      // 테스트 호스트는 진동기가 없다고 답한다(위 race guard 주석) — 그래서
+      // ok=false 줄이 남는다. 기록 지점이 진동 경로에 붙어 있는지를 확인한다.
+      EventLog.instance.clearForTest();
+      await FeedbackService().surfaceAlert([SurfaceEvent.linearOn]);
+      final vib = EventLog.instance.earlyLines
+          .map((l) => jsonDecode(l) as Map<String, dynamic>)
+          .where((m) => m['ev'] == 'vib')
+          .toList();
+      expect(vib, hasLength(1));
+      expect(vib.single['kind'], 'line_on');
+    });
   });
 
   // T40: OnboardingScreen's general-purpose read-aloud, reusing _speak().

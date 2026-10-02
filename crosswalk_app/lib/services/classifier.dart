@@ -138,6 +138,14 @@ class Classifier {
   int _frameCount = 0;
   final List<List<double>> _recentProbs = [];
 
+  /// T106: 개발용 기록이 읽는 직전 실행 결과(판정에는 쓰지 않는다).
+  /// [runCount]는 모델이 실제로 돈 횟수 — 바뀌었으면 이번 프레임에 돌았다.
+  int runCount = 0;
+  List<double>? lastProbs;
+  List<double>? lastAvgProbs;
+  String? lastBestLabel;
+  double? lastBestConf;
+
   // OrtEnv.instance.init()은 호출할 때마다 네이티브 OrtEnv를 새로 생성하며
   // 이전 포인터를 해제하지 않으므로(onnxruntime 1.4.1, lib/src/ort_env.dart),
   // 최초 1회만 초기화하고 dispose() 시 release() 후 다시 false로 되돌린다.
@@ -218,6 +226,7 @@ class Classifier {
     final logits = (rawOutput.first as List).map((e) => (e as double)).toList();
     outputTensor.release();
 
+    runCount++;
     return decideFromLogits(logits);
   }
 
@@ -252,6 +261,10 @@ class Classifier {
 
     final label = _labels[bestIdx];
     final conf = avgProbs[bestIdx];
+    lastProbs = probs;
+    lastAvgProbs = avgProbs;
+    lastBestLabel = label;
+    lastBestConf = conf;
     final threshold = switch (label) {
       'front' => _frontThreshold,
       'none' => _noneThreshold,
