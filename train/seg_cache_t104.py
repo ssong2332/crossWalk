@@ -7,8 +7,8 @@
 클래스 판정표 (사용자 확정 2026-09-28, docs/Tasks.md T104 (7)):
   | 원래 라벨 (속성)                                        | 클래스          |
   | 라벨 없는 픽셀                                          | 0 배경          |
-  | sidewalk (모든 속성)                                    | 1 인도          |
-  | roadway·alley (crosswalk 외 모든 속성), bike_lane       | 2 차도          |
+  | sidewalk (모든 속성), bike_lane (2026-10-02 변경)      | 1 인도          |
+  | roadway·alley (crosswalk 외 모든 속성)                  | 2 차도          |
   | roadway·alley (crosswalk)                               | 3 횡단보도      |
   | braille_guide_blocks, 모양 선형                         | 4 점자블록 선형 |
   | braille_guide_blocks, 모양 점형                         | 5 점자블록 점형 |
@@ -51,8 +51,8 @@ def class_of(label, attr, pts, w, h):
         return None
     if label == "sidewalk":
         return 1
-    if label == "bike_lane":
-        return 2
+    if label == "bike_lane":  # 2026-10-02: 차도 -> 인도 (실기기 보행로 오탐, Tasks T104 (16))
+        return 1
     if label in ("roadway", "alley"):
         return 3 if attr == "crosswalk" else 2
     ft = poly_features(pts, w, h) if len(pts) >= 3 else None
