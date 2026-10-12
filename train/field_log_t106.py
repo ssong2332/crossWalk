@@ -102,7 +102,7 @@ STATE_KO = {"right": "오른쪽 이탈", "left": "왼쪽 이탈", "front": "직�
             "nocall": "판정 없음", "error": "오류", "loading": "준비 중"}
 KNOWN_EVENTS = {"log.start", "log.on", "log.off", "log.share", "app.life", "set", "model",
                 "camera", "error", "cls", "angle", "pos", "surf", "surf.ev", "state",
-                "alert", "say", "say.end", "say.ttl", "say.defer", "say.cancel", "vib"}
+                "alert", "say", "say.end", "say.ttl", "say.defer", "say.cancel", "caut.ev", "vib"}
 
 
 @dataclass

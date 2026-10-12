@@ -49,6 +49,96 @@ void main() {
       expect(f.front.road, 0.0, reason: '위 절반의 차도는 세지 않는다');
       expect(f.right.road, 1.0);
     });
+
+    // T105: 9클래스 모델의 주의 구역 비율, 그리고 6클래스 모델도 그대로 동작.
+    List<List<double>> uniform(int cls, int want) =>
+        List.generate(4, (_) => List.generate(6, (_) => cls == want ? 9.0 : 0.0));
+
+    test('9클래스: 맨홀·그레이팅·가로수·계단 비율을 읽는다 (T105)', () {
+      for (final (want, read) in [
+        (SurfaceClass.manholeGrating, (SurfaceRegion r) => r.manholeGrating),
+        (SurfaceClass.treeZone, (SurfaceRegion r) => r.treeZone),
+        (SurfaceClass.stairs, (SurfaceRegion r) => r.stairs),
+      ]) {
+        final f = SurfaceFeatures.fromLogits(
+            List.generate(SurfaceClass.count, (c) => uniform(c, want)));
+        expect(read(f.front), 1.0, reason: '$want');
+        expect(f.front.sidewalk, 0.0);
+      }
+    });
+
+    test('6클래스 로짓도 동작한다 — 주의 구역 비율은 0 (T105)', () {
+      final f = SurfaceFeatures.fromLogits(
+          List.generate(6, (c) => uniform(c, SurfaceClass.sidewalk)));
+      expect(f.front.sidewalk, 1.0);
+      expect(f.front.manholeGrating, 0.0);
+      expect(f.front.treeZone, 0.0);
+    });
+  });
+
+  group('CautionGuide — 주의 구역 판정표 (docs/CautionGuidance.md, T105)', () {
+    const manhole = SurfaceRegion(sidewalk: 0.8, manholeGrating: 0.15);
+    const tree = SurfaceRegion(sidewalk: 0.8, treeZone: 0.15);
+    const smallManhole = SurfaceRegion(sidewalk: 0.92, manholeGrating: 0.08);
+
+    List<(double, CautionEvent)> runC(CautionGuide g, List<SurfaceFeatures> seq,
+        {String state = 'none', double start = 0, bool surfaceFired = false}) {
+      final out = <(double, CautionEvent)>[];
+      for (var i = 0; i < seq.length; i++) {
+        final t = start + i * 0.5;
+        for (final e
+            in g.update(seq[i], state, at(t), surfaceEventFired: surfaceFired)) {
+          out.add((t, e));
+        }
+      }
+      return out;
+    }
+
+    test('C1: 맨홀·그레이팅 10% 이상이 연속 2회면 1회, 머무는 동안 반복 없음', () {
+      final ev = runC(CautionGuide(), List.filled(8, feat(front: manhole)));
+      expect(ev, [(0.5, CautionEvent.manholeGrating)]);
+    });
+
+    test('C1: 10% 미만은 말하지 않는다', () {
+      expect(runC(CautionGuide(), List.filled(8, feat(front: smallManhole))), isEmpty);
+    });
+
+    test('C2: 가로수 구역도 같은 방식', () {
+      final ev = runC(CautionGuide(), List.filled(4, feat(front: tree)));
+      expect(ev, [(0.5, CautionEvent.treeZone)]);
+    });
+
+    test('3초 안에 다시 나타나면 침묵, 3초 넘게 없다가 나타나면 다시 1회', () {
+      final g = CautionGuide();
+      runC(g, List.filled(3, feat(front: manhole)));
+      // 2초 없음(재무장 안 됨) -> 다시 나타남: 침묵
+      runC(g, List.filled(4, feat(front: sidewalk)), start: 1.5);
+      expect(runC(g, List.filled(3, feat(front: manhole)), start: 3.5), isEmpty);
+      // 4초 없음 -> 다시 나타남: 1회
+      runC(g, List.filled(9, feat(front: sidewalk)), start: 5);
+      expect(runC(g, List.filled(3, feat(front: manhole)), start: 9.5),
+          [(10.0, CautionEvent.manholeGrating)]);
+    });
+
+    test('C3: 같은 판정에서 노면 안내(B)가 났으면 말하지 않고, 그 등장은 다시 말하지 않는다', () {
+      final g = CautionGuide();
+      expect(runC(g, List.filled(2, feat(front: manhole)), surfaceFired: true), isEmpty);
+      expect(runC(g, List.filled(4, feat(front: manhole)), start: 1), isEmpty);
+    });
+
+    test('C5·C6·C7: approach·위·hold·무판정에서는 침묵', () {
+      for (final st in ['approach', 'front', 'left', 'right', 'hold', 'nocall']) {
+        expect(runC(CautionGuide(), List.filled(4, feat(front: manhole)), state: st),
+            isEmpty,
+            reason: st);
+      }
+    });
+
+    test('crossed에서는 말한다', () {
+      expect(
+          runC(CautionGuide(), List.filled(2, feat(front: tree)), state: 'crossed'),
+          [(0.5, CautionEvent.treeZone)]);
+    });
   });
 
   group('상태 게이트 (판정표 4·9·10)', () {

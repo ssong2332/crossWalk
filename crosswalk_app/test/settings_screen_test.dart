@@ -40,6 +40,8 @@ void main() {
     ValueChanged<bool>? onPowerSaveModeChanged,
     bool surfaceGuidanceEnabled = false,
     ValueChanged<bool>? onSurfaceGuidanceChanged,
+    bool cautionGuidanceEnabled = false,
+    ValueChanged<bool>? onCautionGuidanceChanged,
     bool eventLogEnabled = true,
     ValueChanged<bool>? onEventLogChanged,
     Future<String?> Function()? onShareEventLog,
@@ -55,6 +57,8 @@ void main() {
         onPowerSaveModeChanged: onPowerSaveModeChanged ?? (_) {},
         surfaceGuidanceEnabled: surfaceGuidanceEnabled,
         onSurfaceGuidanceChanged: onSurfaceGuidanceChanged,
+        cautionGuidanceEnabled: cautionGuidanceEnabled,
+        onCautionGuidanceChanged: onCautionGuidanceChanged,
         eventLogEnabled: eventLogEnabled,
         onEventLogChanged: onEventLogChanged,
         onShareEventLog: onShareEventLog,
@@ -173,6 +177,41 @@ void main() {
       await tester.tap(finder);
       await tester.pumpAndSettle();
       expect(toggledTo, isTrue);
+    });
+  });
+
+  group('SettingsScreen — 주의 구역 안내 토글 (T105)', () {
+    testWidgets('콜백이 없으면 스위치를 그리지 않는다', (tester) async {
+      await tester.pumpWidget(buildSettingsScreen(
+        feedback: FeedbackService(),
+        language: AppLanguage.ko,
+        onLanguageChanged: (_) {},
+        onSurfaceGuidanceChanged: (_) {},
+      ));
+      await tester.pumpAndSettle();
+      expect(find.text('주의 구역 안내 (실험)'), findsNothing);
+    });
+
+    testWidgets('노면 안내와 별도 스위치 — 기본 꺼짐, 켜면 onCautionGuidanceChanged(true)',
+        (tester) async {
+      bool? caution;
+      bool? surface;
+      await tester.pumpWidget(buildSettingsScreen(
+        feedback: FeedbackService(),
+        language: AppLanguage.ko,
+        onLanguageChanged: (_) {},
+        onSurfaceGuidanceChanged: (v) => surface = v,
+        onCautionGuidanceChanged: (v) => caution = v,
+      ));
+      await tester.pumpAndSettle();
+      final finder = find.widgetWithText(SwitchListTile, '주의 구역 안내 (실험)');
+      await tester.ensureVisible(finder);
+      await tester.pumpAndSettle();
+      expect(tester.widget<SwitchListTile>(finder).value, isFalse);
+      await tester.tap(finder);
+      await tester.pumpAndSettle();
+      expect(caution, isTrue);
+      expect(surface, isNull, reason: '노면 안내 스위치는 건드리지 않는다');
     });
   });
 

@@ -47,6 +47,8 @@ class SettingsScreen extends StatefulWidget {
     required this.onPowerSaveModeChanged,
     this.surfaceGuidanceEnabled = false,
     this.onSurfaceGuidanceChanged,
+    this.cautionGuidanceEnabled = false,
+    this.onCautionGuidanceChanged,
     this.eventLogEnabled = true,
     this.onEventLogChanged,
     this.onShareEventLog,
@@ -70,6 +72,11 @@ class SettingsScreen extends StatefulWidget {
   // T104: 노면 안내(실험, 기본 꺼짐). 콜백이 없으면 스위치를 그리지 않는다.
   final bool surfaceGuidanceEnabled;
   final ValueChanged<bool>? onSurfaceGuidanceChanged;
+
+  // T105: 주의 구역 안내(실험, 기본 꺼짐, 노면 안내와 별도 스위치 — 사용자 확정 Q4).
+  // 콜백이 없으면 스위치를 그리지 않는다.
+  final bool cautionGuidanceEnabled;
+  final ValueChanged<bool>? onCautionGuidanceChanged;
 
   // T106: 개발용 기록(기본 켬, 사용자 확정 Q3). 콜백이 없으면 이 구역을 그리지 않는다.
   // [onShareEventLog]는 성공이면 null, 실패·빈 기록이면 띄울 문구를 돌려준다.
@@ -98,6 +105,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late bool _torchEnabled;
   late bool _powerSaveMode;
   late bool _surfaceGuidance;
+  late bool _cautionGuidance;
   late bool _eventLog;
   bool _sharingLog = false;
 
@@ -111,6 +119,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _torchEnabled = widget.torchEnabled;
     _powerSaveMode = widget.powerSaveMode;
     _surfaceGuidance = widget.surfaceGuidanceEnabled;
+    _cautionGuidance = widget.cautionGuidanceEnabled;
     _eventLog = widget.eventLogEnabled;
   }
 
@@ -153,6 +162,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _toggleSurfaceGuidance(bool value) {
     setState(() => _surfaceGuidance = value);
     widget.onSurfaceGuidanceChanged?.call(value);
+  }
+
+  void _toggleCautionGuidance(bool value) {
+    setState(() => _cautionGuidance = value);
+    widget.onCautionGuidanceChanged?.call(value);
   }
 
   void _toggleEventLog(bool value) {
@@ -320,8 +334,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ),
-          if (widget.onSurfaceGuidanceChanged != null) ...[
+          if (widget.onSurfaceGuidanceChanged != null ||
+              widget.onCautionGuidanceChanged != null)
             _buildSectionHeader(_strings.settingsExperimentalSectionHeader),
+          if (widget.onSurfaceGuidanceChanged != null) ...[
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: SwitchListTile(
@@ -335,6 +351,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 subtitle: Text(
                   _strings.settingsSurfaceGuidanceNote,
+                  style: const TextStyle(color: Colors.white38, fontSize: 12),
+                ),
+              ),
+            ),
+          ],
+          if (widget.onCautionGuidanceChanged != null) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: SwitchListTile(
+                value: _cautionGuidance,
+                onChanged: _toggleCautionGuidance,
+                activeColor: _colorAccent,
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  _strings.settingsCautionGuidanceLabel,
+                  style: const TextStyle(color: Colors.white70),
+                ),
+                subtitle: Text(
+                  _strings.settingsCautionGuidanceNote,
                   style: const TextStyle(color: Colors.white38, fontSize: 12),
                 ),
               ),

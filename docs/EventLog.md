@@ -49,14 +49,15 @@
 | `log.on` / `log.off` | 설정에서 기록을 켬/끔 | — | `event_log.dart` `setEnabled` |
 | `log.share` | 기록 보내기 | `files`(개수), `status`(공유 창 결과) 또는 `err` | `camera_screen.dart` `_shareEventLog` |
 | `app.life` | 앱 생명주기 변화 | `state`(resumed/inactive/hidden/paused/detached) | `camera_screen.dart` `didChangeAppLifecycleState` |
-| `set` | 설정 변경 | `key`(lang/speechRate/vibrationMs/surface/torch/powerSave), `value` | `feedback_service.dart`, `camera_screen.dart` |
+| `set` | 설정 변경 | `key`(lang/speechRate/vibrationMs/surface/caution/torch/powerSave), `value` | `feedback_service.dart`, `camera_screen.dart` |
 | `model` | 모델 불러오기 | `name`(cls/angle/pos/surface), `ok`, `dur`(ms) 또는 `err` | `camera_screen.dart` `_initCamera`, `_setSurfaceEnabled` |
 | `camera` | 카메라 스트림 시작 | `ok`, `sensor`(센서 회전), `preview`(크기) | `camera_screen.dart` `_initCamera` |
 | `error` | 초기화 실패 | `where`(permission/camera/model_integrity/init), `msg` 또는 `permanent` | `camera_screen.dart` `_initCamera` |
 | `cls` | 분류기가 실제로 돈 프레임 (처리 프레임 5개 중 1번) | `best`(최고 클래스), `conf`(스무딩 평균 확률), `ok`(임계값 통과), `probs`(이번 프레임 6클래스), `avg`(스무딩 평균 6클래스), `dur`(ms) | `camera_screen.dart` `_onFrame` |
 | `angle` | 각도 모델이 돈 프레임 | `raw`, `smooth`, `label`, `dur` | `_updateAngleEstimate` |
 | `pos` | 위치 모델이 돈 프레임 | `raw`, `smooth`, `label`, `dur` | `_updatePositionEstimate` |
-| `surf` | 노면 모델이 돈 프레임 (노면 안내가 켜졌을 때만) | `L`/`F`/`R` = **[인도, 차도, 선형, 점형] 비율**, `st`(화면 상태), `dur`, `ok` | `_updateSurfaceGuidance` |
+| `surf` | 노면 모델이 돈 프레임 (노면 안내나 주의 구역 안내가 켜졌을 때만) | `L`/`F`/`R` = **[인도, 차도, 선형, 점형, 맨홀·그레이팅, 가로수 구역, 계단] 비율** (T105가 뒤 3개를 붙임 — 앞 4개 순서는 그대로), `st`(화면 상태), `dur`, `ok` | `_updateSurfaceGuidance` |
+| `caut.ev` | 주의 구역 판정표 이벤트 (T105) | `names`(manholeGrating/treeZone 목록), `st` | `_updateSurfaceGuidance` |
 | `surf.ev` | 노면 판정표 이벤트 | `names`(road/dotBlock/linearOn/linearRight/linearLeft/linearLost 목록), `st` | `_updateSurfaceGuidance` |
 | `state` | 화면 상태가 바뀜 (무판정·오류 포함, 1초 안) | `from`, `to`, `edge`, `conf` | `_logStateIfChanged` |
 | `alert` | 이탈 안내 판단 한 번 | `cls`, `conf`, `ang`, `edge`, `msg`/`phase`/`recover`/`edgeTurned`(이번에 고른 문장, 없으면 null), `vib`(진동 여부) | `feedback_service.dart` `alert` |

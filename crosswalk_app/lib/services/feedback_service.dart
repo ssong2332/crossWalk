@@ -801,6 +801,20 @@ class FeedbackService {
     }
   }
 
+  /// T105: 주의 구역 안내(`CautionGuide` 이벤트)를 말한다. 등급·진동은
+  /// `docs/AudioPolicy.md` 주의 구역 표(사용자 확정 2026-10-01): 둘 다 P2, 진동 없음.
+  /// P2라 무음 예산·최소 간격을 따르고, 걸리면 버린다(대기하지 않음).
+  Future<void> cautionAlert(List<CautionEvent> events) async {
+    final strings = AppStrings.of(_language);
+    for (final e in events) {
+      final message = switch (e) {
+        CautionEvent.manholeGrating => strings.cautionManholeMessage,
+        CautionEvent.treeZone => strings.cautionTreeMessage,
+      };
+      unawaited(_speak(message, priority: FeedbackPriority.p2));
+    }
+  }
+
   /// T104: 차도 진동 — 짧게 3번(‧‧‧). 기존 좌(‧‧)·우(—)·복귀(짧게 1번)와 겹치지 않는다.
   @visibleForTesting
   static List<int> surfaceRoadPattern(int shortMs) =>

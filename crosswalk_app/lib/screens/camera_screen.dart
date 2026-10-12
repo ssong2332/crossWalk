@@ -545,8 +545,15 @@ class _CameraScreenState extends State<CameraScreen>
   int _surfaceFrameCount = 0;
   SurfaceFeatures? _lastSurface;
 
+  // T105: 주의 구역 안내(실험, 별도 스위치 — 사용자 확정 Q4). 같은 분할 결과를 쓴다.
+  // 판정표는 `docs/CautionGuidance.md`, 로직은 `CautionGuide`.
+  final CautionGuide _cautionGuide = CautionGuide();
+  bool _cautionEnabled = false;
+
   void _updateSurfaceGuidance(CameraImage image) {
-    if (!_surfaceEnabled || !_surfaceEstimator.isReady) return;
+    if (!(_surfaceEnabled || _cautionEnabled) || !_surfaceEstimator.isReady) {
+      return;
+    }
     _surfaceFrameCount++;
     if (_surfaceFrameCount % 10 != 9) return;
     final rot = _controller?.description.sensorOrientation ?? 90;
@@ -557,8 +564,16 @@ class _CameraScreenState extends State<CameraScreen>
       return;
     }
     // T106: 세 칸의 비율 — 순서 [인도, 차도, 선형, 점형] (docs/EventLog.md).
-    List<double> ratios(SurfaceRegion r) =>
-        [r.sidewalk, r.road, r.linear, r.dot];
+    // T105: 뒤에 [맨홀·그레이팅, 가로수 구역, 계단]을 붙인다(앞 4개 순서는 그대로).
+    List<double> ratios(SurfaceRegion r) => [
+          r.sidewalk,
+          r.road,
+          r.linear,
+          r.dot,
+          r.manholeGrating,
+          r.treeZone,
+          r.stairs,
+        ];
     EventLog.instance.log('surf', {
       'ok': true,
       'L': ratios(f.left),
@@ -569,13 +584,48 @@ class _CameraScreenState extends State<CameraScreen>
     });
     // 상태 게이트(판정표 §2): none/crossed에서만 말한다. 무판정·오류·횡단보도
     // 위·hold·approach면 SurfaceGuide가 상태를 비우고 아무것도 내지 않는다.
-    final events = _surfaceGuide.update(f, _fieldState, DateTime.now());
+    final now = DateTime.now();
+    final events = _surfaceEnabled
+        ? _surfaceGuide.update(f, _fieldState, now)
+        : const <SurfaceEvent>[];
     if (events.isNotEmpty) {
       EventLog.instance.log('surf.ev',
           {'names': [for (final e in events) e.name], 'st': _fieldState});
     }
     if (events.isNotEmpty) unawaited(_feedback.surfaceAlert(events));
+    // T105: 주의 구역(C). 같은 판정에서 노면 안내(B)가 났으면 C는 말하지 않는다(C3).
+    if (_cautionEnabled) {
+      final cautions = _cautionGuide.update(f, _fieldState, now,
+          surfaceEventFired: events.isNotEmpty);
+      if (cautions.isNotEmpty) {
+        EventLog.instance.log('caut.ev',
+            {'names': [for (final e in cautions) e.name], 'st': _fieldState});
+        unawaited(_feedback.cautionAlert(cautions));
+      }
+    }
     if (mounted) setState(() => _lastSurface = f);
+  }
+
+  Future<void> _setCautionEnabled(bool enabled) async {
+    EventLog.instance.log('set', {'key': 'caution', 'value': enabled});
+    if (enabled && !_surfaceEstimator.isReady) {
+      final loadClock = Stopwatch()..start();
+      try {
+        await _surfaceEstimator.init();
+        EventLog.instance.log('model', {
+          'name': 'surface',
+          'ok': true,
+          'dur': loadClock.elapsedMilliseconds,
+        });
+      } catch (e) {
+        debugPrint('[T105] 노면 모델 초기화 실패: $e');
+        EventLog.instance
+            .log('model', {'name': 'surface', 'ok': false, 'err': '$e'});
+        return;
+      }
+    }
+    _cautionGuide.reset();
+    if (mounted) setState(() => _cautionEnabled = enabled);
   }
 
   Future<void> _setSurfaceEnabled(bool enabled) async {
@@ -1161,6 +1211,8 @@ class _CameraScreenState extends State<CameraScreen>
                   onPowerSaveModeChanged: _setPowerSaveMode,
                   surfaceGuidanceEnabled: _surfaceEnabled,
                   onSurfaceGuidanceChanged: _setSurfaceEnabled,
+                  cautionGuidanceEnabled: _cautionEnabled,
+                  onCautionGuidanceChanged: _setCautionEnabled,
                   eventLogEnabled: EventLog.instance.enabled,
                   onEventLogChanged: EventLog.instance.setEnabled,
                   onShareEventLog: _shareEventLog,
@@ -1572,7 +1624,7 @@ class _CameraScreenState extends State<CameraScreen>
                                   // (설정 화면의 T45 값과 같은 출처).
                                   '${_stripeDebugText()}  ·  빌드 $buildShaShort'
                                   // T104: 노면 안내가 켜져 있으면 발 앞 칸 비율(%).
-                                  '${_surfaceEnabled ? '\n노면 앞: ${_lastSurface?.front ?? '-'}' : ''}',
+                                  '${_surfaceEnabled || _cautionEnabled ? '\n노면 앞: ${_lastSurface?.front ?? '-'}' : ''}',
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     color: _colorTextDim.withValues(alpha: 0.8),

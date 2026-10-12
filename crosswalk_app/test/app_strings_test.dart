@@ -66,6 +66,10 @@ void main() {
       expect(strings.surfaceLinearRightMessage, '점자블록 오른쪽');
       expect(strings.surfaceLinearLeftMessage, '점자블록 왼쪽');
       expect(strings.surfaceLinearLostMessage, '점자블록을 벗어났습니다');
+      // T105: 주의 구역 안내(docs/CautionGuidance.md Q1·Q2 확정 문구).
+      expect(strings.cautionManholeMessage, '발밑 주의');
+      expect(strings.cautionTreeMessage, '가로수');
+      expect(strings.settingsCautionGuidanceLabel, '주의 구역 안내 (실험)');
       expect(strings.settingsSurfaceGuidanceLabel, '노면 안내 (실험)');
       // T106: 개발용 기록.
       expect(strings.settingsDevLogSectionHeader, '개발용 기록');

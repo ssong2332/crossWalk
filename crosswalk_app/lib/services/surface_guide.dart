@@ -16,7 +16,9 @@
 /// 기준값(50%, 5%, 2회, 3초, 2초)은 추정이다 — 문서 §6.
 library;
 
-/// 모델 클래스 번호(`train/train_seg_t104.py`와 같다).
+/// 모델 클래스 번호(`train/train_seg_t105.py`와 같다 — 0~5는 T104와 같은 번호).
+/// T105(2026-10-12): 앱 모델을 9클래스로 바꿨다. 6클래스 모델을 넣어도 동작한다
+/// (6~8의 비율이 0으로 나올 뿐).
 class SurfaceClass {
   SurfaceClass._();
   static const background = 0;
@@ -25,24 +27,39 @@ class SurfaceClass {
   static const crosswalk = 3;
   static const linear = 4;
   static const dot = 5;
-  static const count = 6;
+  static const stairs = 6;
+  static const manholeGrating = 7;
+  static const treeZone = 8;
+  static const count = 9;
 }
 
 enum SurfaceEvent { road, dotBlock, linearOn, linearRight, linearLeft, linearLost }
 
+/// T105: 주의 구역 안내(`docs/CautionGuidance.md`) 이벤트.
+enum CautionEvent { manholeGrating, treeZone }
+
 /// 한 칸(영역)의 클래스별 면적 비율(0~1).
 class SurfaceRegion {
   const SurfaceRegion(
-      {this.sidewalk = 0, this.road = 0, this.linear = 0, this.dot = 0});
+      {this.sidewalk = 0,
+      this.road = 0,
+      this.linear = 0,
+      this.dot = 0,
+      this.stairs = 0,
+      this.manholeGrating = 0,
+      this.treeZone = 0});
 
   final double sidewalk;
   final double road;
   final double linear;
   final double dot;
+  final double stairs;
+  final double manholeGrating;
+  final double treeZone;
 
   @override
   String toString() => '인도 ${_p(sidewalk)} 차도 ${_p(road)} '
-      '선형 ${_p(linear)} 점형 ${_p(dot)}';
+      '선형 ${_p(linear)} 점형 ${_p(dot)} 맨홀 ${_p(manholeGrating)} 가로수 ${_p(treeZone)}';
 
   static String _p(double v) => (v * 100).toStringAsFixed(0);
 }
@@ -89,6 +106,9 @@ class SurfaceFeatures {
         road: counts[i][SurfaceClass.road] / t,
         linear: counts[i][SurfaceClass.linear] / t,
         dot: counts[i][SurfaceClass.dot] / t,
+        stairs: counts[i][SurfaceClass.stairs] / t,
+        manholeGrating: counts[i][SurfaceClass.manholeGrating] / t,
+        treeZone: counts[i][SurfaceClass.treeZone] / t,
       );
     }
 
@@ -242,6 +262,75 @@ class SurfaceGuide {
           _lostSince = null;
         }
       }
+    }
+    return out;
+  }
+}
+
+/// T105: 주의 구역 안내 판정 — `docs/CautionGuidance.md` 판정표(사용자 확정 2026-10-01)의 구현.
+///
+///   | #  | 분류기 상태      | 조건 (연속 2회 확인 후)                   | 이벤트          |
+///   | C1 | none / crossed   | 앞 맨홀·그레이팅 없음 -> 있음(앞 칸 10% 이상) | manholeGrating ("발밑 주의", P2) |
+///   | C2 | none / crossed   | 앞 가로수 구역 없음 -> 있음(10% 이상)      | treeZone ("가로수", P2) |
+///   | C3 | none / crossed   | C1·C2가 같은 판정의 노면 이벤트(B)와 겹침  | 없음 — B만 말하고, 그 등장은 다시 말하지 않음 |
+///   | C4 | none / crossed   | 계단                                       | 없음 (모델 미달) |
+///   | C5~C7 | approach·위·hold·무판정 | 무엇이든                         | 없음(상태 초기화) |
+/// 반복: 1회. 3초 이상 없었다가 다시 나타나야 다시 말한다(B 멈춤 블록과 같은 방식).
+/// 기준값(10%, 2회, 3초)은 추정이다 — 문서 §6.
+class CautionGuide {
+  static const presentRatio = 0.10;
+  static const rearmAfter = Duration(seconds: 3);
+
+  _Debounced _manhole = _Debounced();
+  _Debounced _tree = _Debounced();
+  bool _manholeArmed = true;
+  bool _treeArmed = true;
+  DateTime? _manholeOffSince;
+  DateTime? _treeOffSince;
+
+  void reset() {
+    _manhole = _Debounced();
+    _tree = _Debounced();
+    _manholeArmed = true;
+    _treeArmed = true;
+    _manholeOffSince = null;
+    _treeOffSince = null;
+  }
+
+  /// 분할 결과 하나를 넣고 이번에 낼 이벤트를 돌려준다.
+  /// [surfaceEventFired]는 같은 판정에서 노면 안내(B) 이벤트가 났는지(C3).
+  List<CautionEvent> update(SurfaceFeatures f, String state, DateTime now,
+      {bool surfaceEventFired = false}) {
+    if (!SurfaceGuide.isActiveState(state)) {
+      reset();
+      return const [];
+    }
+    final out = <CautionEvent>[];
+
+    final manholeRose =
+        _manhole.update(f.front.manholeGrating >= presentRatio) && _manhole.value;
+    if (manholeRose && _manholeArmed) {
+      // C3: B와 겹치면 말하지 않지만, 이 등장은 쓴 것으로 친다.
+      if (!surfaceEventFired) out.add(CautionEvent.manholeGrating);
+      _manholeArmed = false;
+    }
+    if (_manhole.value) {
+      _manholeOffSince = null;
+    } else {
+      _manholeOffSince ??= now;
+      if (now.difference(_manholeOffSince!) >= rearmAfter) _manholeArmed = true;
+    }
+
+    final treeRose = _tree.update(f.front.treeZone >= presentRatio) && _tree.value;
+    if (treeRose && _treeArmed) {
+      if (!surfaceEventFired) out.add(CautionEvent.treeZone);
+      _treeArmed = false;
+    }
+    if (_tree.value) {
+      _treeOffSince = null;
+    } else {
+      _treeOffSince ??= now;
+      if (now.difference(_treeOffSince!) >= rearmAfter) _treeArmed = true;
     }
     return out;
   }

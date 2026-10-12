@@ -126,6 +126,9 @@ class AppStrings {
   final String surfaceLinearRightMessage;
   final String surfaceLinearLeftMessage;
   final String surfaceLinearLostMessage;
+  // T105: 주의 구역 안내(docs/CautionGuidance.md Q1·Q2).
+  final String cautionManholeMessage;
+  final String cautionTreeMessage;
 
   // 상태 전이 안내 — 반복 경고가 아니라 "구간이 바뀌었다"는 1회성 사실.
   final String enteredCrosswalkMessage;
@@ -185,6 +188,8 @@ class AppStrings {
   final String settingsExperimentalSectionHeader;
   final String settingsSurfaceGuidanceLabel;
   final String settingsSurfaceGuidanceNote;
+  final String settingsCautionGuidanceLabel;
+  final String settingsCautionGuidanceNote;
   // T106: 개발용 기록 — 켜기/끄기(기본 켬)와 기록 보내기.
   final String settingsDevLogSectionHeader;
   final String settingsDevLogLabel;
@@ -289,6 +294,8 @@ class AppStrings {
     required this.surfaceLinearRightMessage,
     required this.surfaceLinearLeftMessage,
     required this.surfaceLinearLostMessage,
+    required this.cautionManholeMessage,
+    required this.cautionTreeMessage,
     required this.enteredCrosswalkMessage,
     required this.crossedCrosswalkMessage,
     required this.approachAheadMessage,
@@ -316,6 +323,8 @@ class AppStrings {
     required this.settingsExperimentalSectionHeader,
     required this.settingsSurfaceGuidanceLabel,
     required this.settingsSurfaceGuidanceNote,
+    required this.settingsCautionGuidanceLabel,
+    required this.settingsCautionGuidanceNote,
     required this.settingsDevLogSectionHeader,
     required this.settingsDevLogLabel,
     required this.settingsDevLogNote,
@@ -391,6 +400,8 @@ class AppStrings {
     surfaceLinearRightMessage: '점자블록 오른쪽',
     surfaceLinearLeftMessage: '점자블록 왼쪽',
     surfaceLinearLostMessage: '점자블록을 벗어났습니다',
+    cautionManholeMessage: '발밑 주의',
+    cautionTreeMessage: '가로수',
     enteredCrosswalkMessage: '횡단보도에 진입했습니다.',
     crossedCrosswalkMessage: '횡단보도를 건넜습니다.',
     approachAheadMessage: '앞에 횡단보도가 있습니다.',
@@ -421,6 +432,9 @@ class AppStrings {
     settingsSurfaceGuidanceLabel: '노면 안내 (실험)',
     settingsSurfaceGuidanceNote: '점자블록·차도를 음성으로 알려줍니다. '
         '횡단보도 안내 중에는 말하지 않습니다. 배터리를 더 씁니다.',
+    settingsCautionGuidanceLabel: '주의 구역 안내 (실험)',
+    settingsCautionGuidanceNote: '맨홀·그레이팅("발밑 주의")과 가로수 구역("가로수")을 '
+        '음성으로 알려줍니다. 횡단보도 안내 중에는 말하지 않습니다. 배터리를 더 씁니다.',
     settingsDevLogSectionHeader: '개발용 기록',
     settingsDevLogLabel: '기록 남기기',
     settingsDevLogNote: '진동·음성·판정 결과를 이 폰에만 기록합니다. '
@@ -520,6 +534,8 @@ class AppStrings {
     surfaceLinearRightMessage: 'Guide blocks on the right',
     surfaceLinearLeftMessage: 'Guide blocks on the left',
     surfaceLinearLostMessage: 'You left the guide blocks',
+    cautionManholeMessage: 'Watch your step',
+    cautionTreeMessage: 'Street tree',
     enteredCrosswalkMessage: 'You have entered the crosswalk.',
     crossedCrosswalkMessage: 'You have crossed the crosswalk.',
     approachAheadMessage: 'Crosswalk ahead.',
@@ -550,6 +566,10 @@ class AppStrings {
     settingsSurfaceGuidanceLabel: 'Surface guidance (experimental)',
     settingsSurfaceGuidanceNote: 'Announces guide blocks and roads. '
         'Silent while crosswalk guidance is active. Uses more battery.',
+    settingsCautionGuidanceLabel: 'Caution zone guidance (experimental)',
+    settingsCautionGuidanceNote: 'Announces manholes and gratings ("Watch your step") and '
+        'street tree zones ("Street tree"). Silent while crosswalk guidance is active. '
+        'Uses more battery.',
     settingsDevLogSectionHeader: 'Developer log',
     settingsDevLogLabel: 'Keep a log',
     settingsDevLogNote: 'Records vibration, speech and detection results '

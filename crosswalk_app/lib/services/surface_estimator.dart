@@ -8,8 +8,9 @@ import 'surface_guide.dart';
 
 /// T104: 노면 분할 모델(점자블록 선형/점형·인도·차도·횡단보도) 러너.
 ///
-/// 모델: LR-ASPP MobileNetV3-Small, 입력 [1,3,224,224], 출력 로짓 [1,6,224,224]
-/// (`train/train_seg_t104.py`, test mIoU 0.704 — `docs/Tasks.md` T104 (10)).
+/// 모델: LR-ASPP MobileNetV3-Small, 입력 [1,3,224,224], 출력 로짓 [1,9,224,224]
+/// (T105 2026-10-12: `train/train_seg_t105.py`, bike_lane=인도로 재학습한 9클래스 —
+/// `docs/Tasks.md` T105 (10)·(11). 이전 6클래스 T104 모델은 test mIoU 0.704, T104 (10)).
 /// 입력은 위치 모델과 같이 화면(세로) 방향 전체를 224로 누른다
 /// (`AngleEstimator.preprocessFrame(cropRatio: 1.0)`) — 학습도 세로 3:4 영역을
 /// 224로 눌러서 했다.
