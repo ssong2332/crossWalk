@@ -22,6 +22,16 @@ import '../services/stripe_direction_estimator.dart';
 import '../localization/app_strings.dart';
 import 'settings_screen.dart';
 
+/// T117: 디버그 박스의 줌 범위 줄. 최소 줌이 1 미만이면 앱이 줌으로 폰
+/// 초광각 렌즈에 닿을 수 있다는 뜻이다(확인용 — 앱 동작은 바꾸지 않는다).
+@visibleForTesting
+String zoomProbeText(double? zoomMin, double? zoomMax, int backCameras) {
+  final range = zoomMin == null || zoomMax == null
+      ? '-'
+      : '${zoomMin.toStringAsFixed(2)}~${zoomMax.toStringAsFixed(1)}';
+  return '줌 $range · 후면 $backCameras';
+}
+
 class CameraScreen extends StatefulWidget {
   // T40: language is now detected once in OnboardingScreen (which runs
   // before this screen) and passed forward via [initialLanguage], so the
@@ -356,13 +366,34 @@ class _CameraScreenState extends State<CameraScreen>
           // 일부 기기/플랫폼에서 노출 모드 변경이 지원되지 않을 수 있음 — 무시하고 계속 진행
         }
 
+        // T117: 줌 범위만 읽는다(설정하지 않음). 못 읽는 기기면 '-'로 둔다.
+        double? zoomMin;
+        double? zoomMax;
+        try {
+          zoomMin = await _controller!.getMinZoomLevel();
+          zoomMax = await _controller!.getMaxZoomLevel();
+        } catch (_) {
+          zoomMin = null;
+          zoomMax = null;
+        }
+
         if (!mounted) return;
 
+        _zoomMin = zoomMin;
+        _zoomMax = zoomMax;
+        _backCameraCount = cameras
+            .where((c) => c.lensDirection == CameraLensDirection.back)
+            .length;
         _controller!.startImageStream(_onFrame);
         EventLog.instance.log('camera', {
           'ok': true,
           'sensor': back.sensorOrientation,
           'preview': '${_controller!.value.previewSize}',
+          'zoomMin': zoomMin,
+          'zoomMax': zoomMax,
+          'cams': [
+            for (final c in cameras) '${c.name}:${c.lensDirection.name}'
+          ],
         });
         setState(() => _statusLabel = _strings.detecting);
       } on ModelIntegrityException catch (e) {
@@ -544,6 +575,11 @@ class _CameraScreenState extends State<CameraScreen>
   bool _surfaceEnabled = false;
   int _surfaceFrameCount = 0;
   SurfaceFeatures? _lastSurface;
+
+  // T117: 카메라를 열 때 읽은 줌 범위와 후면 카메라 수(확인용, 판정에 안 씀).
+  double? _zoomMin;
+  double? _zoomMax;
+  int _backCameraCount = 0;
 
   // T105: 주의 구역 안내(실험, 별도 스위치 — 사용자 확정 Q4). 같은 분할 결과를 쓴다.
   // 판정표는 `docs/CautionGuidance.md`, 로직은 `CautionGuide`.
@@ -1623,6 +1659,8 @@ class _CameraScreenState extends State<CameraScreen>
                                   // 중 메인 화면에서 바로 보이게 한다
                                   // (설정 화면의 T45 값과 같은 출처).
                                   '${_stripeDebugText()}  ·  빌드 $buildShaShort'
+                                  // T117: 폰 초광각 접근 가능 여부(최소 줌 < 1).
+                                  '\n${zoomProbeText(_zoomMin, _zoomMax, _backCameraCount)}'
                                   // T104: 노면 안내가 켜져 있으면 발 앞 칸 비율(%).
                                   '${_surfaceEnabled || _cautionEnabled ? '\n노면 앞: ${_lastSurface?.front ?? '-'}' : ''}',
                                   textAlign: TextAlign.center,
