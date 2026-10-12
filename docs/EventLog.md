@@ -62,7 +62,9 @@
 | `alert` | 이탈 안내 판단 한 번 | `cls`, `conf`, `ang`, `edge`, `msg`/`phase`/`recover`/`edgeTurned`(이번에 고른 문장, 없으면 null), `vib`(진동 여부) | `feedback_service.dart` `alert` |
 | `say` | 음성 요청 | `text`, `p`(0~3 = P0~P3), `act`(speakNow/queue/drop), `why`(§4) | `feedback_service.dart` `_speak` |
 | `say.end` | 음성 재생이 끝남 | `text`, `p`, `res`(done/timeout/error), `dur`(ms) — 다른 안내가 끊으면 짧게 끝난다 | `_speak` |
-| `say.ttl` | 대기하던 안내가 TTL을 넘겨 버려짐 | `text`, `p` | `_drainPending` |
+| `say.ttl` | 대기하던 안내가 TTL을 넘겨 버려짐 (T108: 보류한 회복 안내가 2.7초를 넘겨도) | `text`, `p` | `_drainPending`, `alert` |
+| `say.defer` | 회복 안내를 보류함 (T108 Q1 — front 0.7초 유지 확인 전) | `text` | `alert` |
+| `say.cancel` | 보류·대기 안내를 말하지 않고 취소 | `text`, `why`(flicker = front가 아니게 됨 / superseded = 앞에 횡단보도가 멈춤 블록을 대체) | `alert` |
 | `vib` | 진동 요청 | `kind`(left/right/recover/road/line_on), `ok`, `mode`(pattern/single), `pat`(ms 배열: 대기·켬·끔…) 또는 `why`(no_vibrator) | `feedback_service.dart` `alert`, `surfaceAlert` |
 
 `vib`는 앱이 진동을 **요청한** 기록이다. 모터가 실제로 떨렸는지, 사용자가 느꼈는지는 체크리스트로만 안다.
@@ -78,6 +80,11 @@
 | `busy_pN` | 더 높은 등급 pN 재생 중 | 버림 |
 | `min_gap` | 직전 안내 끝난 뒤 1.5초 안 | 버림 |
 | `budget` | 60초에 20초 예산 초과 | 버림 |
+| `same_p0` | 같은 이탈 문구가 재생 중 (T108) | 버림 |
+| `wait_p1` | P1 재생 중에 P1 (T108) | 대기 |
+| `supersede_p1` | 앞에 횡단보도가 재생 중인 멈춤 블록을 대체 (T108 Q3) | 즉시 |
+| `gap_p1` | 최소 간격 안의 P1 (T108 Q2) | 대기 |
+| `slot_full` | 대기 슬롯을 먼저 온 P1이 차지 (T108) | 버림 |
 
 ## 5. 쓰는 법
 

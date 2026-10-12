@@ -21,12 +21,29 @@ enum FeedbackPriority {
   p3,
 }
 
+/// T108(사용자 확정 2026-10-12): P0 안의 세부 순위. 앞에 있을수록 높다.
+///
+/// 10/02 실기기 기록에서 끊긴 안내 35건 중 27건이 이탈 경고와 회복 안내가 서로
+/// 끊은 것이었다(둘 다 P0이고 "같은 등급은 나중 것이 이김"). 그래서 P0 안에서도
+/// 낮은 순위는 높은 순위를 끊지 못하게 한다.
+enum P0Rank {
+  /// 외부 위험으로 들어감 ("차도입니다").
+  danger,
+
+  /// 이탈 경고 ("오른쪽으로 이동하세요", "즉시 ...", "... 가장자리입니다").
+  deviation,
+
+  /// 회복 확인 ("직진하세요", "그대로 가세요"). 이탈 경고를 끊지 않는다.
+  recovery,
+}
+
 /// 정책이 내린 결정.
 enum SpeechAction {
   /// 지금 발화한다. 재생 중인 것이 있으면 끊는다.
   speakNow,
 
-  /// 재생 중인 P0가 끝날 때까지 대기 슬롯에 넣는다. (P1이 P0를 기다리는 한 칸뿐)
+  /// 대기 슬롯(한 칸)에 넣는다. P1만 쓴다 — 재생 중인 P0·P1이 끝나거나 최소
+  /// 간격이 지나면 꺼낸다(T108). 처음 요청에서 TTL(3초)이 지나면 버린다.
   queue,
 
   /// 버린다. 큐에 쌓지 않는다 — 늦게 도착한 안내는 정보가 아니라 오정보다.
@@ -55,15 +72,27 @@ class AudioPolicy {
   };
 
   FeedbackPriority? _active;
+  P0Rank? _activeRank;
+  String? _activeMessage;
   DateTime? _lastSpeechEnd;
   final List<_Span> _spans = <_Span>[];
 
-  /// 대기 슬롯 — 최대 1개. 더 높은 등급이 오면 덮어쓴다.
+  /// 대기 슬롯 — 최대 1개. 더 높은 등급이 오면 덮어쓰고, 같은 등급은 대체
+  /// (`supersedes`)일 때만 덮어쓴다(T108 — 먼저 온 사실 안내를 지킨다).
   FeedbackPriority? pendingPriority;
   String? pendingMessage;
   DateTime? pendingAt;
 
   FeedbackPriority? get activePriority => _active;
+
+  /// 재생 중인 P0의 세부 순위(P0가 아니면 null).
+  P0Rank? get activeRank => _activeRank;
+
+  /// 재생 중인 문구 — 같은 이탈 문구 반복 판단, 연석 겹침(Q3) 판단에 쓴다.
+  String? get activeMessage => _activeMessage;
+
+  /// T108: 최소 간격이 끝나 P1~P3를 다시 말할 수 있는 시각(직전 발화가 없으면 null).
+  DateTime? get nextAllowedAt => _lastSpeechEnd?.add(minGap);
 
   /// 60초 이동창 안에서 (P0을 제외하고) 이미 발화한 총 시간.
   ///
@@ -82,29 +111,57 @@ class AudioPolicy {
   /// T106: 직전 [decide]가 그렇게 정한 이유(개발용 기록에만 쓴다 — 판정에는 안 쓴다).
   /// `interrupt_p1`(재생 중인 p1을 끊음) / `wait_p0` / `busy_p0`(더 높은 등급 재생 중이라 버림) /
   /// `p0`(즉시) / `min_gap` / `budget` / `ok`.
+  /// T108: `same_p0`(같은 이탈 문구가 재생 중) / `wait_p1`(P1 재생 중이라 대기) /
+  /// `supersede_p1`(멈춤 블록을 앞에 횡단보도가 대체) / `gap_p1`(최소 간격이라 대기).
   String lastReason = '';
 
   /// docs/AudioPolicy.md §2 판정표. 부수효과가 없으므로 테스트에서 직접 호출해
   /// 전수 검증할 수 있고, `FeedbackService._speak`도 이것만 보고 집행한다.
   /// ([lastReason] 기록만 예외 — 판정 결과에는 영향이 없다.)
-  SpeechAction decide(FeedbackPriority incoming, DateTime now) {
+  ///
+  /// T108: [rank]는 P0의 세부 순위(P0가 아니면 무시), [message]는 같은 이탈 문구
+  /// 반복을 가리는 데, [supersedes]는 재생 중인 같은 P1을 대체할 때(Q3) 쓴다.
+  SpeechAction decide(
+    FeedbackPriority incoming,
+    DateTime now, {
+    P0Rank rank = P0Rank.deviation,
+    String? message,
+    bool supersedes = false,
+  }) {
     final active = _active;
 
     if (active != null) {
-      // 더 높은 등급(index가 작음) 또는 같은 등급 -> 끊고 교체.
-      if (incoming.index <= active.index) {
-        // 유일한 예외: P0가 재생 중일 때 들어온 P1은 끊지 않고 기다린다.
-        if (incoming == FeedbackPriority.p1 && active == FeedbackPriority.p0) {
-          lastReason = 'wait_p0';
-          return SpeechAction.queue;
+      // T108: P0끼리는 세부 순위로 정한다.
+      if (incoming == FeedbackPriority.p0 && active == FeedbackPriority.p0) {
+        final activeRank = _activeRank ?? P0Rank.deviation;
+        if (rank.index > activeRank.index) {
+          // 회복 안내는 재생 중인 이탈 경고를 끊지 않는다(Q1).
+          lastReason = 'busy_p0';
+          return SpeechAction.drop;
         }
-        lastReason = 'interrupt_${active.name}';
+        if (rank == activeRank && message != null && message == _activeMessage) {
+          // 같은 문구를 다시 끊고 처음부터 말하면 앞부분만 반복해서 들린다.
+          lastReason = 'same_p0';
+          return SpeechAction.drop;
+        }
+        lastReason = 'interrupt_p0';
         return SpeechAction.speakNow;
       }
-      // P0 재생 중 + P1 요청 -> 대기 (위 조건에 걸리지 않으므로 여기서 처리)
-      if (incoming == FeedbackPriority.p1 && active == FeedbackPriority.p0) {
-        lastReason = 'wait_p0';
+      // P0·P1이 재생 중일 때 들어온 P1은 끊지 않고 기다린다(T108 Q2).
+      // 예외: 앞에 횡단보도가 재생 중인 멈춤 블록을 대체(Q3).
+      if (incoming == FeedbackPriority.p1 &&
+          (active == FeedbackPriority.p0 || active == FeedbackPriority.p1)) {
+        if (active == FeedbackPriority.p1 && supersedes) {
+          lastReason = 'supersede_p1';
+          return SpeechAction.speakNow;
+        }
+        lastReason = 'wait_${active.name}';
         return SpeechAction.queue;
+      }
+      // 더 높은 등급(index가 작음) 또는 같은 등급 -> 끊고 교체.
+      if (incoming.index <= active.index) {
+        lastReason = 'interrupt_${active.name}';
+        return SpeechAction.speakNow;
       }
       lastReason = 'busy_${active.name}';
       return SpeechAction.drop;
@@ -118,6 +175,11 @@ class AudioPolicy {
 
     final last = _lastSpeechEnd;
     if (last != null && now.difference(last) < minGap) {
+      // T108 Q2: 1회성 사실 안내(P1)는 버리지 않고 간격이 끝날 때까지 기다린다.
+      if (incoming == FeedbackPriority.p1) {
+        lastReason = 'gap_p1';
+        return SpeechAction.queue;
+      }
       lastReason = 'min_gap';
       return SpeechAction.drop;
     }
@@ -135,14 +197,27 @@ class AudioPolicy {
     return now.difference(requestedAt) > limit;
   }
 
-  void markStarted(FeedbackPriority priority) {
+  void markStarted(FeedbackPriority priority,
+      {P0Rank rank = P0Rank.deviation, String? message}) {
     _active = priority;
+    _activeRank = priority == FeedbackPriority.p0 ? rank : null;
+    _activeMessage = message;
   }
 
   /// 발화가 끝났을 때 호출. P0는 예산에 누적하지 않는다(§4).
-  void markFinished(FeedbackPriority priority, DateTime start, DateTime end) {
-    if (_active == priority) _active = null;
-    _lastSpeechEnd = end;
+  ///
+  /// T108: [current]가 false면 다른 발화에 끊겨 끝난 것이다. 이때는 이미 새
+  /// 발화가 재생 중이므로 '재생 중' 상태와 마지막 종료 시각을 건드리지 않는다
+  /// (예산 누적만 한다). T108 전에는 같은 등급끼리 끊으면 끊긴 쪽의 마무리가
+  /// 새 발화의 '재생 중' 상태를 지워, 정책이 재생 중인 이탈 경고를 못 봤다.
+  void markFinished(FeedbackPriority priority, DateTime start, DateTime end,
+      {bool current = true}) {
+    if (current && _active == priority) {
+      _active = null;
+      _activeRank = null;
+      _activeMessage = null;
+    }
+    if (current) _lastSpeechEnd = end;
     if (priority != FeedbackPriority.p0) {
       _spans.add(_Span(start, end));
       final cutoff = end.subtract(budgetWindow);
@@ -150,13 +225,23 @@ class AudioPolicy {
     }
   }
 
-  void putPending(FeedbackPriority priority, String message, DateTime now) {
-    // 더 높은 등급만 대기 슬롯을 덮어쓴다.
+  /// 대기 슬롯에 넣는다. 넣었으면 true, 슬롯을 지키느라 버렸으면 false.
+  ///
+  /// 더 높은 등급만 덮어쓴다. 같은 등급은 [supersedes](Q3: 앞에 횡단보도가 멈춤
+  /// 블록을 대체)일 때만 덮어쓴다 — T108 전에는 같은 등급도 덮어써서 먼저 온
+  /// "횡단보도를 건넜습니다"가 뒤에 온 안내에 밀려 사라질 수 있었다.
+  /// [requestedAt]은 처음 요청 시각이다(TTL은 여기서부터 센다).
+  bool putPending(FeedbackPriority priority, String message, DateTime requestedAt,
+      {bool supersedes = false}) {
     final cur = pendingPriority;
-    if (cur != null && priority.index > cur.index) return;
+    if (cur != null &&
+        (priority.index > cur.index || (priority == cur && !supersedes))) {
+      return false;
+    }
     pendingPriority = priority;
     pendingMessage = message;
-    pendingAt = now;
+    pendingAt = requestedAt;
+    return true;
   }
 
   void clearPending() {
@@ -168,6 +253,8 @@ class AudioPolicy {
   @visibleForTesting
   void reset() {
     _active = null;
+    _activeRank = null;
+    _activeMessage = null;
     _lastSpeechEnd = null;
     _spans.clear();
     clearPending();

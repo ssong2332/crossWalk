@@ -791,6 +791,68 @@ void main() {
   });
 
   // T40: OnboardingScreen's general-purpose read-aloud, reusing _speak().
+  group('FeedbackService.decideHeldRecovery — 회복 안내 보류 (T108 Q1)', () {
+    final t0 = DateTime(2026, 10, 12, 12, 0, 0);
+    Duration ms(int v) => Duration(milliseconds: v);
+
+    test('front가 0.7초 안 됐으면 기다린다', () {
+      expect(
+          FeedbackService().decideHeldRecovery('front', t0, t0.add(ms(500)),
+              deviationPlaying: false),
+          HeldRecoveryVerdict.wait);
+    });
+
+    test('front가 0.7초 유지되고 이탈 경고가 없으면 말한다', () {
+      expect(
+          FeedbackService().decideHeldRecovery('front', t0, t0.add(ms(700)),
+              deviationPlaying: false),
+          HeldRecoveryVerdict.speak);
+    });
+
+    test('이탈 경고가 재생 중이면 끊지 않고 기다린다', () {
+      expect(
+          FeedbackService().decideHeldRecovery('front', t0, t0.add(ms(1000)),
+              deviationPlaying: true),
+          HeldRecoveryVerdict.wait);
+    });
+
+    test('기다리다 2.7초가 넘으면 버린다', () {
+      expect(
+          FeedbackService().decideHeldRecovery('front', t0, t0.add(ms(2800)),
+              deviationPlaying: true),
+          HeldRecoveryVerdict.expire);
+    });
+
+    test('front가 아니게 되면(깜빡임) 취소한다', () {
+      for (final c in ['left', 'right', 'none', 'approach']) {
+        expect(
+            FeedbackService().decideHeldRecovery(c, t0, t0.add(ms(300)),
+                deviationPlaying: false),
+            HeldRecoveryVerdict.cancel,
+            reason: c);
+      }
+    });
+  });
+
+  group('FeedbackService.supersedesDotBlock — 연석 겹침 (T108 Q3)', () {
+    final s = AppStrings.of(AppLanguage.ko);
+
+    bool sup(String m, String? active) => FeedbackService.supersedesDotBlock(
+        m, active,
+        approachMessage: s.approachAheadMessage,
+        dotBlockMessage: s.surfaceDotBlockMessage);
+
+    test('앞에 횡단보도는 재생 중인 멈춤 블록을 대체한다', () {
+      expect(sup(s.approachAheadMessage, s.surfaceDotBlockMessage), isTrue);
+    });
+
+    test('그 밖의 조합은 대체하지 않는다', () {
+      expect(sup(s.approachAheadMessage, null), isFalse);
+      expect(sup(s.crossedCrosswalkMessage, s.surfaceDotBlockMessage), isFalse);
+      expect(sup(s.approachAheadMessage, s.crossedCrosswalkMessage), isFalse);
+    });
+  });
+
   group('FeedbackService — speak (T40)', () {
     test('drives the same isSpeaking generation guard as alert()', () async {
       final service = FeedbackService();

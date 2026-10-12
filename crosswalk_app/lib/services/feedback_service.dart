@@ -9,6 +9,9 @@ import 'event_log.dart';
 import 'severity_latch.dart';
 import 'surface_guide.dart';
 
+/// T108 Q1: 보류한 회복 안내를 어떻게 할지([FeedbackService.decideHeldRecovery]).
+enum HeldRecoveryVerdict { wait, speak, cancel, expire }
+
 class FeedbackService {
   final FlutterTts _tts = FlutterTts();
 
@@ -60,6 +63,23 @@ class FeedbackService {
   // T102: 직전 alert()가 "끝 + 이미 중앙 쪽으로 틀었음(front)"이었는가.
   bool _lastEdgeTurned = false;
   DateTime? _lastEdgeTurnedAt;
+
+  // T108 Q1(사용자 확정 2026-10-12): 회복 안내("직진하세요"/"그대로 가세요")는
+  // 바로 말하지 않고 보류했다가, front가 [recoveryHold] 동안 유지되면 말한다.
+  // 10/02 기록에서 끊긴 안내 35건 중 27건이 이탈↔회복이 0.7~1초 안에 서로 끊은
+  // 것이었다(상태 깜빡임). 확인 진동은 지금처럼 즉시 나간다.
+  String? _heldRecovery;
+  DateTime? _heldRecoveryAt;
+  bool _heldRecoveryIsEdge = false;
+
+  /// 회복 안내를 말하기 전 front가 유지돼야 하는 시간(추정값, 실기기로 조정).
+  static const recoveryHold = Duration(milliseconds: 700);
+
+  /// 유지 확인 뒤 이탈 경고가 재생 중이면 기다리는 최대 시간(추정값).
+  static const recoveryMaxWait = Duration(seconds: 2);
+
+  // T108 Q2: 대기 슬롯의 P1을 최소 간격이 끝나는 시각에 꺼내는 타이머.
+  Timer? _drainTimer;
 
   // T38 fix: guards against isSpeaking/isVibrating being reset by a stale
   // await/timer from an earlier alert() call. decideMessage() bypasses
@@ -322,6 +342,52 @@ class FeedbackService {
     return AppStrings.of(_language).edgeTurnedMessage;
   }
 
+  void _holdRecovery(String message, DateTime now, {required bool edge}) {
+    _heldRecovery = message;
+    _heldRecoveryAt = now;
+    _heldRecoveryIsEdge = edge;
+    EventLog.instance.log('say.defer', {'text': message});
+  }
+
+  void _clearHeldRecovery() {
+    _heldRecovery = null;
+    _heldRecoveryAt = null;
+    _heldRecoveryIsEdge = false;
+  }
+
+  /// T108 Q1 판정표(사용자 확정 2026-10-12). [heldAt]은 회복 안내를 보류한 시각.
+  ///
+  /// | 이번 판정 | 보류 경과                         | 이탈 경고 재생 중 | 결과   |
+  /// |---|---|---|---|
+  /// | front 아님 | —                                 | —                 | cancel |
+  /// | front      | > [recoveryHold] + [recoveryMaxWait] | —              | expire |
+  /// | front      | < [recoveryHold]                  | —                 | wait   |
+  /// | front      | >= [recoveryHold]                 | 예                | wait   |
+  /// | front      | >= [recoveryHold]                 | 아니오            | speak  |
+  @visibleForTesting
+  HeldRecoveryVerdict decideHeldRecovery(
+    String detectedClass,
+    DateTime heldAt,
+    DateTime now, {
+    required bool deviationPlaying,
+  }) {
+    if (detectedClass != 'front') return HeldRecoveryVerdict.cancel;
+    final held = now.difference(heldAt);
+    if (held > recoveryHold + recoveryMaxWait) return HeldRecoveryVerdict.expire;
+    if (held < recoveryHold || deviationPlaying) return HeldRecoveryVerdict.wait;
+    return HeldRecoveryVerdict.speak;
+  }
+
+  /// T108 Q3: [message]가 재생 중인 [activeMessage](멈춤 블록)를 대체하는가.
+  @visibleForTesting
+  static bool supersedesDotBlock(
+    String message,
+    String? activeMessage, {
+    required String approachMessage,
+    required String dotBlockMessage,
+  }) =>
+      message == approachMessage && activeMessage == dotBlockMessage;
+
   // T39: runtime setters used by SettingsScreen. Each applies immediately
   // for the remainder of the session (no persistence — restarting the app
   // resets to the defaults above). SettingsScreen calls these without
@@ -405,25 +471,40 @@ class FeedbackService {
   Future<void> _speak(
     String message, {
     FeedbackPriority priority = FeedbackPriority.p3,
+    P0Rank rank = P0Rank.deviation,
+    bool supersedes = false,
+    DateTime? requestedAt,
   }) async {
-    final requestedAt = DateTime.now();
-    final action = audioPolicy.decide(priority, requestedAt);
+    final now = DateTime.now();
+    // T108: 대기 슬롯에서 다시 꺼낸 요청은 처음 요청 시각을 그대로 쓴다(TTL 기준).
+    final firstAt = requestedAt ?? now;
+    var action = audioPolicy.decide(priority, now,
+        rank: rank, message: message, supersedes: supersedes);
+    var why = audioPolicy.lastReason;
+    if (action == SpeechAction.queue &&
+        !audioPolicy.putPending(priority, message, firstAt,
+            supersedes: supersedes)) {
+      // 슬롯 한 칸을 먼저 온 안내가 차지하고 있다.
+      action = SpeechAction.drop;
+      why = 'slot_full';
+    }
     // T106: 정책 판단을 그대로 기록한다(재생·대기·버림과 그 이유).
     EventLog.instance.log('say', {
       'text': message,
       'p': priority.index,
       'act': action.name,
-      'why': audioPolicy.lastReason,
+      'why': why,
     });
     if (action == SpeechAction.drop) return;
     if (action == SpeechAction.queue) {
-      // 대기는 P1이 P0를 기다리는 한 칸뿐이다. 슬롯은 1개이며 TTL이 지나면 버린다.
-      audioPolicy.putPending(priority, message, requestedAt);
+      // 재생 중인 것이 없으면(최소 간격 대기) 간격이 끝나는 시각에 꺼낸다.
+      // 재생 중이면 그 발화가 끝날 때 finally에서 꺼낸다.
+      if (audioPolicy.activePriority == null) _scheduleDrain();
       return;
     }
 
     final generation = beginSpeechGeneration();
-    audioPolicy.markStarted(priority);
+    audioPolicy.markStarted(priority, rank: rank, message: message);
     final start = DateTime.now();
     var result = 'done';
     await _tts.stop();
@@ -448,10 +529,26 @@ class FeedbackService {
         'res': result,
         'dur': end.difference(start).inMilliseconds,
       });
+      // T108: 다른 발화에 끊겨 끝났으면 새 발화의 '재생 중' 상태를 지우지 않는다.
+      final current = generation == _speechGeneration;
       finishSpeechGeneration(generation);
-      audioPolicy.markFinished(priority, start, end);
-      _drainPending();
+      audioPolicy.markFinished(priority, start, end, current: current);
+      if (current) _scheduleDrain();
     }
+  }
+
+  /// T108 Q2: 대기 슬롯을 최소 간격이 끝나는 시각에 꺼내도록 예약한다.
+  ///
+  /// T108 전에는 발화가 끝나자마자 꺼냈는데, 그 순간은 최소 간격(끝난 뒤 1.5초)
+  /// 안이라 P1이 다시 버려졌다(10/02 기록 L3367 대기 -> L3378 min_gap 버림).
+  void _scheduleDrain() {
+    if (audioPolicy.pendingPriority == null) return;
+    final now = DateTime.now();
+    final allowed = audioPolicy.nextAllowedAt;
+    final wait =
+        allowed == null || !allowed.isAfter(now) ? Duration.zero : allowed.difference(now);
+    _drainTimer?.cancel();
+    _drainTimer = Timer(wait, _drainPending);
   }
 
   /// 대기 슬롯에 남은 항목을 꺼내 발화한다. TTL이 지났으면 버린다 —
@@ -461,12 +558,14 @@ class FeedbackService {
     final msg = audioPolicy.pendingMessage;
     final at = audioPolicy.pendingAt;
     if (pri == null || msg == null || at == null) return;
+    // 그사이 다른 발화가 시작됐으면 그 발화가 끝날 때 다시 꺼낸다.
+    if (audioPolicy.activePriority != null) return;
     audioPolicy.clearPending();
     if (audioPolicy.isExpired(pri, at, DateTime.now())) {
       EventLog.instance.log('say.ttl', {'text': msg, 'p': pri.index});
       return;
     }
-    unawaited(_speak(msg, priority: pri));
+    unawaited(_speak(msg, priority: pri, requestedAt: at));
   }
 
   /// T106: 진동 기록 한 줄의 내용. [kind]는 left·right·recover·road·line_on.
@@ -524,23 +623,66 @@ class FeedbackService {
     // 반복 경고가 아니라 1회성 사실이므로 이탈 경고보다 낮은 우선순위다.
     final phaseMessage = decidePhaseMessage(previous, detectedClass, now);
     if (phaseMessage != null) {
-      unawaited(_speak(phaseMessage, priority: FeedbackPriority.p1));
+      // T108 Q3: "앞에 횡단보도가 있습니다"는 재생 중이거나 대기 중인
+      // "멈춤 블록입니다"를 대체한다(같은 연석에서 같은 뜻 — 멈춰서 확인).
+      final dotBlock = AppStrings.of(_language).surfaceDotBlockMessage;
+      final supersedes = supersedesDotBlock(
+          phaseMessage, audioPolicy.activeMessage,
+          approachMessage: AppStrings.of(_language).approachAheadMessage,
+          dotBlockMessage: dotBlock);
+      if (phaseMessage == AppStrings.of(_language).approachAheadMessage &&
+          audioPolicy.pendingMessage == dotBlock) {
+        audioPolicy.clearPending();
+        EventLog.instance
+            .log('say.cancel', {'text': dotBlock, 'why': 'superseded'});
+      }
+      unawaited(_speak(phaseMessage,
+          priority: FeedbackPriority.p1, supersedes: supersedes));
     }
 
-    // 이탈에서 회복했을 때의 확인 안내(P0) — 이탈 경고와 같은 채널이므로
-    // 같은 우선순위를 준다. 처음부터 똑바로 가는 경우는 절대 나가지 않는다.
+    // 이탈에서 회복했을 때의 확인 안내(P0 회복 순위). 처음부터 똑바로 가는
+    // 경우는 절대 나가지 않는다. T108 Q1: 바로 말하지 않고 보류한다.
     final recoveryMessage =
         decideRecoveryMessage(previous, detectedClass, now, atEdge: atEdge);
-    if (recoveryMessage != null) {
-      unawaited(_speak(recoveryMessage, priority: FeedbackPriority.p0));
-    }
+    if (recoveryMessage != null) _holdRecovery(recoveryMessage, now, edge: false);
 
-    // T102: 끝에서 이미 중앙 쪽으로 틀었을 때의 확인 안내(P0, 회복 안내와 같은
+    // T102: 끝에서 이미 중앙 쪽으로 틀었을 때의 확인 안내(회복 안내와 같은
     // 채널). 위 회복 안내는 atEdge면 침묵하므로 둘이 함께 나가지 않는다.
     final edgeTurnedMessage =
         decideEdgeTurnedMessage(detectedClass, now, atEdge: atEdge);
     if (edgeTurnedMessage != null) {
-      unawaited(_speak(edgeTurnedMessage, priority: FeedbackPriority.p0));
+      _holdRecovery(edgeTurnedMessage, now, edge: true);
+    }
+
+    // T108 Q1: 보류한 회복 안내를 front가 유지됐으면 말하고, 흔들렸으면 취소한다.
+    final deviationPlaying = audioPolicy.activePriority == FeedbackPriority.p0 &&
+        (audioPolicy.activeRank ?? P0Rank.deviation).index <
+            P0Rank.recovery.index;
+    final held = _heldRecovery;
+    final heldAt = _heldRecoveryAt;
+    if (held != null && heldAt != null) {
+      final verdict =
+          decideHeldRecovery(detectedClass, heldAt, now, deviationPlaying: deviationPlaying);
+      switch (verdict) {
+        case HeldRecoveryVerdict.wait:
+          break;
+        case HeldRecoveryVerdict.speak:
+          _clearHeldRecovery();
+          unawaited(_speak(held,
+              priority: FeedbackPriority.p0, rank: P0Rank.recovery));
+        case HeldRecoveryVerdict.cancel:
+          // 흔들림 — 말하지 않았으므로 쿨다운도 되돌려, 곧 진짜로 회복하면 안내한다.
+          if (_heldRecoveryIsEdge) {
+            _lastEdgeTurnedAt = null;
+          } else {
+            _lastRecoveryAt = null;
+          }
+          _clearHeldRecovery();
+          EventLog.instance.log('say.cancel', {'text': held, 'why': 'flicker'});
+        case HeldRecoveryVerdict.expire:
+          _clearHeldRecovery();
+          EventLog.instance.log('say.ttl', {'text': held, 'p': 0});
+      }
     }
 
     // 음성 — 이탈 경고는 P0다. 무음 예산·최소 간격에서 면제되며, 재생 중인
@@ -614,7 +756,7 @@ class FeedbackService {
       switch (e) {
         case SurfaceEvent.road:
           unawaited(_speak(strings.surfaceRoadMessage,
-              priority: FeedbackPriority.p0));
+              priority: FeedbackPriority.p0, rank: P0Rank.danger));
           pattern = surfaceRoadPattern(shortMs);
         case SurfaceEvent.dotBlock:
           unawaited(_speak(strings.surfaceDotBlockMessage,
@@ -681,6 +823,7 @@ class FeedbackService {
   Future<void> dispose() async {
     await _tts.stop();
     _vibrationTimer?.cancel();
+    _drainTimer?.cancel();
     isSpeaking.value = false;
     isVibrating.value = false;
     isSpeaking.dispose();
