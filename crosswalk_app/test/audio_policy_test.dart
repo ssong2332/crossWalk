@@ -296,6 +296,31 @@ void main() {
       expect(p.pendingMessage, '앞에 횡단보도가 있습니다.');
     });
 
+    test('만료된 대기 항목은 치워지고 새 P1이 들어간다 (10/12 건넜습니다 분실)', () {
+      final p = AudioPolicy();
+      expect(p.putPending(FeedbackPriority.p1, '횡단보도에 진입했습니다.', t0),
+          isTrue);
+      final later = t0.add(const Duration(milliseconds: 10700));
+      expect(p.takeExpiredPending(later), '횡단보도에 진입했습니다.');
+      expect(p.pendingPriority, isNull);
+      expect(p.putPending(FeedbackPriority.p1, '횡단보도를 건넜습니다.', later),
+          isTrue);
+      expect(p.pendingMessage, '횡단보도를 건넜습니다.');
+    });
+
+    test('아직 유효한 대기 항목은 치우지 않는다 — 먼저 온 것을 지킨다', () {
+      final p = AudioPolicy();
+      p.putPending(FeedbackPriority.p1, '횡단보도를 건넜습니다.', t0);
+      final soon = t0.add(const Duration(milliseconds: 2500));
+      expect(p.takeExpiredPending(soon), isNull);
+      expect(p.putPending(FeedbackPriority.p1, '멈춤 블록입니다', soon), isFalse);
+      expect(p.pendingMessage, '횡단보도를 건넜습니다.');
+    });
+
+    test('빈 슬롯에서는 아무것도 치우지 않는다', () {
+      expect(AudioPolicy().takeExpiredPending(t0), isNull);
+    });
+
     test('clearPending은 슬롯을 비운다', () {
       final p = AudioPolicy();
       p.putPending(FeedbackPriority.p1, 'x', t0);
