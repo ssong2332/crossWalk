@@ -805,14 +805,21 @@ class FeedbackService {
   /// `docs/AudioPolicy.md` 주의 구역 표(사용자 확정 2026-10-01): 둘 다 P2, 진동 없음.
   /// P2라 무음 예산·최소 간격을 따르고, 걸리면 버린다(대기하지 않음).
   Future<void> cautionAlert(List<CautionEvent> events) async {
-    final strings = AppStrings.of(_language);
-    for (final e in events) {
-      final message = switch (e) {
-        CautionEvent.manholeGrating => strings.cautionManholeMessage,
-        CautionEvent.treeZone => strings.cautionTreeMessage,
-      };
-      unawaited(_speak(message, priority: FeedbackPriority.p2));
-    }
+    final message = cautionMessage(events, AppStrings.of(_language));
+    if (message == null) return;
+    unawaited(_speak(message, priority: FeedbackPriority.p2));
+  }
+
+  /// T105 C8(사용자 확정 2026-10-12): 같은 판정에서 둘 다 나면 **둘 다 차례로** —
+  /// 한 문장으로 이어 말한다(따로 요청하면 P2 동급이라 뒤 것이 앞 것을 끊는다).
+  /// 순서는 판정표 번호 순(C1 맨홀·그레이팅 -> C2 가로수 구역).
+  @visibleForTesting
+  static String? cautionMessage(List<CautionEvent> events, AppStrings strings) {
+    final parts = [
+      if (events.contains(CautionEvent.manholeGrating)) strings.cautionManholeMessage,
+      if (events.contains(CautionEvent.treeZone)) strings.cautionTreeMessage,
+    ];
+    return parts.isEmpty ? null : parts.join('. ');
   }
 
   /// T104: 차도 진동 — 짧게 3번(‧‧‧). 기존 좌(‧‧)·우(—)·복귀(짧게 1번)와 겹치지 않는다.

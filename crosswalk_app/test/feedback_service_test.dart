@@ -853,6 +853,26 @@ void main() {
     });
   });
 
+  group('FeedbackService.cautionMessage — 주의 구역 문구 (T105)', () {
+    final s = AppStrings.of(AppLanguage.ko);
+
+    test('하나면 그 문구', () {
+      expect(FeedbackService.cautionMessage([CautionEvent.manholeGrating], s), '발밑 주의');
+      expect(FeedbackService.cautionMessage([CautionEvent.treeZone], s), '가로수');
+    });
+
+    test('같은 판정에서 둘 다면 C1 -> C2 차례로 한 문장 (C8)', () {
+      expect(
+          FeedbackService.cautionMessage(
+              [CautionEvent.treeZone, CautionEvent.manholeGrating], s),
+          '발밑 주의. 가로수');
+    });
+
+    test('없으면 null', () {
+      expect(FeedbackService.cautionMessage(const [], s), isNull);
+    });
+  });
+
   group('FeedbackService — speak (T40)', () {
     test('drives the same isSpeaking generation guard as alert()', () async {
       final service = FeedbackService();
