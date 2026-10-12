@@ -244,6 +244,22 @@ class AudioPolicy {
     return true;
   }
 
+  /// 대기 항목이 TTL을 넘겼으면 비우고 그 문구를 돌려준다. 없거나 아직
+  /// 유효하면 null.
+  ///
+  /// TTL은 꺼낼 때(`_drainPending`)만 확인됐다. P0가 쉬지 않고 이어지면 꺼낼
+  /// 기회가 없어, 이미 만료된 항목이 슬롯을 지키며 새 P1을 `slot_full`로 버렸다
+  /// (10/12 기록 L1929 "진입했습니다" 대기 -> L2066 "건넜습니다" 버림, 7.7초 전
+  /// 만료). 넣기 전에 이것을 불러 죽은 항목을 치운다.
+  String? takeExpiredPending(DateTime now) {
+    final pri = pendingPriority;
+    final at = pendingAt;
+    if (pri == null || at == null || !isExpired(pri, at, now)) return null;
+    final msg = pendingMessage;
+    clearPending();
+    return msg;
+  }
+
   void clearPending() {
     pendingPriority = null;
     pendingMessage = null;
