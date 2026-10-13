@@ -481,6 +481,17 @@ class FeedbackService {
     var action = audioPolicy.decide(priority, now,
         rank: rank, message: message, supersedes: supersedes);
     var why = audioPolicy.lastReason;
+    if (action == SpeechAction.queue) {
+      // 만료된 대기 항목이 슬롯을 막지 않게 먼저 치운다(버린 것은 기록).
+      final expiredPriority = audioPolicy.pendingPriority;
+      final expired = audioPolicy.takeExpiredPending(now);
+      if (expired != null && expiredPriority != null) {
+        EventLog.instance.log('say.ttl', {
+          'text': expired,
+          'p': expiredPriority.index,
+        });
+      }
+    }
     if (action == SpeechAction.queue &&
         !audioPolicy.putPending(priority, message, firstAt,
             supersedes: supersedes)) {

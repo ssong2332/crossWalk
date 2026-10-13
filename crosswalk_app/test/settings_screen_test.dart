@@ -182,6 +182,10 @@ void main() {
 
   group('SettingsScreen — 주의 구역 안내 토글 (T105)', () {
     testWidgets('콜백이 없으면 스위치를 그리지 않는다', (tester) async {
+      // 화면 밖이라 안 보이는 것과 구별하려고 목록 전체를 빌드한다.
+      tester.view.physicalSize = const Size(800, 5000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
       await tester.pumpWidget(buildSettingsScreen(
         feedback: FeedbackService(),
         language: AppLanguage.ko,
@@ -194,6 +198,11 @@ void main() {
 
     testWidgets('노면 안내와 별도 스위치 — 기본 꺼짐, 켜면 onCautionGuidanceChanged(true)',
         (tester) async {
+      // 목록 전체가 한 화면에 빌드되게 크게 잡는다(ListView는 화면 밖 자식을
+      // 만들지 않아 ensureVisible이 찾지 못한다 — CI #38212297253에서 실패).
+      tester.view.physicalSize = const Size(800, 5000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
       bool? caution;
       bool? surface;
       await tester.pumpWidget(buildSettingsScreen(
