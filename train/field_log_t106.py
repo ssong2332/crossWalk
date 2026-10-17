@@ -231,6 +231,11 @@ def pause_spans(s):
     return spans
 
 
+def overlap_s(a, b, spans):
+    """[a, b] 중 spans(앱이 내려간 구간)와 겹치는 시간."""
+    return sum(max(0.0, min(b, p1) - max(a, p0)) for p0, p1 in spans)
+
+
 def stats(values):
     v = [x for x in values if x is not None]
     if not v:
@@ -348,9 +353,14 @@ def analyze_session(s, msgmap, C=CRITERIA):
         if s1["b"] - s1["a"] < C["flicker_s"] and s2["st"] == s0["st"] and s1["st"] != s0["st"]:
             flicker.append({"src": s1["src"], "path": f"{s0['st']}→{s1['st']}→{s2['st']}",
                             "dur_s": round(s1["b"] - s1["a"], 2)})
+    # 앱이 화면에서 내려간 동안(app.life paused 등)은 판정이 없는 게 정상이다 — 뺀다
+    # (10/16 기록: 백그라운드 75초가 '판정 없음 38%·최장 76.5초'로 잡혔음, L455~L459).
+    def active_s(x):
+        return (x["b"] - x["a"]) - overlap_s(x["a"], x["b"], pauses)
     noguide = [x for x in iv if x["st"] in NO_GUIDANCE]
-    total_ng = sum(x["b"] - x["a"] for x in noguide)
-    longest = max(noguide, key=lambda x: x["b"] - x["a"], default=None)
+    total_ng = sum(active_s(x) for x in noguide)
+    longest = max(noguide, key=active_s, default=None)
+    active_total = (s.end - s.start) - overlap_s(s.start, s.end, pauses)
     time_by_state = {}
     for x in iv:
         time_by_state[x["st"]] = round(time_by_state.get(x["st"], 0.0) + (x["b"] - x["a"]), 1)
@@ -358,8 +368,8 @@ def analyze_session(s, msgmap, C=CRITERIA):
         "state_changes_per_min": round(max(len(iv) - 1, 0) / minutes, 2),
         "flicker": {"n": len(flicker), "limit_s": C["flicker_s"], "items": flicker[:20]},
         "no_guidance": {"total_s": round(total_ng, 1),
-                        "share": round(total_ng / max(s.end - s.start, 1e-9), 3),
-                        "longest_s": round(longest["b"] - longest["a"], 1) if longest else 0.0,
+                        "share": round(total_ng / max(active_total, 1e-9), 3),
+                        "longest_s": round(active_s(longest), 1) if longest else 0.0,
                         "longest_src": longest["src"] if longest else None},
         "time_by_state_s": time_by_state,
     }
@@ -1061,6 +1071,10 @@ def _selftest():
         "occ_under_limit": a["sound"]["occupancy_max_s"] < CRITERIA["occupancy_limit_s"],
     }
     ok = True
+    # 판정 없음에서 앱이 내려간 구간을 빼는 계산(겹침 5초 중 2초).
+    flag = "OK " if overlap_s(10.0, 15.0, [(8.0, 9.0), (13.0, 20.0)]) == 2.0 else "BAD"
+    ok &= flag == "OK "
+    print(f"  [{flag}] 일시정지 겹침 계산: {overlap_s(10.0, 15.0, [(8.0, 9.0), (13.0, 20.0)])} (기대 2.0)")
     for k, v in EXPECT.items():
         flag = "OK " if got[k] == v else "BAD"
         ok &= got[k] == v
