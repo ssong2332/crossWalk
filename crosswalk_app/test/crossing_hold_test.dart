@@ -64,4 +64,56 @@ void main() {
     expect(h.apply('left', 'crossed', t0), 'crossed');
     expect(h.isHolding, isFalse);
   });
+
+  // T118(A2): 발밑이 인도면 일찍 해제.
+  group('발밑이 인도면 일찍 해제 (T118)', () {
+    test('기준은 인도+점자블록 50%, 2회 연속', () {
+      expect(CrossingHold.groundReleaseRatio, 0.5);
+      expect(CrossingHold.groundReleaseFrames, 2);
+    });
+
+    test('hold 중 2회 연속 넘으면 다음 판정에서 해제하고 이번 판정 그대로', () {
+      final h = CrossingHold();
+      expect(h.apply('front', 'none', at(0)), hold);
+      h.noteGround(0.96);
+      expect(h.apply(hold, 'none', at(1)), hold, reason: '1회는 아직');
+      expect(h.releasedByGround, isFalse);
+      h.noteGround(1.0);
+      expect(h.apply(hold, 'none', at(2)), 'none');
+      expect(h.releasedByGround, isTrue);
+      expect(h.isHolding, isFalse);
+      // 다음 판정에서는 다시 꺼진다.
+      expect(h.apply('none', 'none', at(3)), 'none');
+      expect(h.releasedByGround, isFalse);
+    });
+
+    test('중간에 기준 밑이 끼면 다시 센다 (X형 가운데 아스팔트)', () {
+      final h = CrossingHold();
+      h.apply('front', 'none', at(0));
+      h.noteGround(0.9);
+      h.noteGround(0.1);
+      h.noteGround(0.9);
+      expect(h.apply(hold, 'approach', at(3)), hold);
+      expect(h.releasedByGround, isFalse);
+    });
+
+    test('hold가 아닐 때 본 인도는 세지 않는다', () {
+      final h = CrossingHold();
+      h.noteGround(1.0);
+      h.noteGround(1.0);
+      expect(h.apply('front', 'none', at(0)), hold,
+          reason: '횡단보도 위에서 줄무늬가 사라지면 평소처럼 붙잡는다');
+      expect(h.releasedByGround, isFalse);
+    });
+
+    test('해제 뒤 새 hold는 처음부터 센다', () {
+      final h = CrossingHold();
+      h.apply('front', 'none', at(0));
+      h.noteGround(1.0);
+      h.noteGround(1.0);
+      expect(h.apply(hold, 'none', at(1)), 'none');
+      expect(h.apply('front', 'none', at(5)), hold);
+      expect(h.releasedByGround, isFalse);
+    });
+  });
 }

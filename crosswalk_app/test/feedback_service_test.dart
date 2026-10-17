@@ -382,6 +382,41 @@ void main() {
           isNull);
     });
 
+    // T118(A2): 발밑이 인도라서 hold를 일찍 푼 뒤 5초 안의 crossed는 건넘 안내.
+    test('hold 일찍 해제 뒤 5초 안 none/approach -> crossed는 완료 안내 (T118)', () {
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+      for (final prev in ['none', 'approach']) {
+        final s = FeedbackService()..noteHoldReleasedByGround(t0);
+        expect(s.decidePhaseMessage(prev, 'crossed',
+                t0.add(const Duration(seconds: 3))),
+            '횡단보도를 건넜습니다.', reason: '$prev -> crossed');
+      }
+      expect(FeedbackService.groundReleaseCrossedWindow,
+          const Duration(seconds: 5));
+    });
+
+    test('hold 일찍 해제 뒤라도 5초가 지나면 침묵, 한 번 쓰면 비운다 (T118)', () {
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+      final late = FeedbackService()..noteHoldReleasedByGround(t0);
+      expect(late.decidePhaseMessage('none', 'crossed',
+              t0.add(const Duration(seconds: 6))), isNull);
+
+      final once = FeedbackService()..noteHoldReleasedByGround(t0);
+      expect(once.decidePhaseMessage('none', 'crossed',
+              t0.add(const Duration(seconds: 1))), '횡단보도를 건넜습니다.');
+      expect(once.decidePhaseMessage('none', 'crossed',
+              t0.add(const Duration(seconds: 9))), isNull,
+          reason: '3초 재쿨다운이 지나도 창은 이미 비었다');
+    });
+
+    test('hold 일찍 해제 뒤 다시 위로 들어오면 창을 비운다 (T118)', () {
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+      final s = FeedbackService()..noteHoldReleasedByGround(t0);
+      s.decidePhaseMessage('none', 'front', t0.add(const Duration(seconds: 1)));
+      expect(s.decidePhaseMessage('none', 'crossed',
+              t0.add(const Duration(seconds: 2))), isNull);
+    });
+
     // T93: none(또는 콜드스타트) -> approach는 "앞에 횡단보도가 있습니다".
     test('none/콜드스타트 -> approach는 앞에 횡단보도 안내를 낸다 (T93)', () {
       final t0 = DateTime(2026, 1, 1, 12, 0, 0);

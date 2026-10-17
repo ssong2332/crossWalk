@@ -58,6 +58,16 @@ class FeedbackService {
   String? _lastSeverityClass;
 
   DateTime? _lastPhaseAt;
+
+  /// T118: "발밑이 인도"라서 hold를 일찍 푼 시각. 이 뒤 [groundReleaseCrossedWindow]
+  /// 안에 crossed가 오면 none/approach -> crossed여도 "건넜습니다"를 낸다(A2).
+  DateTime? _holdReleasedByGroundAt;
+
+  /// T118: 위 창(추정값). 도착 연석에서 crossed 판정까지 10/02 기록 L1051은 3.5초.
+  static const groundReleaseCrossedWindow = Duration(seconds: 5);
+
+  /// T118: `CrossingHold`가 발밑이 인도라서 hold를 푼 직후 부른다.
+  void noteHoldReleasedByGround(DateTime now) => _holdReleasedByGroundAt = now;
   DateTime? _lastRecoveryAt;
 
   // T102: 직전 alert()가 "끝 + 이미 중앙 쪽으로 틀었음(front)"이었는가.
@@ -261,10 +271,25 @@ class FeedbackService {
     // 위 -> none은 **안내하지 않는다** — 줄무늬가 잠깐 안 보이거나(X형 교차
     // 횡단보도 가운데) 오판일 수 있어서다. 다 건넌 과정은 위 -> crossed -> none
     // 이고, crossed -> none/approach, none/approach -> crossed도 침묵이다.
-    final exiting = (previousClass == 'front' ||
-            previousClass == 'left' ||
-            previousClass == 'right') &&
-        detectedClass == 'crossed';
+    // T118(A2): hold가 "발밑이 인도"로 일찍 풀려 none/approach를 거쳤어도, 그 뒤
+    // 짧은 창 안의 crossed는 다 건넌 것으로 본다 — 풀리지 않았다면 hold -> crossed
+    // (= 위 -> crossed)였을 경우다. 한 번 쓰거나 다시 위로 들어오면 비운다.
+    final releasedAt = _holdReleasedByGroundAt;
+    final afterGroundRelease = releasedAt != null &&
+        (previousClass == 'none' || previousClass == 'approach') &&
+        detectedClass == 'crossed' &&
+        now.difference(releasedAt) <= groundReleaseCrossedWindow;
+    if (detectedClass == 'crossed' ||
+        detectedClass == 'front' ||
+        detectedClass == 'left' ||
+        detectedClass == 'right') {
+      _holdReleasedByGroundAt = null;
+    }
+    final exiting = ((previousClass == 'front' ||
+                previousClass == 'left' ||
+                previousClass == 'right') &&
+            detectedClass == 'crossed') ||
+        afterGroundRelease;
     // T93(2026-09-15, 사용자 요청): approach로 **들어올 때** "앞에 횡단보도가
     // 있습니다"를 1회 안내한다. T51에서 approach를 침묵시켰던 것을 뒤집는다
     // (이탈 경고 decideMessage는 여전히 approach에서 침묵 — 방향 경고가 아니라

@@ -26,26 +26,65 @@ import 'direction_resolver.dart';
 /// 10초가 지나 해제되면 위 -> none/approach가 되는데, 둘 다 침묵이다(T103·T93 표).
 ///
 /// 10초: 보행 약 1m/s에서 줄무늬 없는 구간 약 10m. 추정값이라 실기기 뒤 조정.
+///
+/// T118(2026-10-17, 사용자 선택 A2): **발밑이 인도면 일찍 해제.** 10/16 기록
+/// (183810)에서 횡단보도 끝에 섰다가 인도로 돌아섰는데 10초 동안 "횡단 중"이
+/// 이어졌다(L1370~L1428, 8.5초부터 노면 앞 구역 인도+점자블록 0.96~1.0).
+///   | hold 중 노면 앞 구역(인도+선형+점형)  | 결과                              |
+///   | >= [groundReleaseRatio], [groundReleaseFrames]회 연속 | 다음 판정에서 해제, 이번 판정 그대로 |
+///   | 그 밖                                  | 위 표대로(10초)                    |
+/// X형 가운데 빈 구간은 아스팔트(차도)라 이 조건에 걸리지 않는다(추정).
+/// 노면 판정은 노면·주의 구역 스위치 중 하나가 켜져 있어야 돈다 — 꺼져 있으면
+/// 이 규칙도 쉬고 10초 규칙만 남는다. 이렇게 풀린 직후의 crossed는
+/// `FeedbackService.noteHoldReleasedByGround`가 "건넜습니다"를 지킨다.
 class CrossingHold {
   static const Duration holdDuration = Duration(seconds: 10);
+
+  /// T118: 인도+점자블록 비율 기준(추정값, 실기기 뒤 조정).
+  static const double groundReleaseRatio = 0.5;
+
+  /// T118: 연속 횟수. 노면 판정은 약 0.5초마다 한 번이다(처리 프레임 10개 중 1개).
+  static const int groundReleaseFrames = 2;
 
   /// hold 상태를 나타내는 라벨. 분류기 라벨과 겹치지 않는다.
   static const String holdLabel = 'hold';
 
   DateTime? _since;
+  int _groundStreak = 0;
+  bool _releasedByGround = false;
 
   bool get isHolding => _since != null;
 
+  /// T118: 바로 직전 [apply]가 "발밑이 인도"라서 hold를 풀었는가.
+  bool get releasedByGround => _releasedByGround;
+
+  /// T118: hold 중 노면 판정 한 번. [sidewalkAndBlocks]는 노면 앞 구역의
+  /// 인도+선형+점형 비율. hold가 아니면 셈을 비운다.
+  void noteGround(double sidewalkAndBlocks) {
+    if (_since == null) {
+      _groundStreak = 0;
+      return;
+    }
+    _groundStreak =
+        sidewalkAndBlocks >= groundReleaseRatio ? _groundStreak + 1 : 0;
+  }
+
   /// 직전 최종 상태 [current]와 이번 판정 [detected]로 실제로 쓸 상태를 낸다.
   String apply(String current, String detected, DateTime now) {
+    _releasedByGround = false;
     final gap = detected == 'none' || detected == 'approach';
     final wasOn = DirectionResolver.isOnCrosswalk(current) ||
         (current == holdLabel && _since != null);
     if (gap && wasOn) {
       _since ??= now;
-      if (now.difference(_since!) < holdDuration) return holdLabel;
+      if (_groundStreak >= groundReleaseFrames) {
+        _releasedByGround = true;
+      } else if (now.difference(_since!) < holdDuration) {
+        return holdLabel;
+      }
     }
     _since = null;
+    _groundStreak = 0;
     return detected;
   }
 }

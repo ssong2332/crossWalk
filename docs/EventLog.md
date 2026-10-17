@@ -58,6 +58,7 @@
 | `pos` | 위치 모델이 돈 프레임 | `raw`, `smooth`, `label`, `dur` | `_updatePositionEstimate` |
 | `surf` | 노면 모델이 돈 프레임 (노면 안내나 주의 구역 안내가 켜졌을 때만) | `L`/`F`/`R` = **[인도, 차도, 선형, 점형, 맨홀·그레이팅, 가로수 구역, 계단] 비율** (T105가 뒤 3개를 붙임 — 앞 4개 순서는 그대로), `st`(화면 상태), `dur`, `ok` | `_updateSurfaceGuidance` |
 | `caut.ev` | 주의 구역 판정표 이벤트 (T105) | `names`(manholeGrating/treeZone 목록), `st` | `_updateSurfaceGuidance` |
+| `hold.end` | "횡단 중" 유지를 발밑이 인도라서 일찍 풂 (T118 — 10초 만료·위·crossed로 풀린 것은 `state`만 남음) | `why`(ground), `to`(이번 판정) | `CameraScreen` 분류 결과 처리 |
 | `surf.ev` | 노면 판정표 이벤트 | `names`(road/dotBlock/linearOn/linearRight/linearLeft/linearLost 목록), `st` | `_updateSurfaceGuidance` |
 | `state` | 화면 상태가 바뀜 (무판정·오류 포함, 1초 안) | `from`, `to`, `edge`, `conf` | `_logStateIfChanged` |
 | `alert` | 이탈 안내 판단 한 번 | `cls`, `conf`, `ang`, `edge`, `msg`/`phase`/`recover`/`edgeTurned`(이번에 고른 문장, 없으면 null), `vib`(진동 여부) | `feedback_service.dart` `alert` |
