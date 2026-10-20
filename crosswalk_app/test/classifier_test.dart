@@ -113,7 +113,7 @@ void main() {
       // Strongly skewed toward "front" (index 2) — should clear the 0.5
       // front threshold (lowered from 0.65 after the T42 4-class retrain
       // diluted softmax confidence; see classifier.dart comment).
-      final frontProbs = classifier.softmax([0.0, 0.0, 10.0, 0.0, 0.0]);
+      final frontProbs = classifier.softmax([0.0, 0.0, 10.0, 0.0, 0.0, 0.0]);
       expect(frontProbs[2], greaterThanOrEqualTo(0.5));
 
       // Moderately skewed toward "left" (index 3) — should clear the 0.55
@@ -121,10 +121,12 @@ void main() {
       // further than 4-class did, so the logit value was re-checked rather
       // than assumed: 4 other classes each get exp(0)=1, so
       // prob = e^2 / (4 + e^2) ≈ 7.389 / 11.389 ≈ 0.649 >= 0.55.
+      // T103(6-class): 다른 5개 클래스가 각 exp(0)=1이므로
+      // e^2 / (5 + e^2) ≈ 7.389 / 12.389 ≈ 0.596 — 여전히 0.55 이상.
       // The 2.0 logit therefore still clears the threshold and is kept
       // unchanged (under 4-class it was e^2 / (3 + e^2) ≈ 0.711).
       // A logit of 1.0 would NOT clear it (e^1 / (4 + e^1) ≈ 0.405).
-      final leftProbs = classifier.softmax([0.0, 0.0, 0.0, 2.0, 0.0]);
+      final leftProbs = classifier.softmax([0.0, 0.0, 0.0, 2.0, 0.0, 0.0]);
       expect(leftProbs[3], greaterThanOrEqualTo(0.55));
     });
   });
@@ -139,7 +141,7 @@ void main() {
 
       // Push 5 frames strongly favoring "left" (index 3).
       for (int i = 0; i < 5; i++) {
-        final result = classifier.decideFromLogits([0.0, 0.0, 0.0, 10.0, 0.0]);
+        final result = classifier.decideFromLogits([0.0, 0.0, 0.0, 10.0, 0.0, 0.0]);
         expect(result, isNotNull);
         expect(result!.label, 'left');
       }
@@ -149,7 +151,7 @@ void main() {
       // result should transition to "front".
       ClassificationResult? lastResult;
       for (int i = 0; i < 5; i++) {
-        lastResult = classifier.decideFromLogits([0.0, 0.0, 10.0, 0.0, 0.0]);
+        lastResult = classifier.decideFromLogits([0.0, 0.0, 10.0, 0.0, 0.0, 0.0]);
       }
 
       // After 5 more "front"-favoring pushes, the window contains only
@@ -163,13 +165,13 @@ void main() {
 
       // Fill window with 5 "left"-favoring frames (index 3).
       for (int i = 0; i < 5; i++) {
-        classifier.decideFromLogits([0.0, 0.0, 0.0, 10.0, 0.0]);
+        classifier.decideFromLogits([0.0, 0.0, 0.0, 10.0, 0.0, 0.0]);
       }
 
       // Push a single "front"-favoring frame — with a 5-frame window this
       // should be averaged with 4 remaining "left" frames, not fully
       // overwrite them (unbounded running average would behave differently).
-      final blended = classifier.decideFromLogits([0.0, 0.0, 10.0, 0.0, 0.0]);
+      final blended = classifier.decideFromLogits([0.0, 0.0, 10.0, 0.0, 0.0, 0.0]);
 
       // Still dominated by "left" since only 1 of 5 window slots changed.
       expect(blended, isNotNull);
@@ -189,19 +191,21 @@ void main() {
       // 73.9% -> 81.0%, 위->앞 오판 4.4% -> 2.7% (recall 85.9% -> 83.8%).
       expect(Classifier.thresholdsForTest['approach'], 0.55);
       expect(Classifier.thresholdsForTest['deviation'], 0.55);
+      // T103: crossed("건넜습니다")도 말을 거는 판정이라 0.55.
+      expect(Classifier.thresholdsForTest['crossed'], 0.55);
     });
 
     test('말을 거는 판정(이탈·approach)은 침묵 판정(front·none)보다 엄격하다', () {
       // 이탈은 경고를, approach는 "앞에 횡단보도" 안내를 내보내므로 둘 다
       // 틀렸을 때 사용자가 바로 체감한다. front/none은 그렇지 않다.
       final t = Classifier.thresholdsForTest;
-      for (final strict in ['deviation', 'approach']) {
+      for (final strict in ['deviation', 'approach', 'crossed']) {
         expect(t[strict]!, greaterThan(t['front']!), reason: strict);
         expect(t[strict]!, greaterThan(t['none']!), reason: strict);
       }
     });
 
-    test('모든 임계값은 5-class 무작위(0.20)보다 충분히 높다', () {
+    test('모든 임계값은 무작위(5-class 0.20, T103 6-class 0.17)보다 충분히 높다', () {
       // 0.20은 5지선다의 우연 수준. T73에서 0.30까지 낮추는 안을 실측했으나
       // 우연의 1.5배에 불과해 기각하고 0.40에서 멈췄다.
       for (final v in Classifier.thresholdsForTest.values) {
@@ -218,7 +222,7 @@ void main() {
       // class clears its threshold.
       // T51: 5 elements now. Max averaged prob here is ~0.202, below every
       // threshold (T73: front 0.40 / none 0.40 / approach 0.40 / dev 0.55).
-      final result = classifier.decideFromLogits([0.01, 0.0, 0.01, 0.0, -0.01]);
+      final result = classifier.decideFromLogits([0.01, 0.0, 0.01, 0.0, -0.01, 0.0]);
 
       expect(result, isNull);
     });
@@ -229,7 +233,7 @@ void main() {
       // Strongly skewed toward "none" (index 0 under the T51 5-class order).
       ClassificationResult? result;
       for (int i = 0; i < 5; i++) {
-        result = classifier.decideFromLogits([10.0, 0.0, 0.0, 0.0, 0.0]);
+        result = classifier.decideFromLogits([10.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
       }
 
       expect(result, isNotNull);
@@ -245,11 +249,23 @@ void main() {
 
       ClassificationResult? result;
       for (int i = 0; i < 5; i++) {
-        result = classifier.decideFromLogits([0.0, 10.0, 0.0, 0.0, 0.0]);
+        result = classifier.decideFromLogits([0.0, 10.0, 0.0, 0.0, 0.0, 0.0]);
       }
 
       expect(result, isNotNull);
       expect(result!.label, 'approach');
+    });
+
+    // T103: `crossed`(index 5)는 6-class에서 추가됐다. switch에 분기가 없으면
+    // 이탈 임계값으로 조용히 떨어지므로 매핑과 라벨을 함께 확인한다.
+    test('returns "crossed" (index 5) when its confidence clears 0.55', () {
+      final classifier = Classifier();
+      ClassificationResult? result;
+      for (int i = 0; i < 5; i++) {
+        result = classifier.decideFromLogits([0.0, 0.0, 0.0, 0.0, 0.0, 10.0]);
+      }
+      expect(result, isNotNull);
+      expect(result!.label, 'crossed');
     });
   });
 

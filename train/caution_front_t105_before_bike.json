@@ -1,0 +1,153 @@
+{
+ "n_images": 4718,
+ "계단": [
+  {
+   "th": 0.05,
+   "gt_pos": 9,
+   "pred_pos": 7,
+   "tp_same": 3,
+   "recall_same": 0.3333333333333333,
+   "precision_same": 0.42857142857142855,
+   "gt5_pos": 9,
+   "recall_vs_gt5": 0.3333333333333333,
+   "precision_vs_gt5": 0.42857142857142855,
+   "alarm_rate": 0.001483679525222552
+  },
+  {
+   "th": 0.1,
+   "gt_pos": 7,
+   "pred_pos": 4,
+   "tp_same": 2,
+   "recall_same": 0.2857142857142857,
+   "precision_same": 0.5,
+   "gt5_pos": 9,
+   "recall_vs_gt5": 0.2222222222222222,
+   "precision_vs_gt5": 0.5,
+   "alarm_rate": 0.000847816871555744
+  },
+  {
+   "th": 0.15,
+   "gt_pos": 4,
+   "pred_pos": 3,
+   "tp_same": 1,
+   "recall_same": 0.25,
+   "precision_same": 0.3333333333333333,
+   "gt5_pos": 9,
+   "recall_vs_gt5": 0.1111111111111111,
+   "precision_vs_gt5": 0.3333333333333333,
+   "alarm_rate": 0.000635862653666808
+  },
+  {
+   "th": 0.25,
+   "gt_pos": 3,
+   "pred_pos": 1,
+   "tp_same": 1,
+   "recall_same": 0.3333333333333333,
+   "precision_same": 1.0,
+   "gt5_pos": 9,
+   "recall_vs_gt5": 0.1111111111111111,
+   "precision_vs_gt5": 1.0,
+   "alarm_rate": 0.000211954217888936
+  }
+ ],
+ "맨홀·그레이팅": [
+  {
+   "th": 0.05,
+   "gt_pos": 164,
+   "pred_pos": 209,
+   "tp_same": 151,
+   "recall_same": 0.9207317073170732,
+   "precision_same": 0.722488038277512,
+   "gt5_pos": 164,
+   "recall_vs_gt5": 0.9207317073170732,
+   "precision_vs_gt5": 0.722488038277512,
+   "alarm_rate": 0.044298431538787625
+  },
+  {
+   "th": 0.1,
+   "gt_pos": 137,
+   "pred_pos": 165,
+   "tp_same": 125,
+   "recall_same": 0.9124087591240876,
+   "precision_same": 0.7575757575757576,
+   "gt5_pos": 164,
+   "recall_vs_gt5": 0.8414634146341463,
+   "precision_vs_gt5": 0.8363636363636363,
+   "alarm_rate": 0.03497244595167444
+  },
+  {
+   "th": 0.15,
+   "gt_pos": 116,
+   "pred_pos": 148,
+   "tp_same": 105,
+   "recall_same": 0.9051724137931034,
+   "precision_same": 0.7094594594594594,
+   "gt5_pos": 164,
+   "recall_vs_gt5": 0.774390243902439,
+   "precision_vs_gt5": 0.8581081081081081,
+   "alarm_rate": 0.03136922424756253
+  },
+  {
+   "th": 0.25,
+   "gt_pos": 75,
+   "pred_pos": 109,
+   "tp_same": 68,
+   "recall_same": 0.9066666666666666,
+   "precision_same": 0.6238532110091743,
+   "gt5_pos": 164,
+   "recall_vs_gt5": 0.5670731707317073,
+   "precision_vs_gt5": 0.8532110091743119,
+   "alarm_rate": 0.023103009749894023
+  }
+ ],
+ "가로수 구역": [
+  {
+   "th": 0.05,
+   "gt_pos": 50,
+   "pred_pos": 75,
+   "tp_same": 46,
+   "recall_same": 0.92,
+   "precision_same": 0.6133333333333333,
+   "gt5_pos": 50,
+   "recall_vs_gt5": 0.92,
+   "precision_vs_gt5": 0.6133333333333333,
+   "alarm_rate": 0.0158965663416702
+  },
+  {
+   "th": 0.1,
+   "gt_pos": 41,
+   "pred_pos": 58,
+   "tp_same": 38,
+   "recall_same": 0.926829268292683,
+   "precision_same": 0.6551724137931034,
+   "gt5_pos": 50,
+   "recall_vs_gt5": 0.88,
+   "precision_vs_gt5": 0.7586206896551724,
+   "alarm_rate": 0.012293344637558287
+  },
+  {
+   "th": 0.15,
+   "gt_pos": 30,
+   "pred_pos": 48,
+   "tp_same": 28,
+   "recall_same": 0.9333333333333333,
+   "precision_same": 0.5833333333333334,
+   "gt5_pos": 50,
+   "recall_vs_gt5": 0.78,
+   "precision_vs_gt5": 0.8125,
+   "alarm_rate": 0.010173802458668928
+  },
+  {
+   "th": 0.25,
+   "gt_pos": 25,
+   "pred_pos": 32,
+   "tp_same": 22,
+   "recall_same": 0.88,
+   "precision_same": 0.6875,
+   "gt5_pos": 50,
+   "recall_vs_gt5": 0.58,
+   "precision_vs_gt5": 0.90625,
+   "alarm_rate": 0.006782534972445952
+  }
+ ]
+}

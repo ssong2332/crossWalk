@@ -5,7 +5,12 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:vibration/vibration.dart';
 import '../localization/app_strings.dart';
 import 'audio_policy.dart';
+import 'event_log.dart';
 import 'severity_latch.dart';
+import 'surface_guide.dart';
+
+/// T108 Q1: 보류한 회복 안내를 어떻게 할지([FeedbackService.decideHeldRecovery]).
+enum HeldRecoveryVerdict { wait, speak, cancel, expire }
 
 class FeedbackService {
   final FlutterTts _tts = FlutterTts();
@@ -37,6 +42,9 @@ class FeedbackService {
   DateTime? _lastAlertTime;
   String? _lastAlertClass;
   bool? _lastAlertSevere;
+  // T102: 끝 안내 여부도 쿨다운 키에 넣는다 — 같은 'left'라도 일반 이탈에서
+  // 끝으로 바뀌면 "가장자리입니다"를 바로 알려야 한다.
+  bool? _lastAlertEdge;
 
   // T63: 매 alert() 호출마다(메시지가 실제로 나갔는지와 무관하게) 갱신되는
   // "직전 판정 클래스". 구간 전이(진입/이탈 완료/복귀)를 감지하려면 발화
@@ -50,7 +58,104 @@ class FeedbackService {
   String? _lastSeverityClass;
 
   DateTime? _lastPhaseAt;
+
+  /// T118: "발밑이 인도"라서 hold를 일찍 푼 시각. 이 뒤 [groundReleaseCrossedWindow]
+  /// 안에 crossed가 오면 none/approach -> crossed여도 "건넜습니다"를 낸다(A2).
+  DateTime? _holdReleasedByGroundAt;
+
+  /// T118 보완: 위에서 푼 hold가 시작된 시각. 일찍 풀지 않았다면 hold 시작부터
+  /// `CrossingHold.holdDuration`(10초) 안의 crossed는 "건넜습니다"였다 — 그 창을 지킨다.
+  DateTime? _releasedHoldStartedAt;
+
+  /// T118: 위 창(추정값). 도착 연석에서 crossed 판정까지 10/02 기록 L1051은 3.5초.
+  static const groundReleaseCrossedWindow = Duration(seconds: 5);
+
+  /// T118 보완: hold 시작부터의 창 — `CrossingHold.holdDuration`과 같은 10초.
+  static const holdStartCrossedWindow = Duration(seconds: 10);
+
+  /// T118: `CrossingHold`가 발밑이 인도라서 hold를 푼 직후 부른다.
+  /// [holdStartedAt]은 그 hold가 시작된 시각(`CrossingHold.releasedHoldStartedAt`).
+  void noteHoldReleasedByGround(DateTime now, {DateTime? holdStartedAt}) {
+    _holdReleasedByGroundAt = now;
+    _releasedHoldStartedAt = holdStartedAt;
+  }
+
+  /// T118 보완: 일찍 푼 뒤 crossed를 "건넜습니다"로 볼 마지막 시각 —
+  /// hold 시작 + 10초와 해제 + 5초 중 늦은 쪽.
+  @visibleForTesting
+  static DateTime groundReleaseCrossedUntil(
+      DateTime releasedAt, DateTime? holdStartedAt) {
+    final afterRelease = releasedAt.add(groundReleaseCrossedWindow);
+    if (holdStartedAt == null) return afterRelease;
+    final afterStart = holdStartedAt.add(holdStartCrossedWindow);
+    return afterStart.isAfter(afterRelease) ? afterStart : afterRelease;
+  }
   DateTime? _lastRecoveryAt;
+
+  // T102: 직전 alert()가 "끝 + 이미 중앙 쪽으로 틀었음(front)"이었는가.
+  bool _lastEdgeTurned = false;
+  DateTime? _lastEdgeTurnedAt;
+
+  // T108 Q1(사용자 확정 2026-10-12): 회복 안내("직진하세요"/"그대로 가세요")는
+  // 바로 말하지 않고 보류했다가, front가 [recoveryHold] 동안 유지되면 말한다.
+  // 10/02 기록에서 끊긴 안내 35건 중 27건이 이탈↔회복이 0.7~1초 안에 서로 끊은
+  // 것이었다(상태 깜빡임). 확인 진동은 지금처럼 즉시 나간다.
+  String? _heldRecovery;
+  DateTime? _heldRecoveryAt;
+  bool _heldRecoveryIsEdge = false;
+
+  /// 회복 안내를 말하기 전 front가 유지돼야 하는 시간(추정값, 실기기로 조정).
+  static const recoveryHold = Duration(milliseconds: 700);
+
+  /// 유지 확인 뒤 이탈 경고가 재생 중이면 기다리는 최대 시간(추정값).
+  static const recoveryMaxWait = Duration(seconds: 2);
+
+  // T108 Q2: 대기 슬롯의 P1을 최소 간격이 끝나는 시각에 꺼내는 타이머.
+  Timer? _drainTimer;
+
+  /// T118: 대기 꺼내기 타이머 여유. 타이머는 ms로 잘려 예약되는데 간격 판정은
+  /// µs 시각을 써서, 몇 µs 일찍 울리면 "아직 간격 안"으로 다시 대기하고 곧바로
+  /// 또 울리기를 반복했다(10/19 기록 L3471~L3484, 같은 ms에 14번).
+  static const drainMargin = Duration(milliseconds: 20);
+
+  /// T118: 간격이 끝나는 [allowed]까지 남은 시간 + [drainMargin].
+  @visibleForTesting
+  static Duration drainDelay(DateTime? allowed, DateTime now) =>
+      (allowed == null || !allowed.isAfter(now)
+          ? Duration.zero
+          : allowed.difference(now)) +
+      drainMargin;
+
+  /// T118(사용자 확정 A, 2026-10-20): 횡단보도 없음 상태의 "멈춤 블록입니다"는
+  /// 잠깐 보류한다. 그사이 "앞에 횡단보도가 있습니다"가 나오면 그것만 말한다.
+  /// 기록 17건 중 블록 뒤 앞에 횡단보도가 온 7건이 모두 1.25초 안이었다.
+  static const dotBlockHold = Duration(milliseconds: 1300);
+  Timer? _dotBlockTimer;
+  DateTime? _heldDotBlockAt;
+
+  /// T118: 직전 상태 [lastClass]에서 멈춤 블록을 보류하는가. 횡단보도 없음(none·
+  /// 콜드스타트)에서만 — 건넌 직후(crossed)·위·앞은 지금처럼 바로 처리한다.
+  @visibleForTesting
+  static bool holdsDotBlock(String lastClass) =>
+      lastClass == 'none' || lastClass == '';
+
+  void _holdDotBlock(String message, DateTime now) {
+    _dotBlockTimer?.cancel();
+    _heldDotBlockAt = now;
+    EventLog.instance.log('say.defer', {'text': message});
+    _dotBlockTimer = Timer(dotBlockHold, () {
+      final at = _heldDotBlockAt;
+      _heldDotBlockAt = null;
+      if (at == null) return;
+      // T118 보완: 보류하는 동안 횡단보도 위·앞 등으로 바뀌었으면 말하지 않는다.
+      if (!holdsDotBlock(_lastRawClass ?? '')) {
+        EventLog.instance.log('say.cancel', {'text': message, 'why': 'state'});
+        return;
+      }
+      unawaited(_speak(message,
+          priority: FeedbackPriority.p1, requestedAt: at));
+    });
+  }
 
   // T38 fix: guards against isSpeaking/isVibrating being reset by a stale
   // await/timer from an earlier alert() call. decideMessage() bypasses
@@ -161,8 +266,13 @@ class FeedbackService {
   /// — 화면·화살표·음성이 같은 값을 보게 하려는 것. null(각도 모델 미준비·
   /// 미검출)이면 보수적으로 약함으로 본다.
   @visibleForTesting
+  ///
+  /// T102: [atEdge]면(끝 규칙이 낸 left/right) 강도와 무관하게 끝 전용 문구
+  /// ("오른쪽으로 이동하세요. 가장자리입니다")를 낸다. 끝 각도는 ±20으로
+  /// 고정돼 심함(25) 기준에 닿지 않으므로 "즉시" 변형은 없다.
   String? decideMessage(
-      String detectedClass, double? angleDegrees, DateTime now) {
+      String detectedClass, double? angleDegrees, DateTime now,
+      {bool atEdge = false}) {
     if (detectedClass != 'left' && detectedClass != 'right') {
       severityLatch.reset();
       _lastSeverityClass = null;
@@ -182,6 +292,7 @@ class FeedbackService {
     if (_lastAlertTime != null &&
         _lastAlertClass == detectedClass &&
         _lastAlertSevere == severe &&
+        _lastAlertEdge == atEdge &&
         now.difference(_lastAlertTime!).inSeconds < _cooldownSeconds) {
       return null;
     }
@@ -189,8 +300,14 @@ class FeedbackService {
     _lastAlertTime = now;
     _lastAlertClass = detectedClass;
     _lastAlertSevere = severe;
+    _lastAlertEdge = atEdge;
 
     final strings = AppStrings.of(_language);
+    if (atEdge) {
+      return detectedClass == 'left'
+          ? strings.leftEdgeMessage
+          : strings.rightEdgeMessage;
+    }
     if (detectedClass == 'left') {
       return severe
           ? strings.leftDeviationMessageSevere
@@ -216,10 +333,31 @@ class FeedbackService {
         (detectedClass == 'front' ||
             detectedClass == 'left' ||
             detectedClass == 'right');
-    final exiting = (previousClass == 'front' ||
-            previousClass == 'left' ||
-            previousClass == 'right') &&
-        detectedClass == 'none';
+    // T103(2026-09-27, 사용자 확정): 다 건넘은 **위 -> crossed** 순간에 안내한다.
+    // 위 -> none은 **안내하지 않는다** — 줄무늬가 잠깐 안 보이거나(X형 교차
+    // 횡단보도 가운데) 오판일 수 있어서다. 다 건넌 과정은 위 -> crossed -> none
+    // 이고, crossed -> none/approach, none/approach -> crossed도 침묵이다.
+    // T118(A2): hold가 "발밑이 인도"로 일찍 풀려 none/approach를 거쳤어도, 그 뒤
+    // 창([groundReleaseCrossedUntil]) 안의 crossed는 다 건넌 것으로 본다 — 풀리지 않았다면 hold -> crossed
+    // (= 위 -> crossed)였을 경우다. 한 번 쓰거나 다시 위로 들어오면 비운다.
+    final releasedAt = _holdReleasedByGroundAt;
+    final afterGroundRelease = releasedAt != null &&
+        (previousClass == 'none' || previousClass == 'approach') &&
+        detectedClass == 'crossed' &&
+        !now.isAfter(
+            groundReleaseCrossedUntil(releasedAt, _releasedHoldStartedAt));
+    if (detectedClass == 'crossed' ||
+        detectedClass == 'front' ||
+        detectedClass == 'left' ||
+        detectedClass == 'right') {
+      _holdReleasedByGroundAt = null;
+      _releasedHoldStartedAt = null;
+    }
+    final exiting = ((previousClass == 'front' ||
+                previousClass == 'left' ||
+                previousClass == 'right') &&
+            detectedClass == 'crossed') ||
+        afterGroundRelease;
     // T93(2026-09-15, 사용자 요청): approach로 **들어올 때** "앞에 횡단보도가
     // 있습니다"를 1회 안내한다. T51에서 approach를 침묵시켰던 것을 뒤집는다
     // (이탈 경고 decideMessage는 여전히 approach에서 침묵 — 방향 경고가 아니라
@@ -250,13 +388,18 @@ class FeedbackService {
   // front에는 반응하지 않음) 이 함수를 거치지 않으면 "직진하세요"가 나갈
   // 방법이 없다 — 회복 여부는 반드시 직전 클래스를 봐야 알 수 있다.
   @visibleForTesting
+  ///
+  /// T102: [atEdge](끝 + 이미 중앙 쪽으로 틀어 front)면 "직진하세요" 대신
+  /// [decideEdgeTurnedMessage]가 "그대로 가세요"를 낸다 — 여기서는 침묵.
   String? decideRecoveryMessage(
     String previousClass,
     String detectedClass,
-    DateTime now,
-  ) {
+    DateTime now, {
+    bool atEdge = false,
+  }) {
     final recovered = (previousClass == 'left' || previousClass == 'right') &&
-        detectedClass == 'front';
+        detectedClass == 'front' &&
+        !atEdge;
     if (!recovered) return null;
 
     if (_lastRecoveryAt != null &&
@@ -268,6 +411,76 @@ class FeedbackService {
     return AppStrings.of(_language).recoveredMessage;
   }
 
+  // T102(사용자 확정 2026-09-27): 끝인데 이미 중앙 쪽으로 틀어 직진 판정
+  // (T100 a안)이 나면 "그대로 가세요"를 1회 안내한다. front는 원래 무음이라
+  // 안내가 없으면 사용자는 방향이 맞는지 알 수 없었다. 그 상태로 **들어올
+  // 때만** 내고(머무는 동안 반복하지 않음), 경계에서 떨릴 때 반복되지 않게
+  // 다른 1회성 안내와 같은 3초 재쿨다운을 둔다.
+  @visibleForTesting
+  String? decideEdgeTurnedMessage(
+    String detectedClass,
+    DateTime now, {
+    required bool atEdge,
+  }) {
+    final edgeTurned = detectedClass == 'front' && atEdge;
+    final entering = edgeTurned && !_lastEdgeTurned;
+    _lastEdgeTurned = edgeTurned;
+    if (!entering) return null;
+
+    if (_lastEdgeTurnedAt != null &&
+        now.difference(_lastEdgeTurnedAt!).inSeconds < _cooldownSeconds) {
+      return null;
+    }
+    _lastEdgeTurnedAt = now;
+    return AppStrings.of(_language).edgeTurnedMessage;
+  }
+
+  void _holdRecovery(String message, DateTime now, {required bool edge}) {
+    _heldRecovery = message;
+    _heldRecoveryAt = now;
+    _heldRecoveryIsEdge = edge;
+    EventLog.instance.log('say.defer', {'text': message});
+  }
+
+  void _clearHeldRecovery() {
+    _heldRecovery = null;
+    _heldRecoveryAt = null;
+    _heldRecoveryIsEdge = false;
+  }
+
+  /// T108 Q1 판정표(사용자 확정 2026-10-12). [heldAt]은 회복 안내를 보류한 시각.
+  ///
+  /// | 이번 판정 | 보류 경과                         | 이탈 경고 재생 중 | 결과   |
+  /// |---|---|---|---|
+  /// | front 아님 | —                                 | —                 | cancel |
+  /// | front      | > [recoveryHold] + [recoveryMaxWait] | —              | expire |
+  /// | front      | < [recoveryHold]                  | —                 | wait   |
+  /// | front      | >= [recoveryHold]                 | 예                | wait   |
+  /// | front      | >= [recoveryHold]                 | 아니오            | speak  |
+  @visibleForTesting
+  HeldRecoveryVerdict decideHeldRecovery(
+    String detectedClass,
+    DateTime heldAt,
+    DateTime now, {
+    required bool deviationPlaying,
+  }) {
+    if (detectedClass != 'front') return HeldRecoveryVerdict.cancel;
+    final held = now.difference(heldAt);
+    if (held > recoveryHold + recoveryMaxWait) return HeldRecoveryVerdict.expire;
+    if (held < recoveryHold || deviationPlaying) return HeldRecoveryVerdict.wait;
+    return HeldRecoveryVerdict.speak;
+  }
+
+  /// T108 Q3: [message]가 재생 중인 [activeMessage](멈춤 블록)를 대체하는가.
+  @visibleForTesting
+  static bool supersedesDotBlock(
+    String message,
+    String? activeMessage, {
+    required String approachMessage,
+    required String dotBlockMessage,
+  }) =>
+      message == approachMessage && activeMessage == dotBlockMessage;
+
   // T39: runtime setters used by SettingsScreen. Each applies immediately
   // for the remainder of the session (no persistence — restarting the app
   // resets to the defaults above). SettingsScreen calls these without
@@ -276,6 +489,7 @@ class FeedbackService {
   // than left to become an unhandled async error in the root zone.
   Future<void> updateLanguage(AppLanguage language) async {
     _language = language;
+    EventLog.instance.log('set', {'key': 'lang', 'value': language.name});
     try {
       await _tts.setLanguage(ttsLocaleCode(language));
     } catch (e) {
@@ -285,6 +499,7 @@ class FeedbackService {
 
   Future<void> updateSpeechRate(double rate) async {
     _speechRate = rate;
+    EventLog.instance.log('set', {'key': 'speechRate', 'value': rate});
     try {
       await _tts.setSpeechRate(rate);
     } catch (e) {
@@ -294,6 +509,8 @@ class FeedbackService {
 
   void updateVibrationDuration(int milliseconds) {
     _vibrationDurationMs = milliseconds;
+    EventLog.instance
+        .log('set', {'key': 'vibrationMs', 'value': milliseconds});
   }
 
   // Bumps the speech generation and marks speech as active. Returns the
@@ -347,35 +564,94 @@ class FeedbackService {
   Future<void> _speak(
     String message, {
     FeedbackPriority priority = FeedbackPriority.p3,
+    P0Rank rank = P0Rank.deviation,
+    bool supersedes = false,
+    DateTime? requestedAt,
   }) async {
-    final requestedAt = DateTime.now();
-    final action = audioPolicy.decide(priority, requestedAt);
+    final now = DateTime.now();
+    // T108: 대기 슬롯에서 다시 꺼낸 요청은 처음 요청 시각을 그대로 쓴다(TTL 기준).
+    final firstAt = requestedAt ?? now;
+    var action = audioPolicy.decide(priority, now,
+        rank: rank, message: message, supersedes: supersedes);
+    var why = audioPolicy.lastReason;
+    if (action == SpeechAction.queue) {
+      // 만료된 대기 항목이 슬롯을 막지 않게 먼저 치운다(버린 것은 기록).
+      final expiredPriority = audioPolicy.pendingPriority;
+      final expired = audioPolicy.takeExpiredPending(now);
+      if (expired != null && expiredPriority != null) {
+        EventLog.instance.log('say.ttl', {
+          'text': expired,
+          'p': expiredPriority.index,
+        });
+      }
+    }
+    if (action == SpeechAction.queue &&
+        !audioPolicy.putPending(priority, message, firstAt,
+            supersedes: supersedes)) {
+      // 슬롯 한 칸을 먼저 온 안내가 차지하고 있다.
+      action = SpeechAction.drop;
+      why = 'slot_full';
+    }
+    // T106: 정책 판단을 그대로 기록한다(재생·대기·버림과 그 이유).
+    EventLog.instance.log('say', {
+      'text': message,
+      'p': priority.index,
+      'act': action.name,
+      'why': why,
+    });
     if (action == SpeechAction.drop) return;
     if (action == SpeechAction.queue) {
-      // 대기는 P1이 P0를 기다리는 한 칸뿐이다. 슬롯은 1개이며 TTL이 지나면 버린다.
-      audioPolicy.putPending(priority, message, requestedAt);
+      // 재생 중인 것이 없으면(최소 간격 대기) 간격이 끝나는 시각에 꺼낸다.
+      // 재생 중이면 그 발화가 끝날 때 finally에서 꺼낸다.
+      if (audioPolicy.activePriority == null) _scheduleDrain();
       return;
     }
 
     final generation = beginSpeechGeneration();
-    audioPolicy.markStarted(priority);
+    audioPolicy.markStarted(priority, rank: rank, message: message);
     final start = DateTime.now();
+    var result = 'done';
     await _tts.stop();
     try {
       await _tts.speak(message).timeout(_speakTimeout);
     } on TimeoutException {
+      result = 'timeout';
       debugPrint(
           'FeedbackService._speak: timed out waiting for TTS completion');
     } catch (e) {
       // alert() fires this via unawaited(), so nothing else observes this
       // Future — any TTS engine error (not just a timeout) must be caught
       // here or it becomes an unhandled async error in the root zone.
+      result = 'error';
       debugPrint('FeedbackService._speak: TTS error: $e');
     } finally {
+      final end = DateTime.now();
+      // T106: 끝난 시각·걸린 시간. 다른 안내가 끊었으면(stop) 짧게 끝난다.
+      EventLog.instance.log('say.end', {
+        'text': message,
+        'p': priority.index,
+        'res': result,
+        'dur': end.difference(start).inMilliseconds,
+      });
+      // T108: 다른 발화에 끊겨 끝났으면 새 발화의 '재생 중' 상태를 지우지 않는다.
+      final current = generation == _speechGeneration;
       finishSpeechGeneration(generation);
-      audioPolicy.markFinished(priority, start, DateTime.now());
-      _drainPending();
+      audioPolicy.markFinished(priority, start, end, current: current);
+      if (current) _scheduleDrain();
     }
+  }
+
+  /// T108 Q2: 대기 슬롯을 최소 간격이 끝나는 시각에 꺼내도록 예약한다.
+  ///
+  /// T108 전에는 발화가 끝나자마자 꺼냈는데, 그 순간은 최소 간격(끝난 뒤 1.5초)
+  /// 안이라 P1이 다시 버려졌다(10/02 기록 L3367 대기 -> L3378 min_gap 버림).
+  void _scheduleDrain() {
+    if (audioPolicy.pendingPriority == null) return;
+    final now = DateTime.now();
+    final allowed = audioPolicy.nextAllowedAt;
+    final wait = drainDelay(allowed, now);
+    _drainTimer?.cancel();
+    _drainTimer = Timer(wait, _drainPending);
   }
 
   /// 대기 슬롯에 남은 항목을 꺼내 발화한다. TTL이 지났으면 버린다 —
@@ -385,9 +661,33 @@ class FeedbackService {
     final msg = audioPolicy.pendingMessage;
     final at = audioPolicy.pendingAt;
     if (pri == null || msg == null || at == null) return;
+    // 그사이 다른 발화가 시작됐으면 그 발화가 끝날 때 다시 꺼낸다.
+    if (audioPolicy.activePriority != null) return;
     audioPolicy.clearPending();
-    if (audioPolicy.isExpired(pri, at, DateTime.now())) return;
-    unawaited(_speak(msg, priority: pri));
+    if (audioPolicy.isExpired(pri, at, DateTime.now())) {
+      EventLog.instance.log('say.ttl', {'text': msg, 'p': pri.index});
+      return;
+    }
+    unawaited(_speak(msg, priority: pri, requestedAt: at));
+  }
+
+  /// T106: 진동 기록 한 줄의 내용. [kind]는 left·right·recover·road·line_on.
+  /// 앱이 진동을 **요청한** 기록이다 — 모터가 실제로 떨렸는지는 알 수 없다.
+  @visibleForTesting
+  static Map<String, Object?> vibrationLogData(
+    String kind,
+    List<int> pattern, {
+    required bool hasVibrator,
+    required bool supportsPattern,
+    required int fallbackMs,
+  }) {
+    if (!hasVibrator) return {'kind': kind, 'ok': false, 'why': 'no_vibrator'};
+    return {
+      'kind': kind,
+      'ok': true,
+      'mode': supportsPattern ? 'pattern' : 'single',
+      'pat': supportsPattern ? pattern : <int>[0, fallbackMs],
+    };
   }
 
   // Marks vibration as active and (re)schedules the timer that will clear
@@ -414,7 +714,7 @@ class FeedbackService {
   // speech without the vibration branch waiting on its completion; the
   // two feedback channels now run independently.
   Future<void> alert(String detectedClass, double confidence,
-      {double? angleDegrees}) async {
+      {double? angleDegrees, bool atEdge = false}) async {
     final now = DateTime.now();
 
     // T63: 발화 여부와 무관하게 진짜 직전 클래스를 먼저 뽑아 둔다 —
@@ -426,20 +726,81 @@ class FeedbackService {
     // 반복 경고가 아니라 1회성 사실이므로 이탈 경고보다 낮은 우선순위다.
     final phaseMessage = decidePhaseMessage(previous, detectedClass, now);
     if (phaseMessage != null) {
-      unawaited(_speak(phaseMessage, priority: FeedbackPriority.p1));
+      // T108 Q3: "앞에 횡단보도가 있습니다"는 재생 중이거나 대기 중인
+      // "멈춤 블록입니다"를 대체한다(같은 연석에서 같은 뜻 — 멈춰서 확인).
+      final dotBlock = AppStrings.of(_language).surfaceDotBlockMessage;
+      final supersedes = supersedesDotBlock(
+          phaseMessage, audioPolicy.activeMessage,
+          approachMessage: AppStrings.of(_language).approachAheadMessage,
+          dotBlockMessage: dotBlock);
+      // T118: 보류 중인 멈춤 블록은 말하지 않고 앞에 횡단보도만 말한다.
+      if (phaseMessage == AppStrings.of(_language).approachAheadMessage &&
+          _heldDotBlockAt != null) {
+        _dotBlockTimer?.cancel();
+        _heldDotBlockAt = null;
+        EventLog.instance
+            .log('say.cancel', {'text': dotBlock, 'why': 'superseded'});
+      }
+      if (phaseMessage == AppStrings.of(_language).approachAheadMessage &&
+          audioPolicy.pendingMessage == dotBlock) {
+        audioPolicy.clearPending();
+        EventLog.instance
+            .log('say.cancel', {'text': dotBlock, 'why': 'superseded'});
+      }
+      unawaited(_speak(phaseMessage,
+          priority: FeedbackPriority.p1, supersedes: supersedes));
     }
 
-    // 이탈에서 회복했을 때의 확인 안내(P0) — 이탈 경고와 같은 채널이므로
-    // 같은 우선순위를 준다. 처음부터 똑바로 가는 경우는 절대 나가지 않는다.
-    final recoveryMessage = decideRecoveryMessage(previous, detectedClass, now);
-    if (recoveryMessage != null) {
-      unawaited(_speak(recoveryMessage, priority: FeedbackPriority.p0));
+    // 이탈에서 회복했을 때의 확인 안내(P0 회복 순위). 처음부터 똑바로 가는
+    // 경우는 절대 나가지 않는다. T108 Q1: 바로 말하지 않고 보류한다.
+    final recoveryMessage =
+        decideRecoveryMessage(previous, detectedClass, now, atEdge: atEdge);
+    if (recoveryMessage != null) _holdRecovery(recoveryMessage, now, edge: false);
+
+    // T102: 끝에서 이미 중앙 쪽으로 틀었을 때의 확인 안내(회복 안내와 같은
+    // 채널). 위 회복 안내는 atEdge면 침묵하므로 둘이 함께 나가지 않는다.
+    final edgeTurnedMessage =
+        decideEdgeTurnedMessage(detectedClass, now, atEdge: atEdge);
+    if (edgeTurnedMessage != null) {
+      _holdRecovery(edgeTurnedMessage, now, edge: true);
+    }
+
+    // T108 Q1: 보류한 회복 안내를 front가 유지됐으면 말하고, 흔들렸으면 취소한다.
+    final deviationPlaying = audioPolicy.activePriority == FeedbackPriority.p0 &&
+        (audioPolicy.activeRank ?? P0Rank.deviation).index <
+            P0Rank.recovery.index;
+    final held = _heldRecovery;
+    final heldAt = _heldRecoveryAt;
+    if (held != null && heldAt != null) {
+      final verdict =
+          decideHeldRecovery(detectedClass, heldAt, now, deviationPlaying: deviationPlaying);
+      switch (verdict) {
+        case HeldRecoveryVerdict.wait:
+          break;
+        case HeldRecoveryVerdict.speak:
+          _clearHeldRecovery();
+          unawaited(_speak(held,
+              priority: FeedbackPriority.p0, rank: P0Rank.recovery));
+        case HeldRecoveryVerdict.cancel:
+          // 흔들림 — 말하지 않았으므로 쿨다운도 되돌려, 곧 진짜로 회복하면 안내한다.
+          if (_heldRecoveryIsEdge) {
+            _lastEdgeTurnedAt = null;
+          } else {
+            _lastRecoveryAt = null;
+          }
+          _clearHeldRecovery();
+          EventLog.instance.log('say.cancel', {'text': held, 'why': 'flicker'});
+        case HeldRecoveryVerdict.expire:
+          _clearHeldRecovery();
+          EventLog.instance.log('say.ttl', {'text': held, 'p': 0});
+      }
     }
 
     // 음성 — 이탈 경고는 P0다. 무음 예산·최소 간격에서 면제되며, 재생 중인
     // 하위 등급 안내를 끊는다. T84: 강도는 각도로 판정한다(confidence는
     // 더 이상 강도에 쓰지 않는다 — 호출부 호환을 위해 인자는 남겨 둔다).
-    final message = decideMessage(detectedClass, angleDegrees, now);
+    final message =
+        decideMessage(detectedClass, angleDegrees, now, atEdge: atEdge);
     if (message != null) {
       unawaited(_speak(message, priority: FeedbackPriority.p0));
     }
@@ -450,8 +811,23 @@ class FeedbackService {
     // 음성이 쿨다운에 걸린 프레임에서도 진동 판단은 별도로 수행한다.
     final pattern =
         vibrationPolicy.decidePattern(detectedClass, now, _vibrationDurationMs);
+
+    // T106: 경고 입력과 이번에 낸 것(음성 문장 여부·진동 여부). 말이 안 나간
+    // 이유(쿨다운)도 이 줄과 'say' 줄을 함께 보면 알 수 있다.
+    EventLog.instance.log('alert', {
+      'cls': detectedClass,
+      'conf': confidence,
+      'ang': angleDegrees,
+      'edge': atEdge,
+      'msg': message,
+      'phase': phaseMessage,
+      'recover': recoveryMessage,
+      'edgeTurned': edgeTurnedMessage,
+      'vib': pattern != null,
+    });
     if (pattern == null) return;
 
+    final kind = detectedClass == 'front' ? 'recover' : detectedClass;
     if (await Vibration.hasVibrator() ?? false) {
       // 패턴 진동을 지원하지 않는 기기에서는 단일 진동으로 내려간다.
       // 방향은 음성으로만 전달되지만, 아무 알림도 없는 것보다는 낫다.
@@ -461,10 +837,110 @@ class FeedbackService {
       } else {
         Vibration.vibrate(duration: _vibrationDurationMs);
       }
+      EventLog.instance.log(
+          'vib',
+          vibrationLogData(kind, pattern,
+              hasVibrator: true,
+              supportsPattern: supportsPattern,
+              fallbackMs: _vibrationDurationMs));
       final total = pattern.fold<int>(0, (a, b) => a + b);
       activateVibrationIndicator(total > 0 ? total : _vibrationDurationMs);
+    } else {
+      EventLog.instance.log(
+          'vib',
+          vibrationLogData(kind, pattern,
+              hasVibrator: false,
+              supportsPattern: false,
+              fallbackMs: _vibrationDurationMs));
     }
   }
+
+  /// T104: 노면 안내(`SurfaceGuide` 이벤트)를 말하고 진동한다.
+  /// 등급·진동은 `docs/AudioPolicy.md` 노면 안내 표(사용자 확정 2026-09-30):
+  ///   차도 P0 + 짧게 3번 / 멈춤 블록 P1 / 선형 방향·벗어남 P2 / 블록 위 = 진동만(짧게 1번).
+  Future<void> surfaceAlert(List<SurfaceEvent> events) async {
+    if (events.isEmpty) return;
+    final strings = AppStrings.of(_language);
+    final shortMs = (_vibrationDurationMs ~/ 4).clamp(80, _vibrationDurationMs);
+    List<int>? pattern;
+    for (final e in events) {
+      switch (e) {
+        case SurfaceEvent.road:
+          unawaited(_speak(strings.surfaceRoadMessage,
+              priority: FeedbackPriority.p0, rank: P0Rank.danger));
+          pattern = surfaceRoadPattern(shortMs);
+        case SurfaceEvent.dotBlock:
+          if (holdsDotBlock(_lastRawClass ?? '')) {
+            _holdDotBlock(strings.surfaceDotBlockMessage, DateTime.now());
+          } else {
+            unawaited(_speak(strings.surfaceDotBlockMessage,
+                priority: FeedbackPriority.p1));
+          }
+        case SurfaceEvent.linearRight:
+          unawaited(_speak(strings.surfaceLinearRightMessage,
+              priority: FeedbackPriority.p2));
+        case SurfaceEvent.linearLeft:
+          unawaited(_speak(strings.surfaceLinearLeftMessage,
+              priority: FeedbackPriority.p2));
+        case SurfaceEvent.linearLost:
+          unawaited(_speak(strings.surfaceLinearLostMessage,
+              priority: FeedbackPriority.p2));
+        case SurfaceEvent.linearOn:
+          pattern ??= <int>[0, shortMs];
+      }
+    }
+    if (pattern == null) return;
+    final kind = events.contains(SurfaceEvent.road) ? 'road' : 'line_on';
+    if (await Vibration.hasVibrator()) {
+      final supportsPattern = await Vibration.hasCustomVibrationsSupport();
+      if (supportsPattern) {
+        Vibration.vibrate(pattern: pattern);
+      } else {
+        Vibration.vibrate(duration: _vibrationDurationMs);
+      }
+      EventLog.instance.log(
+          'vib',
+          vibrationLogData(kind, pattern,
+              hasVibrator: true,
+              supportsPattern: supportsPattern,
+              fallbackMs: _vibrationDurationMs));
+      final total = pattern.fold<int>(0, (a, b) => a + b);
+      activateVibrationIndicator(total > 0 ? total : _vibrationDurationMs);
+    } else {
+      EventLog.instance.log(
+          'vib',
+          vibrationLogData(kind, pattern,
+              hasVibrator: false,
+              supportsPattern: false,
+              fallbackMs: _vibrationDurationMs));
+    }
+  }
+
+  /// T105: 주의 구역 안내(`CautionGuide` 이벤트)를 말한다. 등급·진동은
+  /// `docs/AudioPolicy.md` 주의 구역 표(사용자 확정 2026-10-01): 둘 다 P2, 진동 없음.
+  /// P2라 무음 예산·최소 간격을 따르고, 걸리면 버린다(대기하지 않음).
+  Future<void> cautionAlert(List<CautionEvent> events) async {
+    final message = cautionMessage(events, AppStrings.of(_language));
+    if (message == null) return;
+    unawaited(_speak(message, priority: FeedbackPriority.p2));
+  }
+
+  /// T105 C8(사용자 확정 2026-10-12): 같은 판정에서 둘 다 나면 **둘 다 차례로** —
+  /// 한 문장으로 이어 말한다(따로 요청하면 P2 동급이라 뒤 것이 앞 것을 끊는다).
+  /// 순서는 판정표 번호 순(C1 맨홀·그레이팅 -> C2 가로수 구역).
+  @visibleForTesting
+  static String? cautionMessage(List<CautionEvent> events, AppStrings strings) {
+    final parts = [
+      if (events.contains(CautionEvent.manholeGrating)) strings.cautionManholeMessage,
+      if (events.contains(CautionEvent.treeZone)) strings.cautionTreeMessage,
+    ];
+    return parts.isEmpty ? null : parts.join('. ');
+  }
+
+  /// T104: 차도 진동 — 짧게 3번(‧‧‧). 기존 좌(‧‧)·우(—)·복귀(짧게 1번)와 겹치지 않는다.
+  @visibleForTesting
+  static List<int> surfaceRoadPattern(int shortMs) =>
+      <int>[0, shortMs, shortMs, shortMs, shortMs, shortMs];
 
   // 앱 초기화 실패 시 사용자에게 오류 상황을 음성으로 안내
   Future<void> announceError(String message) async {
@@ -483,6 +959,8 @@ class FeedbackService {
   Future<void> dispose() async {
     await _tts.stop();
     _vibrationTimer?.cancel();
+    _drainTimer?.cancel();
+    _dotBlockTimer?.cancel();
     isSpeaking.value = false;
     isVibrating.value = false;
     isSpeaking.dispose();

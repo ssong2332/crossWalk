@@ -1,0 +1,10 @@
+모델                                                 입력     파라미터(M)   파일(MB)    1스레드 ms    4스레드 ms       분류기 대비(1스레드)
+앱: crosswalk_model.onnx                           224           -      6.1        3.2        2.6              1.00x
+앱: crosswalk_angle.onnx                           224           -      6.1        3.1        2.2              0.96x
+앱: crosswalk_position.onnx                        224           -      6.1        2.7        3.6              0.83x
+후보: LR-ASPP MobileNetV3-Small 224                 224        1.08      4.3        6.5        3.7              2.05x
+후보: LR-ASPP MobileNetV3-Small 320                 320        1.08      4.3       10.3        5.5              3.22x
+후보: LR-ASPP MobileNetV3-Large 224                 224        3.22     12.8       19.3        8.7              6.04x
+후보: LR-ASPP MobileNetV3-Large 320                 320        3.22     12.8       34.8       16.8             10.90x
+후보: DeepLabV3 MobileNetV3-Large 224               224       11.02     44.0       27.7       13.4              8.69x
+후보: DeepLabV3 MobileNetV3-Large 320               320       11.02     44.0       53.9       26.2             16.90x

@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 from pathlib import Path
 import torch
 import torch.nn as nn
@@ -67,7 +68,10 @@ print(f"labels.json 저장 완료: {LABELS_OUT}")
 
 # 앱 에셋에도 같이 떨군다. onnx와 labels.json이 항상 한 쌍으로 움직여야
 # 해시 대조가 의미를 갖는다.
-if ASSET_DIR.is_dir():
+# T103: LABELS_TO_ASSETS=0이면 앱 에셋을 건드리지 않는다. 앱의 `_labels`가
+# 아직 옛 클래스 수인데 labels.json만 바뀌면 labels_sync_test가 깨진다 —
+# 모델을 학습만 하고 앱 반영은 별도 태스크로 할 때 쓴다.
+if os.environ.get("LABELS_TO_ASSETS", "1") != "0" and ASSET_DIR.is_dir():
     (ASSET_DIR / "labels.json").write_text(_text, encoding="utf-8")
     print(f"labels.json 저장 완료: {ASSET_DIR / 'labels.json'}")
     print("  ※ crosswalk_model.onnx는 자동 복사하지 않는다. 모델을 앱에 반영할 때")

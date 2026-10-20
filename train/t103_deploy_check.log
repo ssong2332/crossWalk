@@ -1,0 +1,7 @@
+T103 배포 점검 — 학습 데이터 전체(낙관적), 앱 전처리(classifier: EXIF 미적용 BOX 224)
+0_none n=300 | 새(6) 정답 98.3% {'none': 295, 'nc': 2, 'right': 1, 'left': 1, 'approach': 1} | 옛(5) {'none': 289, 'left': 1, 'approach': 5, 'right': 2, 'front': 1, 'nc': 2}
+1_approach n=209 | 새(6) 정답 98.6% {'approach': 206, 'right': 1, 'none': 2} | 옛(5) {'approach': 203, 'right': 4, 'left': 1, 'none': 1}
+2_front n=293 | 새(6) 정답 93.5% {'front': 274, 'crossed': 2, 'right': 8, 'left': 6, 'nc': 2, 'approach': 1} | 옛(5) {'front': 274, 'none': 3, 'left': 4, 'nc': 4, 'right': 8}
+3_left n=282 | 새(6) 정답 99.3% {'left': 280, 'right': 2} | 옛(5) {'left': 250, 'front': 23, 'right': 2, 'nc': 5, 'none': 2}
+4_right n=278 | 새(6) 정답 97.1% {'right': 270, 'nc': 4, 'left': 2, 'front': 1, 'approach': 1} | 옛(5) {'front': 22, 'right': 245, 'none': 4, 'nc': 5, 'left': 1, 'approach': 1}
+5_crossed n=92 | 새(6) 정답 96.7% {'crossed': 89, 'front': 1, 'approach': 2} | 옛(5) {'front': 30, 'nc': 8, 'approach': 19, 'none': 25, 'left': 7, 'right': 3}

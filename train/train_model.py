@@ -44,6 +44,12 @@ LR_FINETUNE = 1e-4
 # 정확히 일치해야 한다. 어긋나면 에러 없이 조용히 오작동한다(T42 전례).
 CLASS_DIRS = ["0_none", "1_approach", "2_front", "3_left", "4_right"]
 LABELS = ["none", "approach", "front", "left", "right"]
+# T103: 6-class 전환 스위치(groupkfold_cv.py의 CROSSED_MODE=class와 같은 의미).
+# 미설정이면 기존 5-class 그대로 — 배포 중인 T96 모델을 재현하는 경로를 보존한다.
+# export_onnx.py가 LABELS를 import하므로 익스포트 때도 같은 값을 줘야 한다.
+if os.environ.get("CROSSED_MODE") == "class":
+    CLASS_DIRS = CLASS_DIRS + ["5_crossed"]
+    LABELS = LABELS + ["crossed"]
 assert len(CLASS_DIRS) == len(LABELS)
 assert CLASS_DIRS == sorted(CLASS_DIRS), "폴더명 알파벳순 == 인덱스순이어야 한다"
 

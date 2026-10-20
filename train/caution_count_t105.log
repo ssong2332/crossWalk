@@ -1,0 +1,8 @@
+XML 800개, caution_zone 폴리곤 47452개 (사진 있는 것)
+속성               폴리곤     사진    폴더    면적중앙%    앞칸5%↑사진  파트별 사진
+manhole        20994  14062   800     0.50       1693  {'Surface_1': 2690, 'Surface_2': 2987, 'Surface_3': 2868, 'Surface_4': 2771, 'Surface_5': 2746}
+grating        13880  11257   800     0.29        609  {'Surface_1': 2224, 'Surface_2': 2378, 'Surface_3': 2273, 'Surface_4': 2209, 'Surface_5': 2173}
+tree_zone      10886   7699   797     0.87        753  {'Surface_1': 1868, 'Surface_2': 1886, 'Surface_3': 1704, 'Surface_4': 1267, 'Surface_5': 974}
+stairs          1485   1390   614     3.53         82  {'Surface_1': 372, 'Surface_2': 364, 'Surface_3': 242, 'Surface_4': 200, 'Surface_5': 212}
+repair_zone      207    172   127     9.35         73  {'Surface_1': 105, 'Surface_2': 35, 'Surface_3': 7, 'Surface_4': 17, 'Surface_5': 8}
+caution_zone 있는 사진 합계 26097장 / 앞칸 5%↑ 3186장
