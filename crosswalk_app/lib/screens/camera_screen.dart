@@ -495,7 +495,8 @@ class _CameraScreenState extends State<CameraScreen>
       // "건넜습니다"를 지키도록 알린다(A2).
       if (_crossingHold.releasedByGround) {
         EventLog.instance.log('hold.end', {'why': 'ground', 'to': label});
-        _feedback.noteHoldReleasedByGround(DateTime.now());
+        _feedback.noteHoldReleasedByGround(DateTime.now(),
+            holdStartedAt: _crossingHold.releasedHoldStartedAt);
       }
       // T102: 끝 규칙에서 나온 상태면 끝 전용 음성·화면 문구를 쓴다.
       // (hold는 위가 아니므로 isEdge가 false다.)

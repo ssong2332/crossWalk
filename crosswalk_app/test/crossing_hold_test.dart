@@ -115,5 +115,17 @@ void main() {
       expect(h.apply('front', 'none', at(5)), hold);
       expect(h.releasedByGround, isFalse);
     });
+
+    test('일찍 해제한 판정에서만 그 hold의 시작 시각을 알려 준다 (T118 보완)', () {
+      final h = CrossingHold();
+      expect(h.apply('front', 'none', at(0)), hold);
+      expect(h.releasedHoldStartedAt, isNull);
+      h.noteGround(1.0);
+      h.noteGround(1.0);
+      expect(h.apply(hold, 'none', at(4)), 'none');
+      expect(h.releasedHoldStartedAt, at(0));
+      expect(h.apply('none', 'none', at(5)), 'none');
+      expect(h.releasedHoldStartedAt, isNull);
+    });
   });
 }

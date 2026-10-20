@@ -63,11 +63,33 @@ class FeedbackService {
   /// 안에 crossed가 오면 none/approach -> crossed여도 "건넜습니다"를 낸다(A2).
   DateTime? _holdReleasedByGroundAt;
 
+  /// T118 보완: 위에서 푼 hold가 시작된 시각. 일찍 풀지 않았다면 hold 시작부터
+  /// `CrossingHold.holdDuration`(10초) 안의 crossed는 "건넜습니다"였다 — 그 창을 지킨다.
+  DateTime? _releasedHoldStartedAt;
+
   /// T118: 위 창(추정값). 도착 연석에서 crossed 판정까지 10/02 기록 L1051은 3.5초.
   static const groundReleaseCrossedWindow = Duration(seconds: 5);
 
+  /// T118 보완: hold 시작부터의 창 — `CrossingHold.holdDuration`과 같은 10초.
+  static const holdStartCrossedWindow = Duration(seconds: 10);
+
   /// T118: `CrossingHold`가 발밑이 인도라서 hold를 푼 직후 부른다.
-  void noteHoldReleasedByGround(DateTime now) => _holdReleasedByGroundAt = now;
+  /// [holdStartedAt]은 그 hold가 시작된 시각(`CrossingHold.releasedHoldStartedAt`).
+  void noteHoldReleasedByGround(DateTime now, {DateTime? holdStartedAt}) {
+    _holdReleasedByGroundAt = now;
+    _releasedHoldStartedAt = holdStartedAt;
+  }
+
+  /// T118 보완: 일찍 푼 뒤 crossed를 "건넜습니다"로 볼 마지막 시각 —
+  /// hold 시작 + 10초와 해제 + 5초 중 늦은 쪽.
+  @visibleForTesting
+  static DateTime groundReleaseCrossedUntil(
+      DateTime releasedAt, DateTime? holdStartedAt) {
+    final afterRelease = releasedAt.add(groundReleaseCrossedWindow);
+    if (holdStartedAt == null) return afterRelease;
+    final afterStart = holdStartedAt.add(holdStartCrossedWindow);
+    return afterStart.isAfter(afterRelease) ? afterStart : afterRelease;
+  }
   DateTime? _lastRecoveryAt;
 
   // T102: 직전 alert()가 "끝 + 이미 중앙 쪽으로 틀었음(front)"이었는가.
@@ -125,6 +147,11 @@ class FeedbackService {
       final at = _heldDotBlockAt;
       _heldDotBlockAt = null;
       if (at == null) return;
+      // T118 보완: 보류하는 동안 횡단보도 위·앞 등으로 바뀌었으면 말하지 않는다.
+      if (!holdsDotBlock(_lastRawClass ?? '')) {
+        EventLog.instance.log('say.cancel', {'text': message, 'why': 'state'});
+        return;
+      }
       unawaited(_speak(message,
           priority: FeedbackPriority.p1, requestedAt: at));
     });
@@ -311,18 +338,20 @@ class FeedbackService {
     // 횡단보도 가운데) 오판일 수 있어서다. 다 건넌 과정은 위 -> crossed -> none
     // 이고, crossed -> none/approach, none/approach -> crossed도 침묵이다.
     // T118(A2): hold가 "발밑이 인도"로 일찍 풀려 none/approach를 거쳤어도, 그 뒤
-    // 짧은 창 안의 crossed는 다 건넌 것으로 본다 — 풀리지 않았다면 hold -> crossed
+    // 창([groundReleaseCrossedUntil]) 안의 crossed는 다 건넌 것으로 본다 — 풀리지 않았다면 hold -> crossed
     // (= 위 -> crossed)였을 경우다. 한 번 쓰거나 다시 위로 들어오면 비운다.
     final releasedAt = _holdReleasedByGroundAt;
     final afterGroundRelease = releasedAt != null &&
         (previousClass == 'none' || previousClass == 'approach') &&
         detectedClass == 'crossed' &&
-        now.difference(releasedAt) <= groundReleaseCrossedWindow;
+        !now.isAfter(
+            groundReleaseCrossedUntil(releasedAt, _releasedHoldStartedAt));
     if (detectedClass == 'crossed' ||
         detectedClass == 'front' ||
         detectedClass == 'left' ||
         detectedClass == 'right') {
       _holdReleasedByGroundAt = null;
+      _releasedHoldStartedAt = null;
     }
     final exiting = ((previousClass == 'front' ||
                 previousClass == 'left' ||

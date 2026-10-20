@@ -58,6 +58,10 @@ class CrossingHold {
   /// T118: 바로 직전 [apply]가 "발밑이 인도"라서 hold를 풀었는가.
   bool get releasedByGround => _releasedByGround;
 
+  /// T118 보완: [releasedByGround]일 때 그 hold가 시작된 시각(그 밖에는 null).
+  DateTime? get releasedHoldStartedAt => _releasedHoldStartedAt;
+  DateTime? _releasedHoldStartedAt;
+
   /// T118: hold 중 노면 판정 한 번. [sidewalkAndBlocks]는 노면 앞 구역의
   /// 인도+선형+점형 비율. hold가 아니면 셈을 비운다.
   void noteGround(double sidewalkAndBlocks) {
@@ -72,6 +76,7 @@ class CrossingHold {
   /// 직전 최종 상태 [current]와 이번 판정 [detected]로 실제로 쓸 상태를 낸다.
   String apply(String current, String detected, DateTime now) {
     _releasedByGround = false;
+    _releasedHoldStartedAt = null;
     final gap = detected == 'none' || detected == 'approach';
     final wasOn = DirectionResolver.isOnCrosswalk(current) ||
         (current == holdLabel && _since != null);
@@ -79,6 +84,7 @@ class CrossingHold {
       _since ??= now;
       if (_groundStreak >= groundReleaseFrames) {
         _releasedByGround = true;
+        _releasedHoldStartedAt = _since;
       } else if (now.difference(_since!) < holdDuration) {
         return holdLabel;
       }
