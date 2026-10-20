@@ -1,11 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'screens/onboarding_screen.dart';
+import 'screens/settings_screen.dart' show kBuildSha;
+import 'services/event_log.dart';
 import 'services/feedback_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  // T106: 개발용 기록을 연다(기본 켬, docs/EventLog.md). 파일이 열리기 전의
+  // 기록은 메모리에 모았다가 함께 쓰므로 기다리지 않는다.
+  unawaited(EventLog.instance.start(info: {'build': kBuildSha}));
   runApp(const CrosswalkApp());
 }
 

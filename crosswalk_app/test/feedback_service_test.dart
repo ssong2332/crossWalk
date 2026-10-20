@@ -10,10 +10,15 @@
 // time as an explicit parameter. Tests drive this method directly on a
 // fresh FeedbackService() instance and never call init() or touch
 // _tts/Vibration.
+import 'dart:convert';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:crosswalk_app/localization/app_strings.dart';
+import 'package:crosswalk_app/services/crossing_hold.dart';
+import 'package:crosswalk_app/services/event_log.dart';
 import 'package:crosswalk_app/services/feedback_service.dart';
+import 'package:crosswalk_app/services/surface_guide.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -341,17 +346,76 @@ void main() {
       }
     });
 
-    test('front/left/right -> none은 완료 안내를 낸다', () {
+    // T103(사용자 확정): 다 건넘은 위 -> crossed 순간에 안내한다.
+    test('front/left/right -> crossed는 완료 안내를 낸다 (T103)', () {
       final t0 = DateTime(2026, 1, 1, 12, 0, 0);
 
       for (final crossing in ['front', 'left', 'right']) {
         final s = FeedbackService();
         expect(
-          s.decidePhaseMessage(crossing, 'none', t0),
+          s.decidePhaseMessage(crossing, 'crossed', t0),
           '횡단보도를 건넜습니다.',
-          reason: '$crossing -> none',
+          reason: '$crossing -> crossed',
         );
       }
+    });
+
+    // T103: 위 -> none은 줄무늬가 잠깐 안 보이거나 오판일 수 있어 침묵.
+    test('front/left/right -> none은 안내하지 않는다 (T103)', () {
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+      for (final on in ['front', 'left', 'right']) {
+        expect(FeedbackService().decidePhaseMessage(on, 'none', t0), isNull,
+            reason: '$on -> none');
+      }
+    });
+
+    // T103: 다 건넌 과정(위 -> crossed -> none)의 나머지 전이는 침묵.
+    test('crossed -> none/approach, none/approach -> crossed는 침묵 (T103)', () {
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+      expect(FeedbackService().decidePhaseMessage('crossed', 'none', t0),
+          isNull);
+      expect(FeedbackService().decidePhaseMessage('crossed', 'approach', t0),
+          isNull,
+          reason: '건너편 횡단보도가 보여도 "앞에 횡단보도"는 none에서 올 때만');
+      expect(FeedbackService().decidePhaseMessage('none', 'crossed', t0),
+          isNull);
+      expect(FeedbackService().decidePhaseMessage('approach', 'crossed', t0),
+          isNull);
+    });
+
+    // T118(A2): 발밑이 인도라서 hold를 일찍 푼 뒤 5초 안의 crossed는 건넘 안내.
+    test('hold 일찍 해제 뒤 5초 안 none/approach -> crossed는 완료 안내 (T118)', () {
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+      for (final prev in ['none', 'approach']) {
+        final s = FeedbackService()..noteHoldReleasedByGround(t0);
+        expect(s.decidePhaseMessage(prev, 'crossed',
+                t0.add(const Duration(seconds: 3))),
+            '횡단보도를 건넜습니다.', reason: '$prev -> crossed');
+      }
+      expect(FeedbackService.groundReleaseCrossedWindow,
+          const Duration(seconds: 5));
+    });
+
+    test('hold 일찍 해제 뒤라도 5초가 지나면 침묵, 한 번 쓰면 비운다 (T118)', () {
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+      final late = FeedbackService()..noteHoldReleasedByGround(t0);
+      expect(late.decidePhaseMessage('none', 'crossed',
+              t0.add(const Duration(seconds: 6))), isNull);
+
+      final once = FeedbackService()..noteHoldReleasedByGround(t0);
+      expect(once.decidePhaseMessage('none', 'crossed',
+              t0.add(const Duration(seconds: 1))), '횡단보도를 건넜습니다.');
+      expect(once.decidePhaseMessage('none', 'crossed',
+              t0.add(const Duration(seconds: 9))), isNull,
+          reason: '3초 재쿨다운이 지나도 창은 이미 비었다');
+    });
+
+    test('hold 일찍 해제 뒤 다시 위로 들어오면 창을 비운다 (T118)', () {
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+      final s = FeedbackService()..noteHoldReleasedByGround(t0);
+      s.decidePhaseMessage('none', 'front', t0.add(const Duration(seconds: 1)));
+      expect(s.decidePhaseMessage('none', 'crossed',
+              t0.add(const Duration(seconds: 2))), isNull);
     });
 
     // T93: none(또는 콜드스타트) -> approach는 "앞에 횡단보도가 있습니다".
@@ -623,7 +687,228 @@ void main() {
     );
   });
 
+  group('FeedbackService — 끝 안내 (T102)', () {
+    final t0 = DateTime(2026, 9, 27, 12, 0, 0);
+
+    test('끝이면 끝 전용 문구(B안)를 낸다', () {
+      expect(FeedbackService().decideMessage('left', 20, t0, atEdge: true),
+          '오른쪽으로 이동하세요. 가장자리입니다');
+      expect(FeedbackService().decideMessage('right', -20, t0, atEdge: true),
+          '왼쪽으로 이동하세요. 가장자리입니다');
+    });
+
+    test('끝이 아니면 기존 문구 그대로', () {
+      expect(FeedbackService().decideMessage('left', mild, t0), leftMild);
+      expect(FeedbackService().decideMessage('right', -severe, t0),
+          rightSevere);
+    });
+
+    test('같은 방향이라도 일반 이탈 -> 끝으로 바뀌면 쿨다운 안에서도 즉시 안내', () {
+      final service = FeedbackService();
+      expect(service.decideMessage('left', mild, t0), leftMild);
+      expect(
+        service.decideMessage('left', 20, t0.add(const Duration(seconds: 1)),
+            atEdge: true),
+        '오른쪽으로 이동하세요. 가장자리입니다',
+      );
+      // 끝이 유지되면 쿨다운이 다시 걸린다.
+      expect(
+        service.decideMessage('left', 20, t0.add(const Duration(seconds: 2)),
+            atEdge: true),
+        isNull,
+      );
+    });
+
+    test('끝에서 이미 튼 front면 회복 안내("직진하세요")는 침묵', () {
+      expect(
+        FeedbackService()
+            .decideRecoveryMessage('left', 'front', t0, atEdge: true),
+        isNull,
+      );
+    });
+
+    test('끝에서 이미 튼 front로 들어올 때 "그대로 가세요" 1회', () {
+      final service = FeedbackService();
+      expect(service.decideEdgeTurnedMessage('left', t0, atEdge: true),
+          isNull);
+      expect(
+        service.decideEdgeTurnedMessage(
+            'front', t0.add(const Duration(seconds: 1)),
+            atEdge: true),
+        '그대로 가세요',
+      );
+      // 머무는 동안은 반복하지 않는다(쿨다운이 지나도).
+      expect(
+        service.decideEdgeTurnedMessage(
+            'front', t0.add(const Duration(seconds: 10)),
+            atEdge: true),
+        isNull,
+      );
+    });
+
+    test('중앙에서의 front는 "그대로 가세요"를 내지 않는다', () {
+      expect(
+        FeedbackService().decideEdgeTurnedMessage('front', t0, atEdge: false),
+        isNull,
+      );
+    });
+
+    test('경계에서 떨리면 3초 안의 재진입은 침묵, 이후 재진입은 안내', () {
+      final service = FeedbackService();
+      expect(service.decideEdgeTurnedMessage('front', t0, atEdge: true),
+          '그대로 가세요');
+      service.decideEdgeTurnedMessage(
+          'left', t0.add(const Duration(seconds: 1)),
+          atEdge: true);
+      expect(
+        service.decideEdgeTurnedMessage(
+            'front', t0.add(const Duration(seconds: 2)),
+            atEdge: true),
+        isNull,
+      );
+      service.decideEdgeTurnedMessage(
+          'left', t0.add(const Duration(seconds: 5)),
+          atEdge: true);
+      expect(
+        service.decideEdgeTurnedMessage(
+            'front', t0.add(const Duration(seconds: 6)),
+            atEdge: true),
+        '그대로 가세요',
+      );
+    });
+  });
+
+  // T104: 차도 진동은 짧게 3번 — 기존 좌(2번)·우(1번 길게)·복귀(1번)와 겹치지 않는다.
+  test('surfaceRoadPattern: 짧게 3번 (T104)', () {
+    final p = FeedbackService.surfaceRoadPattern(125);
+    expect(p, [0, 125, 125, 125, 125, 125]);
+    // [대기, 켜짐, 꺼짐, 켜짐, 꺼짐, 켜짐] -> 켜짐 3번
+    expect([for (var i = 1; i < p.length; i += 2) p[i]].length, 3);
+  });
+
+  // T106: 진동 기록 — 앱이 요청한 패턴을 그대로 남긴다.
+  group('FeedbackService — 진동 기록 (T106)', () {
+    test('패턴 지원 기기: 요청한 패턴 그대로', () {
+      final d = FeedbackService.vibrationLogData('left', [0, 125, 125, 125],
+          hasVibrator: true, supportsPattern: true, fallbackMs: 500);
+      expect(d, {
+        'kind': 'left',
+        'ok': true,
+        'mode': 'pattern',
+        'pat': [0, 125, 125, 125],
+      });
+    });
+
+    test('패턴 미지원 기기: 실제로 나간 단일 진동 길이', () {
+      final d = FeedbackService.vibrationLogData('road', [0, 125, 125, 125],
+          hasVibrator: true, supportsPattern: false, fallbackMs: 500);
+      expect(d['mode'], 'single');
+      expect(d['pat'], [0, 500]);
+    });
+
+    test('진동기가 없으면 ok=false와 이유', () {
+      final d = FeedbackService.vibrationLogData('recover', [0, 125],
+          hasVibrator: false, supportsPattern: false, fallbackMs: 500);
+      expect(d, {'kind': 'recover', 'ok': false, 'why': 'no_vibrator'});
+    });
+
+    test('surfaceAlert(블록 위)는 진동 요청을 기록에 남긴다', () async {
+      // 테스트 호스트는 진동기가 없다고 답한다(위 race guard 주석) — 그래서
+      // ok=false 줄이 남는다. 기록 지점이 진동 경로에 붙어 있는지를 확인한다.
+      EventLog.instance.clearForTest();
+      await FeedbackService().surfaceAlert([SurfaceEvent.linearOn]);
+      final vib = EventLog.instance.earlyLines
+          .map((l) => jsonDecode(l) as Map<String, dynamic>)
+          .where((m) => m['ev'] == 'vib')
+          .toList();
+      expect(vib, hasLength(1));
+      expect(vib.single['kind'], 'line_on');
+    });
+  });
+
   // T40: OnboardingScreen's general-purpose read-aloud, reusing _speak().
+  group('FeedbackService.decideHeldRecovery — 회복 안내 보류 (T108 Q1)', () {
+    final t0 = DateTime(2026, 10, 12, 12, 0, 0);
+    Duration ms(int v) => Duration(milliseconds: v);
+
+    test('front가 0.7초 안 됐으면 기다린다', () {
+      expect(
+          FeedbackService().decideHeldRecovery('front', t0, t0.add(ms(500)),
+              deviationPlaying: false),
+          HeldRecoveryVerdict.wait);
+    });
+
+    test('front가 0.7초 유지되고 이탈 경고가 없으면 말한다', () {
+      expect(
+          FeedbackService().decideHeldRecovery('front', t0, t0.add(ms(700)),
+              deviationPlaying: false),
+          HeldRecoveryVerdict.speak);
+    });
+
+    test('이탈 경고가 재생 중이면 끊지 않고 기다린다', () {
+      expect(
+          FeedbackService().decideHeldRecovery('front', t0, t0.add(ms(1000)),
+              deviationPlaying: true),
+          HeldRecoveryVerdict.wait);
+    });
+
+    test('기다리다 2.7초가 넘으면 버린다', () {
+      expect(
+          FeedbackService().decideHeldRecovery('front', t0, t0.add(ms(2800)),
+              deviationPlaying: true),
+          HeldRecoveryVerdict.expire);
+    });
+
+    test('front가 아니게 되면(깜빡임) 취소한다', () {
+      for (final c in ['left', 'right', 'none', 'approach']) {
+        expect(
+            FeedbackService().decideHeldRecovery(c, t0, t0.add(ms(300)),
+                deviationPlaying: false),
+            HeldRecoveryVerdict.cancel,
+            reason: c);
+      }
+    });
+  });
+
+  group('FeedbackService.supersedesDotBlock — 연석 겹침 (T108 Q3)', () {
+    final s = AppStrings.of(AppLanguage.ko);
+
+    bool sup(String m, String? active) => FeedbackService.supersedesDotBlock(
+        m, active,
+        approachMessage: s.approachAheadMessage,
+        dotBlockMessage: s.surfaceDotBlockMessage);
+
+    test('앞에 횡단보도는 재생 중인 멈춤 블록을 대체한다', () {
+      expect(sup(s.approachAheadMessage, s.surfaceDotBlockMessage), isTrue);
+    });
+
+    test('그 밖의 조합은 대체하지 않는다', () {
+      expect(sup(s.approachAheadMessage, null), isFalse);
+      expect(sup(s.crossedCrosswalkMessage, s.surfaceDotBlockMessage), isFalse);
+      expect(sup(s.approachAheadMessage, s.crossedCrosswalkMessage), isFalse);
+    });
+  });
+
+  group('FeedbackService.cautionMessage — 주의 구역 문구 (T105)', () {
+    final s = AppStrings.of(AppLanguage.ko);
+
+    test('하나면 그 문구', () {
+      expect(FeedbackService.cautionMessage([CautionEvent.manholeGrating], s), '발밑 주의');
+      expect(FeedbackService.cautionMessage([CautionEvent.treeZone], s), '가로수');
+    });
+
+    test('같은 판정에서 둘 다면 C1 -> C2 차례로 한 문장 (C8)', () {
+      expect(
+          FeedbackService.cautionMessage(
+              [CautionEvent.treeZone, CautionEvent.manholeGrating], s),
+          '발밑 주의. 가로수');
+    });
+
+    test('없으면 null', () {
+      expect(FeedbackService.cautionMessage(const [], s), isNull);
+    });
+  });
+
   group('FeedbackService — speak (T40)', () {
     test('drives the same isSpeaking generation guard as alert()', () async {
       final service = FeedbackService();
@@ -635,6 +920,194 @@ void main() {
 
       await future;
       expect(service.isSpeaking.value, isFalse);
+    });
+  });
+
+  // T118: 대기 꺼내기 타이머 여유 — 조금 일찍 울려 헛도는 것을 막는다.
+  group('대기 꺼내기 타이머 (T118)', () {
+    final t0 = DateTime(2026, 10, 19, 16, 54, 0);
+    test('간격 끝까지 남은 시간에 20ms를 더한다', () {
+      expect(FeedbackService.drainMargin, const Duration(milliseconds: 20));
+      expect(
+          FeedbackService.drainDelay(
+              t0.add(const Duration(milliseconds: 500)), t0),
+          const Duration(milliseconds: 520));
+    });
+    test('µs만 남았어도 20ms 넘게 기다린다 (10/19 L3471 반복)', () {
+      final d = FeedbackService.drainDelay(
+          t0.add(const Duration(microseconds: 300)), t0);
+      expect(d > const Duration(milliseconds: 20), isTrue);
+    });
+    test('이미 지났거나 직전 발화가 없으면 20ms', () {
+      expect(FeedbackService.drainDelay(t0, t0),
+          const Duration(milliseconds: 20));
+      expect(FeedbackService.drainDelay(null, t0),
+          const Duration(milliseconds: 20));
+    });
+  });
+
+  // T118(사용자 확정 A): 횡단보도 없음에서 멈춤 블록은 1.3초 보류.
+  group('멈춤 블록 보류 (T118)', () {
+    test('보류 시간은 1.3초', () {
+      expect(FeedbackService.dotBlockHold, const Duration(milliseconds: 1300));
+    });
+    test('횡단보도 없음·콜드스타트에서만 보류한다', () {
+      expect(FeedbackService.holdsDotBlock('none'), isTrue);
+      expect(FeedbackService.holdsDotBlock(''), isTrue);
+      for (final c in ['crossed', 'approach', 'front', 'left', 'right']) {
+        expect(FeedbackService.holdsDotBlock(c), isFalse, reason: c);
+      }
+    });
+  });
+
+  // T118 보완(리뷰 4): 보류·대기 타이머 동작을 고정한다. testWidgets의 가짜 시계로
+  // 타이머를 돌린다(서비스 안의 DateTime.now()는 실제 시각 그대로).
+  group('멈춤 블록 보류·대기 타이머 (T118 보완)', () {
+    final ko = AppStrings.of(AppLanguage.ko);
+    final dotBlock = ko.surfaceDotBlockMessage;
+    final approach = ko.approachAheadMessage;
+
+    List<Map<String, dynamic>> logged(String ev, String text) =>
+        EventLog.instance.earlyLines
+            .map((l) => jsonDecode(l) as Map<String, dynamic>)
+            .where((m) => m['ev'] == ev && m['text'] == text)
+            .toList();
+
+    testWidgets('(a) 횡단보도 없음에서 블록은 1.3초 뒤 발화', (tester) async {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      await s.alert('none', 0.9);
+      await s.surfaceAlert([SurfaceEvent.dotBlock]);
+      expect(logged('say.defer', dotBlock), hasLength(1));
+      await tester.pump(const Duration(milliseconds: 1200));
+      expect(logged('say', dotBlock), isEmpty, reason: '1.3초 전에는 침묵');
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(logged('say', dotBlock), hasLength(1));
+      expect(logged('say', dotBlock).single['act'], 'speakNow');
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets("(b) 보류 중 none -> approach면 블록 취소, '앞에 횡단보도'만",
+        (tester) async {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      await s.alert('none', 0.9);
+      await s.surfaceAlert([SurfaceEvent.dotBlock]);
+      await tester.pump(const Duration(milliseconds: 500));
+      await s.alert('approach', 0.9);
+      await tester.pump(const Duration(seconds: 2));
+      expect(logged('say', dotBlock), isEmpty);
+      expect(logged('say.cancel', dotBlock).single['why'], 'superseded');
+      expect(logged('say', approach), hasLength(1));
+    });
+
+    testWidgets('(c) 보류 중 front로 바뀌면 발화하지 않는다', (tester) async {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      await s.alert('none', 0.9);
+      await s.surfaceAlert([SurfaceEvent.dotBlock]);
+      await tester.pump(const Duration(milliseconds: 500));
+      await s.alert('front', 0.9);
+      await tester.pump(const Duration(seconds: 2));
+      expect(logged('say', dotBlock), isEmpty);
+      expect(logged('say.cancel', dotBlock).single['why'], 'state');
+    });
+
+    testWidgets('(d) 마지막 상태가 위(front, hold 중 포함)·crossed면 즉시 발화',
+        (tester) async {
+      // hold 동안에는 alert가 불리지 않아 마지막 상태가 front로 남는다.
+      for (final last in ['front', 'crossed']) {
+        EventLog.instance.clearForTest();
+        final s = FeedbackService();
+        await s.alert(last, 0.9);
+        await s.surfaceAlert([SurfaceEvent.dotBlock]);
+        expect(logged('say.defer', dotBlock), isEmpty, reason: last);
+        expect(logged('say', dotBlock), hasLength(1), reason: last);
+        await tester.pump(const Duration(seconds: 2));
+      }
+    });
+
+    testWidgets('(e) dispose는 보류 타이머를 취소한다', (tester) async {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      await s.alert('none', 0.9);
+      await s.surfaceAlert([SurfaceEvent.dotBlock]);
+      await s.dispose();
+      await tester.pump(const Duration(seconds: 2));
+      expect(logged('say', dotBlock), isEmpty);
+    });
+
+    testWidgets(
+        "(f) front -> 일찍 해제 -> none -> crossed가 hold 시작 10초 안이면 '건넜습니다'",
+        (tester) async {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      await s.alert('front', 0.9);
+      // hold 시작 8초 뒤가 지금, 해제는 6초 전 — 해제 + 5초는 이미 지났다.
+      final now = DateTime.now();
+      s.noteHoldReleasedByGround(now.subtract(const Duration(seconds: 6)),
+          holdStartedAt: now.subtract(const Duration(seconds: 8)));
+      await s.alert('none', 0.9);
+      await s.alert('crossed', 0.9);
+      expect(logged('say', ko.crossedCrosswalkMessage), hasLength(1));
+      await tester.pump(const Duration(seconds: 2));
+    });
+
+    testWidgets('(g) 대기 칸이 찬 상태에서 같은 안내는 한 번만 대기로 기록된다',
+        (tester) async {
+      // 최소 간격은 실제 시각으로 재므로, 이 시험은 실제 시간으로 돌린다.
+      await tester.runAsync(() async {
+        EventLog.instance.clearForTest();
+        final s = FeedbackService();
+        await s.alert('front', 0.9); // 블록을 바로 처리하는 상태
+        await s.surfaceAlert([SurfaceEvent.dotBlock]); // 재생
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await s.surfaceAlert([SurfaceEvent.dotBlock]); // 최소 간격 -> 대기
+        await s.surfaceAlert([SurfaceEvent.dotBlock]); // 칸이 참 -> 버림
+        await Future<void>.delayed(const Duration(milliseconds: 1800));
+        final says = logged('say', dotBlock);
+        expect(says.where((m) => m['act'] == 'queue'), hasLength(1));
+        expect(says.where((m) => m['why'] == 'slot_full'), hasLength(1));
+        expect(says.where((m) => m['act'] == 'speakNow'), hasLength(2),
+            reason: '처음 1번 + 대기에서 꺼낸 1번');
+        expect(says, hasLength(4));
+      });
+    });
+  });
+
+  // T118 보완(리뷰 3-a): 일찍 해제 뒤 '건넜습니다' 창 =
+  // hold 시작 + 10초와 해제 + 5초 중 늦은 쪽.
+  group('일찍 해제 뒤 건넘 안내 창 (T118 보완)', () {
+    final t0 = DateTime(2026, 10, 20, 12, 0, 0);
+    Duration sec(num v) => Duration(milliseconds: (v * 1000).round());
+    String? crossedAt(num releaseS, num crossedS) {
+      final s = FeedbackService()
+        ..noteHoldReleasedByGround(t0.add(sec(releaseS)), holdStartedAt: t0);
+      return s.decidePhaseMessage('none', 'crossed', t0.add(sec(crossedS)));
+    }
+
+    test('hold 시작 창은 CrossingHold 유지 시간과 같은 10초', () {
+      expect(FeedbackService.holdStartCrossedWindow, CrossingHold.holdDuration);
+    });
+
+    test('3초에 일찍 풀려도 hold 시작 10초 안의 crossed는 안내 (회귀 복원)', () {
+      expect(crossedAt(3, 9), '횡단보도를 건넜습니다.', reason: '해제 + 5초(8초)는 지났다');
+      expect(crossedAt(3, 10), '횡단보도를 건넜습니다.');
+      expect(crossedAt(3, 10.5), isNull);
+    });
+
+    test('늦게 풀리면 해제 + 5초가 더 길다 (A2 그대로)', () {
+      expect(crossedAt(8, 12.5), '횡단보도를 건넜습니다.');
+      expect(crossedAt(8, 13.5), isNull);
+    });
+
+    test('늦은 쪽을 고른다', () {
+      expect(FeedbackService.groundReleaseCrossedUntil(t0.add(sec(3)), t0),
+          t0.add(sec(10)));
+      expect(FeedbackService.groundReleaseCrossedUntil(t0.add(sec(8)), t0),
+          t0.add(sec(13)));
+      expect(FeedbackService.groundReleaseCrossedUntil(t0.add(sec(3)), null),
+          t0.add(sec(8)));
     });
   });
 }

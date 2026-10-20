@@ -28,6 +28,32 @@ void main() {
     });
   });
 
+  // T106: 기록용 이유 — 판정 결과는 바꾸지 않고 이유만 남긴다.
+  group('AudioPolicy.lastReason (T106)', () {
+    test('재생 중인 것이 없을 때: p0 / ok / min_gap', () {
+      final p = AudioPolicy();
+      p.decide(FeedbackPriority.p0, t0);
+      expect(p.lastReason, 'p0');
+      p.decide(FeedbackPriority.p2, t0);
+      expect(p.lastReason, 'ok');
+      p.markStarted(FeedbackPriority.p2);
+      p.markFinished(FeedbackPriority.p2, t0, t0);
+      expect(p.decide(FeedbackPriority.p2, t0.add(const Duration(seconds: 1))),
+          SpeechAction.drop);
+      expect(p.lastReason, 'min_gap');
+    });
+
+    test('재생 중: 끊기·대기·버림의 이유', () {
+      final p = AudioPolicy()..markStarted(FeedbackPriority.p0);
+      expect(p.decide(FeedbackPriority.p1, t0), SpeechAction.queue);
+      expect(p.lastReason, 'wait_p0');
+      expect(p.decide(FeedbackPriority.p2, t0), SpeechAction.drop);
+      expect(p.lastReason, 'busy_p0');
+      expect(p.decide(FeedbackPriority.p0, t0), SpeechAction.speakNow);
+      expect(p.lastReason, 'interrupt_p0');
+    });
+  });
+
   group('AudioPolicy.decide — 끊기 판정표 (docs/AudioPolicy.md §2)', () {
     AudioPolicy withActive(FeedbackPriority active) {
       final p = AudioPolicy();
@@ -44,13 +70,30 @@ void main() {
           SpeechAction.speakNow);
     });
 
-    test('같은 등급은 끊고 교체한다', () {
-      for (final pri in FeedbackPriority.values) {
+    test('같은 등급은 끊고 교체한다 (P1 제외 — T108)', () {
+      for (final pri in [
+        FeedbackPriority.p0,
+        FeedbackPriority.p2,
+        FeedbackPriority.p3,
+      ]) {
         // P0 동급은 방향이 바뀐 경우뿐이다 (같은 방향은 decideMessage의
         // 쿨다운에서 이미 걸러진다).
         expect(withActive(pri).decide(pri, t0), SpeechAction.speakNow,
             reason: '$pri');
       }
+    });
+
+    test('P1 재생 중의 P1은 끊지 않고 기다린다 (T108 Q2)', () {
+      final p = withActive(FeedbackPriority.p1);
+      expect(p.decide(FeedbackPriority.p1, t0), SpeechAction.queue);
+      expect(p.lastReason, 'wait_p1');
+    });
+
+    test('대체(supersedes)면 재생 중인 P1을 끊는다 (T108 Q3)', () {
+      final p = withActive(FeedbackPriority.p1);
+      expect(p.decide(FeedbackPriority.p1, t0, supersedes: true),
+          SpeechAction.speakNow);
+      expect(p.lastReason, 'supersede_p1');
     });
 
     test('낮은 등급은 큐에 쌓지 않고 버린다 — 늦은 안내는 오정보다', () {
@@ -70,7 +113,68 @@ void main() {
     });
   });
 
+  group('AudioPolicy — P0 세부 순위 (T108 Q1)', () {
+    AudioPolicy playing(P0Rank rank, [String? message]) =>
+        AudioPolicy()..markStarted(FeedbackPriority.p0, rank: rank, message: message);
+
+    test('회복 안내는 재생 중인 이탈 경고를 끊지 않는다', () {
+      final p = playing(P0Rank.deviation, '오른쪽으로 이동하세요');
+      expect(p.decide(FeedbackPriority.p0, t0, rank: P0Rank.recovery),
+          SpeechAction.drop);
+      expect(p.lastReason, 'busy_p0');
+    });
+
+    test('이탈 경고는 재생 중인 회복 안내를 끊는다', () {
+      expect(
+          playing(P0Rank.recovery)
+              .decide(FeedbackPriority.p0, t0, rank: P0Rank.deviation),
+          SpeechAction.speakNow);
+    });
+
+    test('차도(위험)는 재생 중인 이탈 경고를 끊는다', () {
+      expect(
+          playing(P0Rank.deviation)
+              .decide(FeedbackPriority.p0, t0, rank: P0Rank.danger),
+          SpeechAction.speakNow);
+    });
+
+    test('같은 이탈 문구가 재생 중이면 다시 끊지 않는다', () {
+      final p = playing(P0Rank.deviation, '오른쪽으로 이동하세요');
+      expect(p.decide(FeedbackPriority.p0, t0, message: '오른쪽으로 이동하세요'),
+          SpeechAction.drop);
+      expect(p.lastReason, 'same_p0');
+    });
+
+    test('방향이 바뀌거나 강해진 이탈 문구는 끊고 교체한다', () {
+      final p = playing(P0Rank.deviation, '오른쪽으로 이동하세요');
+      expect(p.decide(FeedbackPriority.p0, t0, message: '왼쪽으로 이동하세요'),
+          SpeechAction.speakNow);
+      expect(p.decide(FeedbackPriority.p0, t0, message: '즉시 오른쪽으로 이동하세요'),
+          SpeechAction.speakNow);
+    });
+
+    test('끊겨서 끝난 발화(current=false)는 새 발화의 재생 중 상태를 지우지 않는다', () {
+      final p = playing(P0Rank.deviation, '왼쪽으로 이동하세요');
+      p.markFinished(FeedbackPriority.p0, t0, t0, current: false);
+      expect(p.activePriority, FeedbackPriority.p0);
+      expect(p.activeRank, P0Rank.deviation);
+      expect(p.decide(FeedbackPriority.p0, t0, rank: P0Rank.recovery),
+          SpeechAction.drop);
+    });
+  });
+
   group('AudioPolicy — 무음 보장 (§4)', () {
+    test('최소 간격 안의 P1은 버리지 않고 대기한다 (T108 Q2)', () {
+      final p = AudioPolicy();
+      p.markStarted(FeedbackPriority.p0);
+      final end = t0.add(const Duration(seconds: 1));
+      p.markFinished(FeedbackPriority.p0, t0, end);
+      expect(p.decide(FeedbackPriority.p1, end.add(const Duration(milliseconds: 300))),
+          SpeechAction.queue);
+      expect(p.lastReason, 'gap_p1');
+      expect(p.nextAllowedAt, end.add(AudioPolicy.minGap));
+    });
+
     test('직전 발화 종료 후 1.5초가 안 지나면 P2를 버린다', () {
       final p = AudioPolicy();
       p.markStarted(FeedbackPriority.p2);
@@ -178,6 +282,43 @@ void main() {
       p.putPending(FeedbackPriority.p0, 'urgent', t0);
       expect(p.pendingPriority, FeedbackPriority.p0);
       expect(p.pendingMessage, 'urgent');
+    });
+
+    test('같은 등급은 먼저 온 것을 지킨다 — 대체일 때만 덮어쓴다 (T108)', () {
+      final p = AudioPolicy();
+      expect(p.putPending(FeedbackPriority.p1, '횡단보도를 건넜습니다.', t0), isTrue);
+      expect(p.putPending(FeedbackPriority.p1, '멈춤 블록입니다', t0), isFalse);
+      expect(p.pendingMessage, '횡단보도를 건넜습니다.');
+      expect(
+          p.putPending(FeedbackPriority.p1, '앞에 횡단보도가 있습니다.', t0,
+              supersedes: true),
+          isTrue);
+      expect(p.pendingMessage, '앞에 횡단보도가 있습니다.');
+    });
+
+    test('만료된 대기 항목은 치워지고 새 P1이 들어간다 (10/12 건넜습니다 분실)', () {
+      final p = AudioPolicy();
+      expect(p.putPending(FeedbackPriority.p1, '횡단보도에 진입했습니다.', t0),
+          isTrue);
+      final later = t0.add(const Duration(milliseconds: 10700));
+      expect(p.takeExpiredPending(later), '횡단보도에 진입했습니다.');
+      expect(p.pendingPriority, isNull);
+      expect(p.putPending(FeedbackPriority.p1, '횡단보도를 건넜습니다.', later),
+          isTrue);
+      expect(p.pendingMessage, '횡단보도를 건넜습니다.');
+    });
+
+    test('아직 유효한 대기 항목은 치우지 않는다 — 먼저 온 것을 지킨다', () {
+      final p = AudioPolicy();
+      p.putPending(FeedbackPriority.p1, '횡단보도를 건넜습니다.', t0);
+      final soon = t0.add(const Duration(milliseconds: 2500));
+      expect(p.takeExpiredPending(soon), isNull);
+      expect(p.putPending(FeedbackPriority.p1, '멈춤 블록입니다', soon), isFalse);
+      expect(p.pendingMessage, '횡단보도를 건넜습니다.');
+    });
+
+    test('빈 슬롯에서는 아무것도 치우지 않는다', () {
+      expect(AudioPolicy().takeExpiredPending(t0), isNull);
     });
 
     test('clearPending은 슬롯을 비운다', () {

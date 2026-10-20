@@ -1,0 +1,6 @@
+idx,class,orig_class,filename,angle_deg,position,draft_angle,draft_position,angle_changed,position_changed,status
+37,3_left,3_left,20260921_212707.jpg,13.80,-2,13.80,-2,0,0,ok
+38,3_left,3_left,20260921_212715.jpg,12.34,1,12.34,1,0,0,ok
+59,4_right,4_right,20260921_212709.jpg,-14.67,0,-14.67,0,0,0,ok
+62,4_right,4_right,20260924_182648.jpg,-10.90,-1,-8.10,-1,1,0,ok
+69,4_right,4_right,20260926_164025.jpg,-8.26,0,-8.26,0,0,0,ok

@@ -1,0 +1,77 @@
+{
+ "manhole": {
+  "polygons": 20994,
+  "images": 14062,
+  "folders": 800,
+  "median_area_pct": 0.497,
+  "front5_images": 1693,
+  "parts": {
+   "Surface_1": 2690,
+   "Surface_2": 2987,
+   "Surface_3": 2868,
+   "Surface_4": 2771,
+   "Surface_5": 2746
+  }
+ },
+ "grating": {
+  "polygons": 13880,
+  "images": 11257,
+  "folders": 800,
+  "median_area_pct": 0.294,
+  "front5_images": 609,
+  "parts": {
+   "Surface_1": 2224,
+   "Surface_2": 2378,
+   "Surface_3": 2273,
+   "Surface_4": 2209,
+   "Surface_5": 2173
+  }
+ },
+ "tree_zone": {
+  "polygons": 10886,
+  "images": 7699,
+  "folders": 797,
+  "median_area_pct": 0.873,
+  "front5_images": 753,
+  "parts": {
+   "Surface_1": 1868,
+   "Surface_2": 1886,
+   "Surface_3": 1704,
+   "Surface_4": 1267,
+   "Surface_5": 974
+  }
+ },
+ "stairs": {
+  "polygons": 1485,
+  "images": 1390,
+  "folders": 614,
+  "median_area_pct": 3.53,
+  "front5_images": 82,
+  "parts": {
+   "Surface_1": 372,
+   "Surface_2": 364,
+   "Surface_3": 242,
+   "Surface_4": 200,
+   "Surface_5": 212
+  }
+ },
+ "repair_zone": {
+  "polygons": 207,
+  "images": 172,
+  "folders": 127,
+  "median_area_pct": 9.346,
+  "front5_images": 73,
+  "parts": {
+   "Surface_1": 105,
+   "Surface_2": 35,
+   "Surface_3": 7,
+   "Surface_4": 17,
+   "Surface_5": 8
+  }
+ },
+ "_total": {
+  "polygons": 47452,
+  "images": 26097,
+  "front5_images": 3186
+ }
+}
