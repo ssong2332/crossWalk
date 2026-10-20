@@ -91,6 +91,45 @@ class FeedbackService {
   // T108 Q2: 대기 슬롯의 P1을 최소 간격이 끝나는 시각에 꺼내는 타이머.
   Timer? _drainTimer;
 
+  /// T118: 대기 꺼내기 타이머 여유. 타이머는 ms로 잘려 예약되는데 간격 판정은
+  /// µs 시각을 써서, 몇 µs 일찍 울리면 "아직 간격 안"으로 다시 대기하고 곧바로
+  /// 또 울리기를 반복했다(10/19 기록 L3471~L3484, 같은 ms에 14번).
+  static const drainMargin = Duration(milliseconds: 20);
+
+  /// T118: 간격이 끝나는 [allowed]까지 남은 시간 + [drainMargin].
+  @visibleForTesting
+  static Duration drainDelay(DateTime? allowed, DateTime now) =>
+      (allowed == null || !allowed.isAfter(now)
+          ? Duration.zero
+          : allowed.difference(now)) +
+      drainMargin;
+
+  /// T118(사용자 확정 A, 2026-10-20): 횡단보도 없음 상태의 "멈춤 블록입니다"는
+  /// 잠깐 보류한다. 그사이 "앞에 횡단보도가 있습니다"가 나오면 그것만 말한다.
+  /// 기록 17건 중 블록 뒤 앞에 횡단보도가 온 7건이 모두 1.25초 안이었다.
+  static const dotBlockHold = Duration(milliseconds: 1300);
+  Timer? _dotBlockTimer;
+  DateTime? _heldDotBlockAt;
+
+  /// T118: 직전 상태 [lastClass]에서 멈춤 블록을 보류하는가. 횡단보도 없음(none·
+  /// 콜드스타트)에서만 — 건넌 직후(crossed)·위·앞은 지금처럼 바로 처리한다.
+  @visibleForTesting
+  static bool holdsDotBlock(String lastClass) =>
+      lastClass == 'none' || lastClass == '';
+
+  void _holdDotBlock(String message, DateTime now) {
+    _dotBlockTimer?.cancel();
+    _heldDotBlockAt = now;
+    EventLog.instance.log('say.defer', {'text': message});
+    _dotBlockTimer = Timer(dotBlockHold, () {
+      final at = _heldDotBlockAt;
+      _heldDotBlockAt = null;
+      if (at == null) return;
+      unawaited(_speak(message,
+          priority: FeedbackPriority.p1, requestedAt: at));
+    });
+  }
+
   // T38 fix: guards against isSpeaking/isVibrating being reset by a stale
   // await/timer from an earlier alert() call. decideMessage() bypasses
   // the cooldown on a class change, so alert() can be invoked again before
@@ -581,8 +620,7 @@ class FeedbackService {
     if (audioPolicy.pendingPriority == null) return;
     final now = DateTime.now();
     final allowed = audioPolicy.nextAllowedAt;
-    final wait =
-        allowed == null || !allowed.isAfter(now) ? Duration.zero : allowed.difference(now);
+    final wait = drainDelay(allowed, now);
     _drainTimer?.cancel();
     _drainTimer = Timer(wait, _drainPending);
   }
@@ -666,6 +704,14 @@ class FeedbackService {
           phaseMessage, audioPolicy.activeMessage,
           approachMessage: AppStrings.of(_language).approachAheadMessage,
           dotBlockMessage: dotBlock);
+      // T118: 보류 중인 멈춤 블록은 말하지 않고 앞에 횡단보도만 말한다.
+      if (phaseMessage == AppStrings.of(_language).approachAheadMessage &&
+          _heldDotBlockAt != null) {
+        _dotBlockTimer?.cancel();
+        _heldDotBlockAt = null;
+        EventLog.instance
+            .log('say.cancel', {'text': dotBlock, 'why': 'superseded'});
+      }
       if (phaseMessage == AppStrings.of(_language).approachAheadMessage &&
           audioPolicy.pendingMessage == dotBlock) {
         audioPolicy.clearPending();
@@ -795,8 +841,12 @@ class FeedbackService {
               priority: FeedbackPriority.p0, rank: P0Rank.danger));
           pattern = surfaceRoadPattern(shortMs);
         case SurfaceEvent.dotBlock:
-          unawaited(_speak(strings.surfaceDotBlockMessage,
-              priority: FeedbackPriority.p1));
+          if (holdsDotBlock(_lastRawClass ?? '')) {
+            _holdDotBlock(strings.surfaceDotBlockMessage, DateTime.now());
+          } else {
+            unawaited(_speak(strings.surfaceDotBlockMessage,
+                priority: FeedbackPriority.p1));
+          }
         case SurfaceEvent.linearRight:
           unawaited(_speak(strings.surfaceLinearRightMessage,
               priority: FeedbackPriority.p2));
@@ -881,6 +931,7 @@ class FeedbackService {
     await _tts.stop();
     _vibrationTimer?.cancel();
     _drainTimer?.cancel();
+    _dotBlockTimer?.cancel();
     isSpeaking.value = false;
     isVibrating.value = false;
     isSpeaking.dispose();

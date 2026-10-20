@@ -921,4 +921,41 @@ void main() {
       expect(service.isSpeaking.value, isFalse);
     });
   });
+
+  // T118: 대기 꺼내기 타이머 여유 — 조금 일찍 울려 헛도는 것을 막는다.
+  group('대기 꺼내기 타이머 (T118)', () {
+    final t0 = DateTime(2026, 10, 19, 16, 54, 0);
+    test('간격 끝까지 남은 시간에 20ms를 더한다', () {
+      expect(FeedbackService.drainMargin, const Duration(milliseconds: 20));
+      expect(
+          FeedbackService.drainDelay(
+              t0.add(const Duration(milliseconds: 500)), t0),
+          const Duration(milliseconds: 520));
+    });
+    test('µs만 남았어도 20ms 넘게 기다린다 (10/19 L3471 반복)', () {
+      final d = FeedbackService.drainDelay(
+          t0.add(const Duration(microseconds: 300)), t0);
+      expect(d > const Duration(milliseconds: 20), isTrue);
+    });
+    test('이미 지났거나 직전 발화가 없으면 20ms', () {
+      expect(FeedbackService.drainDelay(t0, t0),
+          const Duration(milliseconds: 20));
+      expect(FeedbackService.drainDelay(null, t0),
+          const Duration(milliseconds: 20));
+    });
+  });
+
+  // T118(사용자 확정 A): 횡단보도 없음에서 멈춤 블록은 1.3초 보류.
+  group('멈춤 블록 보류 (T118)', () {
+    test('보류 시간은 1.3초', () {
+      expect(FeedbackService.dotBlockHold, const Duration(milliseconds: 1300));
+    });
+    test('횡단보도 없음·콜드스타트에서만 보류한다', () {
+      expect(FeedbackService.holdsDotBlock('none'), isTrue);
+      expect(FeedbackService.holdsDotBlock(''), isTrue);
+      for (final c in ['crossed', 'approach', 'front', 'left', 'right']) {
+        expect(FeedbackService.holdsDotBlock(c), isFalse, reason: c);
+      }
+    });
+  });
 }
