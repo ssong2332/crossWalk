@@ -145,10 +145,14 @@ void main() {
       final first = service.decideMessage('left', mild, t0);
       expect(first, isNotNull);
 
-      // Cooldown check is `< _cooldownSeconds` (3), so exactly 3 seconds
-      // later must no longer be suppressed.
+      // T120: 같은 방향 재경고는 3초 -> 6초(sameDirectionBundle). 검사는
+      // `< 6초`이므로 정확히 6초 뒤에는 더 이상 묶이지 않는다.
+      expect(
+          service.decideMessage(
+              'left', mild, t0.add(const Duration(seconds: 3))),
+          isNull);
       final second = service.decideMessage(
-          'left', mild, t0.add(const Duration(seconds: 3)));
+          'left', mild, t0.add(const Duration(seconds: 6)));
       expect(second, isNotNull);
       expect(second, leftMild);
     });
@@ -178,13 +182,14 @@ void main() {
         t0.add(const Duration(milliseconds: 2)),
       );
       expect(tooSoon, isNull, reason: '내려가는 변화는 dwell 전에는 인정하지 않는다');
+      // T120: 2초를 채워 약함으로 바뀌어도 내려간 것이라 6초 묶음 안에서는 침묵.
       final deescalated = service.decideMessage(
         'left',
         mild,
         t0.add(const Duration(milliseconds: 2002)),
       );
-      expect(deescalated, leftMild,
-          reason: '2초를 채우면 약함으로 바뀌고 쿨다운을 무효화해 발화한다');
+      expect(deescalated, isNull,
+          reason: 'T120: 같은 방향에서 내려간 단계는 6초 안에 다시 말하지 않는다');
     });
 
     // T82(2026-09-08, 사용자 실기기 보고): "가만히 서 있는데 '크게 벗어남'과
@@ -1108,6 +1113,171 @@ void main() {
           t0.add(sec(13)));
       expect(FeedbackService.groundReleaseCrossedUntil(t0.add(sec(3)), null),
           t0.add(sec(8)));
+    });
+  });
+
+  // T120(사용자 확정 2026-10-20): 같은 방향 이탈 재경고 6초 묶음.
+  // 단계 = 가장자리 2 > 즉시 1 > 보통 0. 마지막으로 '말한' 단계와 비교한다.
+  // 시각을 인자로 받는 순수 판정이라 타이머가 없다 — 가짜 시계 대신 시각을 직접 준다.
+  group('같은 방향 이탈 묶음 (T120)', () {
+    const leftEdge = '오른쪽으로 이동하세요. 가장자리입니다';
+    const rightEdge = '왼쪽으로 이동하세요. 가장자리입니다';
+    final t0 = DateTime(2026, 10, 20, 12, 0, 0);
+    Duration ms(int v) => Duration(milliseconds: v);
+
+    List<Map<String, dynamic>> bundled() => EventLog.instance.earlyLines
+        .map((l) => jsonDecode(l) as Map<String, dynamic>)
+        .where((m) => m['ev'] == 'say.cancel' && m['why'] == 'same_dir')
+        .toList();
+
+    test('단계: 가장자리 2 > 즉시 1 > 보통 0 (가장자리면 강도 무관)', () {
+      expect(FeedbackService.deviationLevel(severe: false, atEdge: false), 0);
+      expect(FeedbackService.deviationLevel(severe: true, atEdge: false), 1);
+      expect(FeedbackService.deviationLevel(severe: false, atEdge: true), 2);
+      expect(FeedbackService.deviationLevel(severe: true, atEdge: true), 2);
+      expect(FeedbackService.sameDirectionBundle, const Duration(seconds: 6));
+    });
+
+    test('행1: 6초 안 같은 단계는 생략 (3초 재경고 없음)', () {
+      final s = FeedbackService();
+      expect(s.decideMessage('left', mild, t0), leftMild);
+      for (final at in [1000, 3000, 4500, 5999]) {
+        expect(s.decideMessage('left', mild, t0.add(ms(at))), isNull,
+            reason: '${at}ms');
+      }
+    });
+
+    test('행1: 6초 안 내려감(가장자리 -> 보통, 가장자리 -> 즉시, 즉시 -> 보통)은 생략',
+        () {
+      final s = FeedbackService();
+      expect(s.decideMessage('left', 20, t0, atEdge: true), leftEdge);
+      expect(s.decideMessage('left', mild, t0.add(ms(500))), isNull);
+      expect(s.decideMessage('left', severe, t0.add(ms(1000))), isNull);
+
+      final s2 = FeedbackService();
+      expect(s2.decideMessage('right', -severe, t0), rightSevere);
+      // 래치가 2초 뒤 약함으로 내려가도 묶음 안이다.
+      expect(s2.decideMessage('right', -mild, t0.add(ms(500))), isNull);
+      expect(s2.decideMessage('right', -mild, t0.add(ms(2600))), isNull);
+      expect(s2.isSevere, isFalse);
+    });
+
+    test('행1: 가장자리 -> 보통 -> 가장자리 떨림은 한 번만 (10/19 L4867~L4903)', () {
+      final s = FeedbackService();
+      expect(s.decideMessage('left', 20, t0, atEdge: true), leftEdge);
+      expect(s.decideMessage('left', mild, t0.add(ms(500))), isNull);
+      expect(s.decideMessage('left', 20, t0.add(ms(2600)), atEdge: true),
+          isNull,
+          reason: '마지막으로 말한 단계(가장자리)와 같다 — 직전 프레임(보통)과 비교하지 않는다');
+    });
+
+    test('행1: 생략은 say.cancel(why=same_dir)로 남기고, 같은 문장은 3초에 1번만', () {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      s.decideMessage('left', 20, t0, atEdge: true); // 말함
+      s.decideMessage('left', 20, t0.add(ms(200)), atEdge: true); // 종전에도 침묵
+      s.decideMessage('left', mild, t0.add(ms(500))); // 문장 바뀜 -> 기록
+      s.decideMessage('left', mild, t0.add(ms(700))); // 같은 문장 3초 안 -> 기록 안 함
+      s.decideMessage('left', mild, t0.add(ms(3500))); // 3초 지남 -> 기록
+      final lines = bundled();
+      expect(lines.map((m) => m['text']), [leftMild, leftMild]);
+    });
+
+    test('행2: 같은 방향 단계 상승은 6초와 무관하게 바로 (보통 -> 즉시 -> 가장자리)',
+        () {
+      final s = FeedbackService();
+      expect(s.decideMessage('left', mild, t0), leftMild);
+      expect(s.decideMessage('left', severe, t0.add(ms(300))), leftSevere);
+      expect(s.decideMessage('left', 20, t0.add(ms(600)), atEdge: true),
+          leftEdge);
+
+      final s2 = FeedbackService();
+      expect(s2.decideMessage('right', -mild, t0), rightMild);
+      expect(s2.decideMessage('right', -20, t0.add(ms(100)), atEdge: true),
+          rightEdge,
+          reason: '보통 -> 가장자리');
+    });
+
+    test('행3: 방향이 바뀌면 바로 (왼 -> 오 -> 왼, 6초 안)', () {
+      final s = FeedbackService();
+      expect(s.decideMessage('left', mild, t0), leftMild);
+      expect(s.decideMessage('right', -mild, t0.add(ms(500))), rightMild);
+      expect(s.decideMessage('left', mild, t0.add(ms(1000))), leftMild);
+    });
+
+    test('행4: front가 0.7초 이상 이어진 회복 뒤 다시 이탈하면 바로', () {
+      final s = FeedbackService();
+      expect(s.decideMessage('left', mild, t0), leftMild);
+      expect(s.decideMessage('front', 0, t0.add(ms(1000))), isNull);
+      expect(s.decideMessage('front', 0, t0.add(ms(1700))), isNull); // 0.7초
+      expect(s.decideMessage('left', mild, t0.add(ms(2000))), leftMild);
+      expect(FeedbackService.recoveryHold, const Duration(milliseconds: 700));
+    });
+
+    test('행4: 0.7초보다 짧은 front 깜빡임은 같은 이탈 — 묶음 유지', () {
+      final s = FeedbackService();
+      expect(s.decideMessage('left', mild, t0), leftMild);
+      expect(s.decideMessage('front', 0, t0.add(ms(1000))), isNull);
+      expect(s.decideMessage('front', 0, t0.add(ms(1600))), isNull); // 0.6초
+      expect(s.decideMessage('left', mild, t0.add(ms(1800))), isNull);
+      // 다음 깜빡임은 처음부터 다시 잰다(앞 깜빡임과 합치지 않는다).
+      expect(s.decideMessage('front', 0, t0.add(ms(2000))), isNull);
+      expect(s.decideMessage('front', 0, t0.add(ms(2500))), isNull);
+      expect(s.decideMessage('left', mild, t0.add(ms(2700))), isNull);
+    });
+
+    test('행4: none·approach·crossed는 회복이 아니다 — 묶음 유지', () {
+      for (final cls in ['none', 'approach', 'crossed']) {
+        final s = FeedbackService();
+        expect(s.decideMessage('left', mild, t0), leftMild);
+        expect(s.decideMessage(cls, 0, t0.add(ms(1000))), isNull);
+        expect(s.decideMessage(cls, 0, t0.add(ms(3000))), isNull);
+        expect(s.decideMessage('left', mild, t0.add(ms(3200))), isNull,
+            reason: cls);
+      }
+    });
+
+    test('행4: front 사이에 none이 끼면 front 시간을 이어 세지 않는다', () {
+      final s = FeedbackService();
+      expect(s.decideMessage('left', mild, t0), leftMild);
+      expect(s.decideMessage('front', 0, t0.add(ms(1000))), isNull);
+      expect(s.decideMessage('none', 0, t0.add(ms(1400))), isNull);
+      expect(s.decideMessage('front', 0, t0.add(ms(1800))), isNull);
+      expect(s.decideMessage('left', mild, t0.add(ms(2000))), isNull);
+    });
+
+    test('행5: 같은 방향 이탈이 이어지면 6초마다 재경고', () {
+      final s = FeedbackService();
+      final fired = <int>[];
+      for (var at = 0; at <= 13000; at += 170) {
+        if (s.decideMessage('left', mild, t0.add(ms(at))) != null) {
+          fired.add(at);
+        }
+      }
+      expect(fired, [0, 6120, 12240], reason: '판정 간격 0.17초 — 6초가 지난 첫 판정');
+    });
+
+    test('진동은 그대로: 묶여 음성이 없는 프레임에도 3초 박자 방향 진동', () {
+      final s = FeedbackService();
+      expect(s.decideMessage('left', mild, t0), isNotNull);
+      expect(s.vibrationPolicy.decidePattern('left', t0, 500), isNotNull);
+      final t3 = t0.add(const Duration(seconds: 3));
+      expect(s.decideMessage('left', mild, t3), isNull);
+      expect(s.vibrationPolicy.decidePattern('left', t3, 500), isNotNull);
+    });
+
+    test('alert(): 묶인 프레임은 msg 없이 기록되고 생략 사유가 남는다', () async {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      await s.alert('left', 0.9, angleDegrees: 20, atEdge: true);
+      await s.alert('left', 0.9, angleDegrees: mild);
+      final alerts = EventLog.instance.earlyLines
+          .map((l) => jsonDecode(l) as Map<String, dynamic>)
+          .where((m) => m['ev'] == 'alert')
+          .toList();
+      expect(alerts.map((m) => m['msg']), [leftEdge, null]);
+      expect(alerts.first['vib'], isTrue);
+      expect(bundled().single['text'], leftMild);
     });
   });
 }

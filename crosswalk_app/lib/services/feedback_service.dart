@@ -41,10 +41,30 @@ class FeedbackService {
 
   DateTime? _lastAlertTime;
   String? _lastAlertClass;
-  bool? _lastAlertSevere;
-  // T102: 끝 안내 여부도 쿨다운 키에 넣는다 — 같은 'left'라도 일반 이탈에서
-  // 끝으로 바뀌면 "가장자리입니다"를 바로 알려야 한다.
-  bool? _lastAlertEdge;
+  // T120(사용자 확정 2026-10-20): 마지막으로 **말한** 이탈 경고의 단계
+  // ([deviationLevel]). 같은 방향이면 이 값보다 올라갈 때만 6초 묶음을 깬다.
+  int? _lastAlertLevel;
+
+  /// T120: 같은 방향 이탈 경고 묶음 창. 마지막으로 말한 뒤 이 안에서는 단계가
+  /// 같거나 내려가면(문장만 바뀐 경우 포함) 말하지 않는다(진동은 그대로).
+  /// 근거: `train/audio_occupancy/report.md` §3·§5 B — 기록 재계산(추정).
+  static const sameDirectionBundle = Duration(seconds: 6);
+
+  /// T120: 묶음으로 말하지 않은 경고를 `say.cancel`(why=same_dir)로 남기는 기준.
+  /// 종전 쿨다운(3초·단계/끝 여부가 바뀌면 다시 말함)이었다면 말했을 때만 남긴다
+  /// — 프레임마다 남기면 기록이 넘친다.
+  DateTime? _bundleLogAt;
+  String? _bundleLogText;
+
+  /// T120: front가 이어지기 시작한 시각. [recoveryHold] 이상 이어지면 회복으로
+  /// 보고 묶음을 푼다(그 뒤 이탈은 새 이탈 — 바로 말함).
+  DateTime? _frontSince;
+
+  /// T120: 이탈 경고 단계 — 가장자리 2 > 즉시(심함) 1 > 보통 0.
+  /// [decideMessage]가 문장을 고르는 순서 그대로다(사용자 확정 2026-10-20).
+  @visibleForTesting
+  static int deviationLevel({required bool severe, required bool atEdge}) =>
+      atEdge ? 2 : (severe ? 1 : 0);
 
   // T63: 매 alert() 호출마다(메시지가 실제로 나갔는지와 무관하게) 갱신되는
   // "직전 판정 클래스". 구간 전이(진입/이탈 완료/복귀)를 감지하려면 발화
@@ -242,6 +262,8 @@ class FeedbackService {
 
   // T63: 쿨다운 키가 (클래스, 강도) 쌍으로 바뀌었다 — 방향이 그대로여도
   // 강도가 바뀌면(약함<->심함) 즉시 재발화한다.
+  // T120: 지금은 **올라갈 때만** 즉시 재발화하고, 같거나 내려가면 6초 묶음이다
+  // ([sameDirectionBundle], [deviationLevel]).
   //
   // T84(2026-09-13): 강도의 입력을 **분류기 신뢰도에서 각도 모델 출력으로**
   // 바꿨다. 사용자 실기기 스크린샷 27장에서 "18도인데 크게 벗어남, 32도인데
@@ -276,8 +298,21 @@ class FeedbackService {
     if (detectedClass != 'left' && detectedClass != 'right') {
       severityLatch.reset();
       _lastSeverityClass = null;
+      // T120: front가 [recoveryHold] 이상 이어지면 회복 — 묶음을 푼다. 더 짧은
+      // front 깜빡임과 none·approach·crossed는 회복이 아니다(묶음 유지).
+      if (detectedClass == 'front') {
+        _frontSince ??= now;
+        if (now.difference(_frontSince!) >= recoveryHold) {
+          _lastAlertTime = null;
+          _lastAlertClass = null;
+          _lastAlertLevel = null;
+        }
+      } else {
+        _frontSince = null;
+      }
       return null;
     }
+    _frontSince = null;
     // 방향이 바뀌면 강도는 처음부터 다시 판단한다(왼쪽에서 심했다고 오른쪽도
     // 심한 것은 아니다). `_lastRawClass`는 alert()가 decideMessage를 부르기
     // **전에** 이미 현재 클래스로 덮어쓰므로 여기서는 쓸 수 없다 — 이 목적의
@@ -289,33 +324,46 @@ class FeedbackService {
 
     final severe = severityLatch.update(
         angleDegrees != null && angleDegrees.abs() >= severeAngleDegrees, now);
+    final level = deviationLevel(severe: severe, atEdge: atEdge);
+    final strings = AppStrings.of(_language);
+    final String message;
+    if (atEdge) {
+      message = detectedClass == 'left'
+          ? strings.leftEdgeMessage
+          : strings.rightEdgeMessage;
+    } else if (detectedClass == 'left') {
+      message = severe
+          ? strings.leftDeviationMessageSevere
+          : strings.leftDeviationMessageMild;
+    } else {
+      message = severe
+          ? strings.rightDeviationMessageSevere
+          : strings.rightDeviationMessageMild;
+    }
+
+    // T120(사용자 확정 2026-10-20): 같은 방향이면 마지막으로 말한 단계와 비교한다.
+    // 6초 안에 같거나 내려가면 묶는다(진동은 그대로). 올라가면 바로 말한다.
+    // 방향이 바뀌면(_lastAlertClass가 다름) 종전대로 바로 말한다.
     if (_lastAlertTime != null &&
         _lastAlertClass == detectedClass &&
-        _lastAlertSevere == severe &&
-        _lastAlertEdge == atEdge &&
-        now.difference(_lastAlertTime!).inSeconds < _cooldownSeconds) {
+        level <= _lastAlertLevel! &&
+        now.difference(_lastAlertTime!) < sameDirectionBundle) {
+      if (_bundleLogText != message ||
+          now.difference(_bundleLogAt!).inSeconds >= _cooldownSeconds) {
+        _bundleLogAt = now;
+        _bundleLogText = message;
+        EventLog.instance
+            .log('say.cancel', {'text': message, 'why': 'same_dir'});
+      }
       return null;
     }
 
     _lastAlertTime = now;
     _lastAlertClass = detectedClass;
-    _lastAlertSevere = severe;
-    _lastAlertEdge = atEdge;
-
-    final strings = AppStrings.of(_language);
-    if (atEdge) {
-      return detectedClass == 'left'
-          ? strings.leftEdgeMessage
-          : strings.rightEdgeMessage;
-    }
-    if (detectedClass == 'left') {
-      return severe
-          ? strings.leftDeviationMessageSevere
-          : strings.leftDeviationMessageMild;
-    }
-    return severe
-        ? strings.rightDeviationMessageSevere
-        : strings.rightDeviationMessageMild;
+    _lastAlertLevel = level;
+    _bundleLogAt = now;
+    _bundleLogText = message;
+    return message;
   }
 
   // T63: 구간이 바뀌었다는 1회성 사실 안내. "왼쪽/오른쪽으로 이동하세요"처럼
