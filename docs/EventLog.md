@@ -58,13 +58,14 @@
 | `pos` | 위치 모델이 돈 프레임 | `raw`, `smooth`, `label`, `dur` | `_updatePositionEstimate` |
 | `surf` | 노면 모델이 돈 프레임 (노면 안내나 주의 구역 안내가 켜졌을 때만) | `L`/`F`/`R` = **[인도, 차도, 선형, 점형, 맨홀·그레이팅, 가로수 구역, 계단] 비율** (T105가 뒤 3개를 붙임 — 앞 4개 순서는 그대로), `st`(화면 상태), `dur`, `ok` | `_updateSurfaceGuidance` |
 | `caut.ev` | 주의 구역 판정표 이벤트 (T105) | `names`(manholeGrating/treeZone 목록), `st` | `_updateSurfaceGuidance` |
+| `hold.end` | "횡단 중" 유지를 발밑이 인도라서 일찍 풂 (T118 — 10초 만료·위·crossed로 풀린 것은 `state`만 남음) | `why`(ground), `to`(이번 판정) | `CameraScreen` 분류 결과 처리 |
 | `surf.ev` | 노면 판정표 이벤트 | `names`(road/dotBlock/linearOn/linearRight/linearLeft/linearLost 목록), `st` | `_updateSurfaceGuidance` |
 | `state` | 화면 상태가 바뀜 (무판정·오류 포함, 1초 안) | `from`, `to`, `edge`, `conf` | `_logStateIfChanged` |
 | `alert` | 이탈 안내 판단 한 번 | `cls`, `conf`, `ang`, `edge`, `msg`/`phase`/`recover`/`edgeTurned`(이번에 고른 문장, 없으면 null), `vib`(진동 여부) | `feedback_service.dart` `alert` |
 | `say` | 음성 요청 | `text`, `p`(0~3 = P0~P3), `act`(speakNow/queue/drop), `why`(§4) | `feedback_service.dart` `_speak` |
 | `say.end` | 음성 재생이 끝남 | `text`, `p`, `res`(done/timeout/error), `dur`(ms) — 다른 안내가 끊으면 짧게 끝난다 | `_speak` |
 | `say.ttl` | 대기하던 안내가 TTL을 넘겨 버려짐 (T108: 보류한 회복 안내가 2.7초를 넘겨도 / 새 P1을 넣기 전 만료된 대기 항목을 치울 때도) | `text`, `p` | `_drainPending`, `alert`, `_speak` |
-| `say.defer` | 회복 안내를 보류함 (T108 Q1 — front 0.7초 유지 확인 전) | `text` | `alert` |
+| `say.defer` | 회복 안내를 보류함 (T108 Q1 — front 0.7초 유지 확인 전) / 횡단보도 없음 상태의 멈춤 블록을 1.3초 보류함 (T118) | `text` | `alert`, `surfaceAlert` |
 | `say.cancel` | 보류·대기 안내를 말하지 않고 취소 | `text`, `why`(flicker = front가 아니게 됨 / superseded = 앞에 횡단보도가 멈춤 블록을 대체) | `alert` |
 | `vib` | 진동 요청 | `kind`(left/right/recover/road/line_on), `ok`, `mode`(pattern/single), `pat`(ms 배열: 대기·켬·끔…) 또는 `why`(no_vibrator) | `feedback_service.dart` `alert`, `surfaceAlert` |
 

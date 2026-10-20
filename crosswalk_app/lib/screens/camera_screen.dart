@@ -522,6 +522,13 @@ class _CameraScreenState extends State<CameraScreen>
       // 아니라서 스스로 멈춘다.
       final label =
           _crossingHold.apply(_guidanceLabel, resolved, DateTime.now());
+      // T118: 발밑이 인도라서 일찍 풀었으면 기록하고, 이어지는 crossed의
+      // "건넜습니다"를 지키도록 알린다(A2).
+      if (_crossingHold.releasedByGround) {
+        EventLog.instance.log('hold.end', {'why': 'ground', 'to': label});
+        _feedback.noteHoldReleasedByGround(DateTime.now(),
+            holdStartedAt: _crossingHold.releasedHoldStartedAt);
+      }
       // T102: 끝 규칙에서 나온 상태면 끝 전용 음성·화면 문구를 쓴다.
       // (hold는 위가 아니므로 isEdge가 false다.)
       final atEdge = DirectionResolver.isEdge(
@@ -599,6 +606,8 @@ class _CameraScreenState extends State<CameraScreen>
       EventLog.instance.log('surf', {'ok': false, 'dur': surfClock.elapsedMilliseconds});
       return;
     }
+    // T118: hold 중이면 발밑(앞 구역)이 인도·점자블록인지 센다(CrossingHold 표).
+    _crossingHold.noteGround(f.front.sidewalk + f.front.linear + f.front.dot);
     // T106: 세 칸의 비율 — 순서 [인도, 차도, 선형, 점형] (docs/EventLog.md).
     // T105: 뒤에 [맨홀·그레이팅, 가로수 구역, 계단]을 붙인다(앞 4개 순서는 그대로).
     List<double> ratios(SurfaceRegion r) => [

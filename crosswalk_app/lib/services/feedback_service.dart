@@ -58,6 +58,38 @@ class FeedbackService {
   String? _lastSeverityClass;
 
   DateTime? _lastPhaseAt;
+
+  /// T118: "발밑이 인도"라서 hold를 일찍 푼 시각. 이 뒤 [groundReleaseCrossedWindow]
+  /// 안에 crossed가 오면 none/approach -> crossed여도 "건넜습니다"를 낸다(A2).
+  DateTime? _holdReleasedByGroundAt;
+
+  /// T118 보완: 위에서 푼 hold가 시작된 시각. 일찍 풀지 않았다면 hold 시작부터
+  /// `CrossingHold.holdDuration`(10초) 안의 crossed는 "건넜습니다"였다 — 그 창을 지킨다.
+  DateTime? _releasedHoldStartedAt;
+
+  /// T118: 위 창(추정값). 도착 연석에서 crossed 판정까지 10/02 기록 L1051은 3.5초.
+  static const groundReleaseCrossedWindow = Duration(seconds: 5);
+
+  /// T118 보완: hold 시작부터의 창 — `CrossingHold.holdDuration`과 같은 10초.
+  static const holdStartCrossedWindow = Duration(seconds: 10);
+
+  /// T118: `CrossingHold`가 발밑이 인도라서 hold를 푼 직후 부른다.
+  /// [holdStartedAt]은 그 hold가 시작된 시각(`CrossingHold.releasedHoldStartedAt`).
+  void noteHoldReleasedByGround(DateTime now, {DateTime? holdStartedAt}) {
+    _holdReleasedByGroundAt = now;
+    _releasedHoldStartedAt = holdStartedAt;
+  }
+
+  /// T118 보완: 일찍 푼 뒤 crossed를 "건넜습니다"로 볼 마지막 시각 —
+  /// hold 시작 + 10초와 해제 + 5초 중 늦은 쪽.
+  @visibleForTesting
+  static DateTime groundReleaseCrossedUntil(
+      DateTime releasedAt, DateTime? holdStartedAt) {
+    final afterRelease = releasedAt.add(groundReleaseCrossedWindow);
+    if (holdStartedAt == null) return afterRelease;
+    final afterStart = holdStartedAt.add(holdStartCrossedWindow);
+    return afterStart.isAfter(afterRelease) ? afterStart : afterRelease;
+  }
   DateTime? _lastRecoveryAt;
 
   // T102: 직전 alert()가 "끝 + 이미 중앙 쪽으로 틀었음(front)"이었는가.
@@ -80,6 +112,50 @@ class FeedbackService {
 
   // T108 Q2: 대기 슬롯의 P1을 최소 간격이 끝나는 시각에 꺼내는 타이머.
   Timer? _drainTimer;
+
+  /// T118: 대기 꺼내기 타이머 여유. 타이머는 ms로 잘려 예약되는데 간격 판정은
+  /// µs 시각을 써서, 몇 µs 일찍 울리면 "아직 간격 안"으로 다시 대기하고 곧바로
+  /// 또 울리기를 반복했다(10/19 기록 L3471~L3484, 같은 ms에 14번).
+  static const drainMargin = Duration(milliseconds: 20);
+
+  /// T118: 간격이 끝나는 [allowed]까지 남은 시간 + [drainMargin].
+  @visibleForTesting
+  static Duration drainDelay(DateTime? allowed, DateTime now) =>
+      (allowed == null || !allowed.isAfter(now)
+          ? Duration.zero
+          : allowed.difference(now)) +
+      drainMargin;
+
+  /// T118(사용자 확정 A, 2026-10-20): 횡단보도 없음 상태의 "멈춤 블록입니다"는
+  /// 잠깐 보류한다. 그사이 "앞에 횡단보도가 있습니다"가 나오면 그것만 말한다.
+  /// 기록 17건 중 블록 뒤 앞에 횡단보도가 온 7건이 모두 1.25초 안이었다.
+  static const dotBlockHold = Duration(milliseconds: 1300);
+  Timer? _dotBlockTimer;
+  DateTime? _heldDotBlockAt;
+
+  /// T118: 직전 상태 [lastClass]에서 멈춤 블록을 보류하는가. 횡단보도 없음(none·
+  /// 콜드스타트)에서만 — 건넌 직후(crossed)·위·앞은 지금처럼 바로 처리한다.
+  @visibleForTesting
+  static bool holdsDotBlock(String lastClass) =>
+      lastClass == 'none' || lastClass == '';
+
+  void _holdDotBlock(String message, DateTime now) {
+    _dotBlockTimer?.cancel();
+    _heldDotBlockAt = now;
+    EventLog.instance.log('say.defer', {'text': message});
+    _dotBlockTimer = Timer(dotBlockHold, () {
+      final at = _heldDotBlockAt;
+      _heldDotBlockAt = null;
+      if (at == null) return;
+      // T118 보완: 보류하는 동안 횡단보도 위·앞 등으로 바뀌었으면 말하지 않는다.
+      if (!holdsDotBlock(_lastRawClass ?? '')) {
+        EventLog.instance.log('say.cancel', {'text': message, 'why': 'state'});
+        return;
+      }
+      unawaited(_speak(message,
+          priority: FeedbackPriority.p1, requestedAt: at));
+    });
+  }
 
   // T38 fix: guards against isSpeaking/isVibrating being reset by a stale
   // await/timer from an earlier alert() call. decideMessage() bypasses
@@ -261,10 +337,27 @@ class FeedbackService {
     // 위 -> none은 **안내하지 않는다** — 줄무늬가 잠깐 안 보이거나(X형 교차
     // 횡단보도 가운데) 오판일 수 있어서다. 다 건넌 과정은 위 -> crossed -> none
     // 이고, crossed -> none/approach, none/approach -> crossed도 침묵이다.
-    final exiting = (previousClass == 'front' ||
-            previousClass == 'left' ||
-            previousClass == 'right') &&
-        detectedClass == 'crossed';
+    // T118(A2): hold가 "발밑이 인도"로 일찍 풀려 none/approach를 거쳤어도, 그 뒤
+    // 창([groundReleaseCrossedUntil]) 안의 crossed는 다 건넌 것으로 본다 — 풀리지 않았다면 hold -> crossed
+    // (= 위 -> crossed)였을 경우다. 한 번 쓰거나 다시 위로 들어오면 비운다.
+    final releasedAt = _holdReleasedByGroundAt;
+    final afterGroundRelease = releasedAt != null &&
+        (previousClass == 'none' || previousClass == 'approach') &&
+        detectedClass == 'crossed' &&
+        !now.isAfter(
+            groundReleaseCrossedUntil(releasedAt, _releasedHoldStartedAt));
+    if (detectedClass == 'crossed' ||
+        detectedClass == 'front' ||
+        detectedClass == 'left' ||
+        detectedClass == 'right') {
+      _holdReleasedByGroundAt = null;
+      _releasedHoldStartedAt = null;
+    }
+    final exiting = ((previousClass == 'front' ||
+                previousClass == 'left' ||
+                previousClass == 'right') &&
+            detectedClass == 'crossed') ||
+        afterGroundRelease;
     // T93(2026-09-15, 사용자 요청): approach로 **들어올 때** "앞에 횡단보도가
     // 있습니다"를 1회 안내한다. T51에서 approach를 침묵시켰던 것을 뒤집는다
     // (이탈 경고 decideMessage는 여전히 approach에서 침묵 — 방향 경고가 아니라
@@ -556,8 +649,7 @@ class FeedbackService {
     if (audioPolicy.pendingPriority == null) return;
     final now = DateTime.now();
     final allowed = audioPolicy.nextAllowedAt;
-    final wait =
-        allowed == null || !allowed.isAfter(now) ? Duration.zero : allowed.difference(now);
+    final wait = drainDelay(allowed, now);
     _drainTimer?.cancel();
     _drainTimer = Timer(wait, _drainPending);
   }
@@ -641,6 +733,14 @@ class FeedbackService {
           phaseMessage, audioPolicy.activeMessage,
           approachMessage: AppStrings.of(_language).approachAheadMessage,
           dotBlockMessage: dotBlock);
+      // T118: 보류 중인 멈춤 블록은 말하지 않고 앞에 횡단보도만 말한다.
+      if (phaseMessage == AppStrings.of(_language).approachAheadMessage &&
+          _heldDotBlockAt != null) {
+        _dotBlockTimer?.cancel();
+        _heldDotBlockAt = null;
+        EventLog.instance
+            .log('say.cancel', {'text': dotBlock, 'why': 'superseded'});
+      }
       if (phaseMessage == AppStrings.of(_language).approachAheadMessage &&
           audioPolicy.pendingMessage == dotBlock) {
         audioPolicy.clearPending();
@@ -770,8 +870,12 @@ class FeedbackService {
               priority: FeedbackPriority.p0, rank: P0Rank.danger));
           pattern = surfaceRoadPattern(shortMs);
         case SurfaceEvent.dotBlock:
-          unawaited(_speak(strings.surfaceDotBlockMessage,
-              priority: FeedbackPriority.p1));
+          if (holdsDotBlock(_lastRawClass ?? '')) {
+            _holdDotBlock(strings.surfaceDotBlockMessage, DateTime.now());
+          } else {
+            unawaited(_speak(strings.surfaceDotBlockMessage,
+                priority: FeedbackPriority.p1));
+          }
         case SurfaceEvent.linearRight:
           unawaited(_speak(strings.surfaceLinearRightMessage,
               priority: FeedbackPriority.p2));
@@ -856,6 +960,7 @@ class FeedbackService {
     await _tts.stop();
     _vibrationTimer?.cancel();
     _drainTimer?.cancel();
+    _dotBlockTimer?.cancel();
     isSpeaking.value = false;
     isVibrating.value = false;
     isSpeaking.dispose();

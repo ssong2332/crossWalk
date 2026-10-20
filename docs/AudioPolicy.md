@@ -169,6 +169,10 @@ P0 발화 시간은 예산에 **누적되지 않는다** — 안전 경고가 �
 | Q1 회복 안내 | front가 **0.7초**(추정값) 유지되면 말한다. 이탈 경고가 재생 중이면 끝날 때까지 최대 2초 기다린다. 그 전에 front가 아니게 되면 취소하고 회복 쿨다운도 되돌린다. 확인 진동은 지금처럼 즉시 | `FeedbackService.decideHeldRecovery` |
 | Q2 P1 사실 안내 | 최소 간격·P0/P1 재생에 걸리면 버리지 않고 대기, TTL 3초 | `AudioPolicy.decide`(`gap_p1`, `wait_p1`) |
 | Q3 연석 겹침 | "앞에 횡단보도가 있습니다"가 재생 중이거나 대기 중인 "멈춤 블록입니다"를 대체한다 | `FeedbackService.supersedesDotBlock`, 대기 슬롯 비움(`say.cancel` why=superseded) |
+| T118 연석 겹침 (사용자 확정 A, 2026-10-20) | 횡단보도 없음 상태의 "멈춤 블록입니다"는 1.3초 보류(`say.defer`). 그사이 "앞에 횡단보도"가 나오면 블록은 말하지 않음(`say.cancel` why=superseded). 안 나오면 1.3초 늦게 블록 안내. 근거: 기록 17건 중 블록 뒤 앞에 횡단보도 7건 모두 0.12~1.25초 안 | `FeedbackService.holdsDotBlock`, `dotBlockHold` |
+| T118 보완 — 블록 보류 상태 재확인 (리뷰 2-a, 2026-10-20) | 1.3초 보류 타이머가 울릴 때 마지막 상태를 다시 본다. 그사이 횡단보도 없음(none·콜드스타트)이 아니게 됐으면(예: none→front 횡단 시작) 말하지 않음(`say.cancel` why=state). 마지막 상태가 위(front·hold 중)·crossed·approach면 보류 없이 바로 처리(종전대로) | `FeedbackService._holdDotBlock`, `holdsDotBlock` |
+| T118 보완 — 일찍 해제 뒤 건넘 안내 창 (리뷰 3-a, 2026-10-20) | hold가 발밑 인도로 일찍 풀린 뒤 none/approach→crossed는 **hold 시작 + 10초와 해제 + 5초 중 늦은 쪽**까지 "건넜습니다". 6e194b0은 해제 + 5초만 봐서, hold 시작 + 10초(일찍 풀기 전 hold→crossed가 안내되던 창)보다 짧아질 수 있었다(hold 시작 5초 안에 풀리면, 예: 3초 해제 → 8~10초 crossed 침묵) | `FeedbackService.groundReleaseCrossedUntil`, `CrossingHold.releasedHoldStartedAt` |
+| T118 대기 꺼내기 | 타이머를 간격 끝 + 20ms에 울린다 — 일찍 울려 같은 ms에 대기를 반복하던 문제(10/19 L3471~L3484) | `FeedbackService.drainDelay` |
 
 Q1 판정표:
 
