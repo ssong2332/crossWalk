@@ -666,6 +666,20 @@ void main() {
       );
     });
   });
+
+  // T117: 폰 초광각 접근 확인 — 디버그 박스 줌 범위 줄.
+  group('zoomProbeText (T117)', () {
+    test('최소 1 미만이면 그대로 보여 초광각 접근을 알 수 있다', () {
+      expect(zoomProbeText(0.6, 10.0, 1), '줌 0.60~10.0 · 후면 1');
+    });
+    test('최소 1이면 1.00으로 보인다', () {
+      expect(zoomProbeText(1.0, 8.0, 2), '줌 1.00~8.0 · 후면 2');
+    });
+    test('줌을 못 읽으면 -로 보인다', () {
+      expect(zoomProbeText(null, null, 1), '줌 - · 후면 1');
+      expect(zoomProbeText(0.6, null, 1), '줌 - · 후면 1');
+    });
+  });
 }
 
 /// `Canvas.translate` 호출만 기록하는 대역 캔버스.
