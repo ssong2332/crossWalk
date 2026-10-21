@@ -661,7 +661,16 @@ class FeedbackService {
     var result = 'done';
     await _tts.stop();
     try {
-      await _tts.speak(message).timeout(_speakTimeout);
+      // T121 F1: stop을 기다리는 동안 더 새 발화가 시작됐으면 speak를 보내지 않는다.
+      // 보내면 플랫폼 순서가 stop·stop·speak(이것)·speak(새것)이 되고, 플러그인은
+      // 재생 중에 온 speak(새것)를 재생 없이 성공으로 돌려준다(flutter_tts-4.2.5
+      // FlutterTtsPlugin.kt:304-309) — 정책이 끊으라고 한 새 발화가 삼켜졌다
+      // (10/16 L627, 10/19 L3381: 이탈 경고 대신 "진입했습니다"가 들림).
+      if (generation != _speechGeneration) {
+        result = 'superseded';
+      } else {
+        await _tts.speak(message).timeout(_speakTimeout);
+      }
     } on TimeoutException {
       result = 'timeout';
       debugPrint(
@@ -770,6 +779,18 @@ class FeedbackService {
     final previous = _lastRawClass ?? '';
     _lastRawClass = detectedClass;
 
+    // 음성 — 이탈 경고는 P0다. 무음 예산·최소 간격에서 면제되며, 재생 중인
+    // 하위 등급 안내를 끊는다. T84: 강도는 각도로 판정한다(confidence는
+    // 더 이상 강도에 쓰지 않는다 — 호출부 호환을 위해 인자는 남겨 둔다).
+    // T121 F2: 구간 안내보다 **먼저** 요청한다. 같은 프레임에 "진입했습니다"(P1)가
+    // 함께 나면 P1은 이탈 경고 재생 중이라 기존 대기 규칙(wait_p0, TTL 3초)을 따른다.
+    // 전에는 P1을 먼저 요청해 P0가 그것을 끊어야 했고, 그 경쟁에서 P0가 삼켜졌다.
+    final message =
+        decideMessage(detectedClass, angleDegrees, now, atEdge: atEdge);
+    if (message != null) {
+      unawaited(_speak(message, priority: FeedbackPriority.p0));
+    }
+
     // 구간 전이 안내(P1) — "횡단보도에 진입했습니다" / "횡단보도를 건넜습니다".
     // 반복 경고가 아니라 1회성 사실이므로 이탈 경고보다 낮은 우선순위다.
     final phaseMessage = decidePhaseMessage(previous, detectedClass, now);
@@ -842,15 +863,6 @@ class FeedbackService {
           _clearHeldRecovery();
           EventLog.instance.log('say.ttl', {'text': held, 'p': 0});
       }
-    }
-
-    // 음성 — 이탈 경고는 P0다. 무음 예산·최소 간격에서 면제되며, 재생 중인
-    // 하위 등급 안내를 끊는다. T84: 강도는 각도로 판정한다(confidence는
-    // 더 이상 강도에 쓰지 않는다 — 호출부 호환을 위해 인자는 남겨 둔다).
-    final message =
-        decideMessage(detectedClass, angleDegrees, now, atEdge: atEdge);
-    if (message != null) {
-      unawaited(_speak(message, priority: FeedbackPriority.p0));
     }
 
     // 진동 — T61: 좌/우 패턴을 분리했다. 이전에는 두 방향이 같은 진동이라
