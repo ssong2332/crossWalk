@@ -197,6 +197,20 @@ class AppStrings {
   final String settingsDevLogShare;
   final String settingsDevLogShareEmpty;
   final String settingsDevLogShareFailed;
+  // B안 ①: 데이터 수집용 개발 설정(초광각 0.6배·장착 방향·프레임 저장).
+  final String settingsDevCaptureSectionHeader;
+  final String settingsUltraWideLabel;
+  final String settingsUltraWideNote;
+  final String settingsMountLabel;
+  final String settingsMountPortrait;
+  final String settingsMountTopLeft;
+  final String settingsMountTopRight;
+  final String settingsMountNote;
+  final String settingsFrameSaveLabel;
+  final String settingsFrameSaveNote;
+  final String settingsFrameShare;
+  final String settingsFrameShareEmpty;
+  final String settingsFrameShareFailed;
 
   // T40: OnboardingScreen — integrates T19 (chest-mount posture guidance)
   // + T36 (first-launch legal safety disclaimer) into one first-run
@@ -331,6 +345,19 @@ class AppStrings {
     required this.settingsDevLogShare,
     required this.settingsDevLogShareEmpty,
     required this.settingsDevLogShareFailed,
+    required this.settingsDevCaptureSectionHeader,
+    required this.settingsUltraWideLabel,
+    required this.settingsUltraWideNote,
+    required this.settingsMountLabel,
+    required this.settingsMountPortrait,
+    required this.settingsMountTopLeft,
+    required this.settingsMountTopRight,
+    required this.settingsMountNote,
+    required this.settingsFrameSaveLabel,
+    required this.settingsFrameSaveNote,
+    required this.settingsFrameShare,
+    required this.settingsFrameShareEmpty,
+    required this.settingsFrameShareFailed,
     required this.onboardingEyebrow,
     required this.onboardingTitle,
     required this.onboardingPostureHeading,
@@ -442,6 +469,22 @@ class AppStrings {
     settingsDevLogShare: '기록 보내기',
     settingsDevLogShareEmpty: '보낼 기록이 없습니다',
     settingsDevLogShareFailed: '기록을 보내지 못했습니다',
+    settingsDevCaptureSectionHeader: '개발용 수집 (초광각)',
+    settingsUltraWideLabel: '초광각 0.6배',
+    settingsUltraWideNote: '카메라를 0.6배로 엽니다. 실패하면 화면 아래 상자에 '
+        '"실패"가 보입니다. 지금 모델은 1배로 학습했습니다.',
+    settingsMountLabel: '폰 방향',
+    settingsMountPortrait: '세로',
+    settingsMountTopLeft: '가로·위 왼쪽',
+    settingsMountTopRight: '가로·위 오른쪽',
+    settingsMountNote: '화면을 볼 때 폰 윗부분이 어느 쪽인지 고릅니다. '
+        '모델 입력을 돌려 맞춥니다. 화면은 세로 그대로입니다.',
+    settingsFrameSaveLabel: '프레임 저장',
+    settingsFrameSaveNote: '모델이 보는 카메라 사진을 1초에 1장 이 폰에만 저장합니다'
+        '(최대 500MB, 넘으면 오래된 것부터 지움). 직접 보낼 때만 밖으로 나갑니다.',
+    settingsFrameShare: '프레임 보내기 (최근 묶음)',
+    settingsFrameShareEmpty: '보낼 프레임이 없습니다',
+    settingsFrameShareFailed: '프레임을 보내지 못했습니다',
     onboardingEyebrow: '시작하기 전에',
     onboardingTitle: '안전 이용 안내',
     onboardingPostureHeading: '가슴거치 착용 방법',
@@ -577,6 +620,23 @@ class AppStrings {
     settingsDevLogShare: 'Send log',
     settingsDevLogShareEmpty: 'No log to send',
     settingsDevLogShareFailed: 'Could not send the log',
+    settingsDevCaptureSectionHeader: 'Developer capture (ultra-wide)',
+    settingsUltraWideLabel: 'Ultra-wide 0.6x',
+    settingsUltraWideNote: 'Opens the camera at 0.6x. If it fails, the box at the '
+        'bottom shows "failed". The current models were trained at 1x.',
+    settingsMountLabel: 'Phone orientation',
+    settingsMountPortrait: 'Portrait',
+    settingsMountTopLeft: 'Land. top left',
+    settingsMountTopRight: 'Land. top right',
+    settingsMountNote: 'Which way the top of the phone points, seen from the '
+        'screen. Model input is rotated to match. The screen stays portrait.',
+    settingsFrameSaveLabel: 'Save frames',
+    settingsFrameSaveNote: 'Saves one camera image per second, as the models see it, '
+        'on this phone only (max 500 MB, oldest deleted first). '
+        'Leaves the phone only when you send it.',
+    settingsFrameShare: 'Send frames (latest set)',
+    settingsFrameShareEmpty: 'No frames to send',
+    settingsFrameShareFailed: 'Could not send the frames',
     onboardingEyebrow: 'Before you start',
     onboardingTitle: 'Safety Guide',
     onboardingPostureHeading: 'How to Wear the Chest Mount',

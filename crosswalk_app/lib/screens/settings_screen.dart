@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import '../localization/app_strings.dart';
+import '../services/dev_capture.dart';
 import '../services/feedback_service.dart';
 
 /// T39: language selection + TTS-rate/vibration-strength sliders + a
@@ -52,6 +53,13 @@ class SettingsScreen extends StatefulWidget {
     this.eventLogEnabled = true,
     this.onEventLogChanged,
     this.onShareEventLog,
+    this.ultraWideEnabled = false,
+    this.onUltraWideChanged,
+    this.cameraMount = CameraMount.portrait,
+    this.onCameraMountChanged,
+    this.frameSaveEnabled = false,
+    this.onFrameSaveChanged,
+    this.onShareFrames,
   });
 
   final FeedbackService feedback;
@@ -84,6 +92,17 @@ class SettingsScreen extends StatefulWidget {
   final ValueChanged<bool>? onEventLogChanged;
   final Future<String?> Function()? onShareEventLog;
 
+  // B안 ①: 데이터 수집용 개발 설정(모두 기본 꺼짐, `dev_capture.dart`).
+  // [onUltraWideChanged]가 없으면 이 구역을 그리지 않는다.
+  // [onShareFrames]는 성공이면 null, 실패·빈 저장이면 띄울 문구를 돌려준다.
+  final bool ultraWideEnabled;
+  final ValueChanged<bool>? onUltraWideChanged;
+  final CameraMount cameraMount;
+  final ValueChanged<CameraMount>? onCameraMountChanged;
+  final bool frameSaveEnabled;
+  final ValueChanged<bool>? onFrameSaveChanged;
+  final Future<String?> Function()? onShareFrames;
+
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
@@ -108,6 +127,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late bool _cautionGuidance;
   late bool _eventLog;
   bool _sharingLog = false;
+  late bool _ultraWide;
+  late CameraMount _mount;
+  late bool _frameSave;
+  bool _sharingFrames = false;
 
   @override
   void initState() {
@@ -121,6 +144,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _surfaceGuidance = widget.surfaceGuidanceEnabled;
     _cautionGuidance = widget.cautionGuidanceEnabled;
     _eventLog = widget.eventLogEnabled;
+    _ultraWide = widget.ultraWideEnabled;
+    _mount = widget.cameraMount;
+    _frameSave = widget.frameSaveEnabled;
   }
 
   void _selectLanguage(AppLanguage language) {
@@ -185,6 +211,111 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(message)));
     }
+  }
+
+  void _toggleUltraWide(bool value) {
+    setState(() => _ultraWide = value);
+    widget.onUltraWideChanged?.call(value);
+  }
+
+  void _selectMount(CameraMount mount) {
+    if (mount == _mount) return;
+    setState(() => _mount = mount);
+    widget.onCameraMountChanged?.call(mount);
+  }
+
+  void _toggleFrameSave(bool value) {
+    setState(() => _frameSave = value);
+    widget.onFrameSaveChanged?.call(value);
+  }
+
+  Future<void> _shareFrames() async {
+    final share = widget.onShareFrames;
+    if (share == null || _sharingFrames) return;
+    setState(() => _sharingFrames = true);
+    final message = await share();
+    if (!mounted) return;
+    setState(() => _sharingFrames = false);
+    if (message != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(message)));
+    }
+  }
+
+  Widget _buildDevCaptureSection() {
+    const noteStyle = TextStyle(color: Colors.white38, fontSize: 12);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SwitchListTile(
+            value: _ultraWide,
+            onChanged: _toggleUltraWide,
+            activeColor: _colorAccent,
+            contentPadding: EdgeInsets.zero,
+            title: Text(_strings.settingsUltraWideLabel,
+                style: const TextStyle(color: Colors.white70)),
+            subtitle: Text(_strings.settingsUltraWideNote, style: noteStyle),
+          ),
+          if (widget.onCameraMountChanged != null) ...[
+            const SizedBox(height: 8),
+            Text(_strings.settingsMountLabel,
+                style: const TextStyle(color: Colors.white70)),
+            const SizedBox(height: 8),
+            SegmentedButton<CameraMount>(
+              segments: [
+                ButtonSegment(
+                  value: CameraMount.portrait,
+                  label: Text(_strings.settingsMountPortrait),
+                ),
+                ButtonSegment(
+                  value: CameraMount.landscapeTopLeft,
+                  label: Text(_strings.settingsMountTopLeft),
+                ),
+                ButtonSegment(
+                  value: CameraMount.landscapeTopRight,
+                  label: Text(_strings.settingsMountTopRight),
+                ),
+              ],
+              selected: {_mount},
+              onSelectionChanged: (selection) => _selectMount(selection.first),
+              style: SegmentedButton.styleFrom(
+                backgroundColor: Colors.black,
+                selectedBackgroundColor: _colorAccent,
+                selectedForegroundColor: _colorAccentOnText,
+                foregroundColor: Colors.white70,
+                side: const BorderSide(color: Colors.white38),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(_strings.settingsMountNote, style: noteStyle),
+          ],
+          if (widget.onFrameSaveChanged != null) ...[
+            SwitchListTile(
+              value: _frameSave,
+              onChanged: _toggleFrameSave,
+              activeColor: _colorAccent,
+              contentPadding: EdgeInsets.zero,
+              title: Text(_strings.settingsFrameSaveLabel,
+                  style: const TextStyle(color: Colors.white70)),
+              subtitle: Text(_strings.settingsFrameSaveNote, style: noteStyle),
+            ),
+            if (widget.onShareFrames != null)
+              OutlinedButton.icon(
+                onPressed: _sharingFrames ? null : _shareFrames,
+                icon: const Icon(Icons.share_outlined, size: 18),
+                label: Text(_strings.settingsFrameShare),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: Colors.white38),
+                  minimumSize: const Size(48, 48),
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
   }
 
   Widget _buildSectionHeader(String title) {
@@ -411,6 +542,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ],
               ),
             ),
+          ],
+          if (widget.onUltraWideChanged != null) ...[
+            _buildSectionHeader(_strings.settingsDevCaptureSectionHeader),
+            _buildDevCaptureSection(),
           ],
           _buildSectionHeader(_strings.settingsAccessibilitySectionHeader),
           Padding(

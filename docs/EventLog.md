@@ -3,7 +3,7 @@
 **상태:** 사용자 확정 (2026-10-02, Q1~Q5 제안안). 코드는 `crosswalk_app/lib/services/event_log.dart`(기록기)와 각 기록 지점(아래 §3 "어디서")에 있다. 태스크: `docs/Tasks.md` T106.
 
 ## 금지 (다른 모든 규칙보다 우선)
-- **카메라 영상·사진, 위치(GPS), 개인 정보는 기록하지 않는다** (Q1, Q4). 프레임을 저장하려면 따로 결정한다.
+- **카메라 영상·사진, 위치(GPS), 개인 정보는 기록하지 않는다** (Q1, Q4). 예외 하나: 개발 설정 **프레임 저장**(기본 꺼짐, 사용자 결정 2026-10-21 — §8). 그 밖의 프레임 저장은 따로 결정한다.
 - **앱에 인터넷 권한을 더하지 않는다.** 기록은 폰 안에만 있고, 사용자가 "기록 보내기"로 직접 고른 앱으로만 나간다 (Q2).
 - 기록 때문에 판정·음성·진동이 늦어지거나 깨지면 안 된다. `EventLog.log()`는 동기이고 예외를 밖으로 내지 않으며, 파일 쓰기는 2초마다 모아서 한다.
 - 기록은 판정 근거가 아니다. 판정 코드는 기록 값을 읽지 않는다(`AudioPolicy.lastReason`, `Classifier.last*`는 기록 전용).
@@ -16,7 +16,7 @@
 | Q1 | 기록 항목 | §3 표 |
 | Q2 | 폰 → PC | 설정 › 개발용 기록 › **기록 보내기** → 안드로이드 공유 창 (`share_plus`) |
 | Q3 | 기본값 | **켬**. 설정에서 끌 수 있음. 출시 전에 다시 결정 |
-| Q4 | 카메라 프레임 저장 | 이번에는 안 함 |
+| Q4 | 카메라 프레임 저장 | 이번에는 안 함 → **2026-10-21 사용자 결정: 개발 설정 '프레임 저장'(기본 꺼짐) 한정 허용** (B안 ①, §8) |
 | Q5 | 순서 | 기록 빌드를 먼저 만들고, 그 빌드로 B(노면 안내) 실기기 테스트 |
 
 ## 2. 파일
@@ -49,9 +49,14 @@
 | `log.on` / `log.off` | 설정에서 기록을 켬/끔 | — | `event_log.dart` `setEnabled` |
 | `log.share` | 기록 보내기 | `files`(개수), `status`(공유 창 결과) 또는 `err` | `camera_screen.dart` `_shareEventLog` |
 | `app.life` | 앱 생명주기 변화 | `state`(resumed/inactive/hidden/paused/detached) | `camera_screen.dart` `didChangeAppLifecycleState` |
-| `set` | 설정 변경 | `key`(lang/speechRate/vibrationMs/surface/caution/torch/powerSave), `value` | `feedback_service.dart`, `camera_screen.dart` |
+| `set` | 설정 변경 | `key`(lang/speechRate/vibrationMs/surface/caution/torch/powerSave/ultraWide/mount/frameSave), `value`. `mount`면 `rot`(각도·위치·노면 입력 회전)·`crot`(분류기 입력 회전)도 | `feedback_service.dart`, `camera_screen.dart` |
 | `model` | 모델 불러오기 | `name`(cls/angle/pos/surface), `ok`, `dur`(ms) 또는 `err` | `camera_screen.dart` `_initCamera`, `_setSurfaceEnabled` |
-| `camera` | 카메라 스트림 시작 | `ok`, `sensor`(센서 회전), `preview`(크기) | `camera_screen.dart` `_initCamera` |
+| `camera` | 카메라 스트림 시작 | `ok`, `sensor`(센서 회전), `pw`·`ph`(미리보기 폭·높이 숫자 — 2026-10-21 전 기록은 `preview` 문자열이고 릴리스에서 "Instance of 'Size'"로 찍혀 쓸 수 없음), `zoomMin`·`zoomMax`, `cams` | `camera_screen.dart` `_initCamera` |
+| `camera.frame` | 카메라를 연 뒤 첫 프레임 (B안 ①) | `iw`·`ih`(이미지 스트림 실제 폭·높이, 센서 방향), `fmt` | `camera_screen.dart` `_onFrame` |
+| `zoomSet` | 초광각 설정을 켬·끔, 또는 켠 채로 카메라를 다시 엶 (B안 ①) | `req`(요청 줌), `ok`, `zoomMin`, `why`(unsupported = 최소 줌 ≥ 1·못 읽음) 또는 `err`(예외·플러그인 에러 스트림 내용). `ok`는 "요청이 거절되지 않음"까지만 뜻한다 — 렌즈가 실제로 바뀌었는지는 저장 프레임으로 판정 | `camera_screen.dart` `_applyUltraWide` |
+| `frame.start` | 프레임 저장을 켬 | `dir`(묶음 폴더 이름), `mb`(기존 프레임 합계) 또는 `err` | `_setFrameSaveEnabled` |
+| `frame` | 프레임 한 장 저장 끝남 | `file`(`f_<t>.jpg`), `ok`, `kb`, `dur`(인코딩+쓰기 ms), `del`(상한 때문에 지운 장 수), `rot`·`crot`, `err` | `_onFrame` |
+| `frame.share` | 프레임 보내기 | `files`, `status` 또는 `err` | `_shareFrames` |
 | `error` | 초기화 실패 | `where`(permission/camera/model_integrity/init), `msg` 또는 `permanent` | `camera_screen.dart` `_initCamera` |
 | `cls` | 분류기가 실제로 돈 프레임 (처리 프레임 5개 중 1번) | `best`(최고 클래스), `conf`(스무딩 평균 확률), `ok`(임계값 통과), `probs`(이번 프레임 6클래스), `avg`(스무딩 평균 6클래스), `dur`(ms) | `camera_screen.dart` `_onFrame` |
 | `angle` | 각도 모델이 돈 프레임 | `raw`, `smooth`, `label`, `dur` | `_updateAngleEstimate` |
@@ -173,3 +178,19 @@ python train/field_log_t106.py --selftest
   - 아니면 파일 이름 시각만 쓴다(1초 안팎 오차 가능, 추정).
 - 화면 녹화의 소리 설정이 "미디어 소리"여야 소리로 맞출 수 있다.
 - 프레임은 요청 시각까지 차례로 읽어서 뽑는다. 9/29 녹화 실측 오차는 최대 0.038초다(키프레임 탐색만 하면 0.61초).
+
+## 8. 프레임 저장 (B안 ①, 사용자 결정 2026-10-21)
+
+설계: `train/phone_ultrawide/design.md` §3 ①(d). 코드: `crosswalk_app/lib/services/dev_capture.dart` `FrameSaver`.
+
+| 항목 | 값 |
+|---|---|
+| 켜는 곳 | 설정 › 개발용 수집 (초광각) › **프레임 저장**. 기본 꺼짐, 앱을 다시 켜면 꺼짐 |
+| 무엇 | 분류기가 224로 줄이기 직전의 센서 프레임 그대로(원본 해상도, **회전 없음**). 모델별 입력은 `frame.rot`·`frame.crot`로 다시 만든다 |
+| 주기 | 1초에 1장 (이전 장을 아직 쓰는 중이면 그 초는 건너뜀) |
+| 형식 | JPEG 품질 90. 인코딩은 별도 isolate |
+| 위치 | 앱 전용 폴더 `getApplicationSupportDirectory()/frames/<켠 시각 YYYYMMDD_HHMMSS>/` (다른 앱은 못 읽음) |
+| 이름 | `f_<t>.jpg` — `t`는 기록 `t`와 같은 폰 시계 epoch ms(프레임을 받은 시각) |
+| 크기 상한 | 모든 묶음 합계 500MB. 넘으면 오래된 것부터 지움 |
+| 밖으로 | 설정의 **프레임 보내기 (최근 묶음)** → 안드로이드 공유 창. 앱에 인터넷 권한 없음 |
+| 예상 크기 | 720×480 기준 장당 약 50~100KB → 20분 약 60~120MB (추정, 첫 기록 `frame.kb`로 확인) |
