@@ -5,11 +5,14 @@ import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
+import 'package:camera_platform_interface/camera_platform_interface.dart'
+    show CameraPlatform;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../services/classifier.dart';
 import '../services/crossing_hold.dart';
+import '../services/dev_capture.dart';
 import '../services/event_log.dart';
 import '../services/surface_estimator.dart';
 import '../services/surface_guide.dart';
@@ -384,11 +387,20 @@ class _CameraScreenState extends State<CameraScreen>
         _backCameraCount = cameras
             .where((c) => c.lensDirection == CameraLensDirection.back)
             .length;
+        // B안 ①(b): 카메라를 열 때마다(앱 재개 포함) 초광각을 다시 건다. 꺼져
+        // 있으면 아무것도 하지 않는다(지금 동작).
+        if (_ultraWideEnabled) await _applyUltraWide(true);
+        if (!mounted) return;
+        _streamSizeLogged = false;
         _controller!.startImageStream(_onFrame);
+        // B안 ①(a): 릴리스 빌드에서 `Size` 문자열 보간이 "Instance of 'Size'"로
+        // 찍혀(설계 §0-3) 숫자 폭·높이로 남긴다.
+        final previewSize = _controller!.value.previewSize;
         EventLog.instance.log('camera', {
           'ok': true,
           'sensor': back.sensorOrientation,
-          'preview': '${_controller!.value.previewSize}',
+          'pw': previewSize?.width,
+          'ph': previewSize?.height,
           'zoomMin': zoomMin,
           'zoomMax': zoomMax,
           'cams': [
@@ -494,9 +506,37 @@ class _CameraScreenState extends State<CameraScreen>
     if (_isProcessing) return;
     _isProcessing = true;
 
+    // B안 ①(a): 이미지 스트림의 실제 해상도는 카메라를 열 때마다 첫 프레임에서 한 번.
+    if (!_streamSizeLogged) {
+      _streamSizeLogged = true;
+      EventLog.instance.log('camera.frame', {
+        'iw': image.width,
+        'ih': image.height,
+        'fmt': image.format.group.name,
+      });
+    }
+    // B안 ①(d): 프레임 저장(개발 설정, 기본 꺼짐). 1초에 1장, 평면 복사만 여기서.
+    if (_frameSaveEnabled) {
+      final rotations = _modelRotations;
+      _frameSaver.maybeSave(image, DateTime.now(), onDone: (r) {
+        EventLog.instance.log('frame', {
+          'file': r.file,
+          'ok': r.ok,
+          'kb': r.bytes ~/ 1024,
+          'dur': r.durMs,
+          'del': r.deleted,
+          'rot': rotations.upright,
+          'crot': rotations.classifier,
+          if (r.error != null) 'err': r.error,
+        });
+        if (mounted) setState(() {});
+      });
+    }
+
     final runsBefore = _classifier.runCount;
     final clsClock = Stopwatch()..start();
-    final result = _classifier.processFrame(image);
+    final result = _classifier.processFrame(image,
+        rotationDegrees: _modelRotations.classifier);
     if (_classifier.runCount != runsBefore) {
       // T106: 분류기가 실제로 돈 프레임만. ok=false면 임계값 미달(무판정 쪽).
       EventLog.instance.log('cls', {
@@ -588,6 +628,169 @@ class _CameraScreenState extends State<CameraScreen>
   double? _zoomMax;
   int _backCameraCount = 0;
 
+  // B안 ①: 데이터 수집용 개발 설정(`dev_capture.dart`, 설계
+  // `train/phone_ultrawide/design.md`). 셋 다 기본 꺼짐·세션 한정.
+  bool _ultraWideEnabled = false;
+  ZoomApplyStatus _zoomStatus = ZoomApplyStatus.off;
+  double? _zoomTarget;
+  CameraMount _mount = CameraMount.portrait;
+  bool _frameSaveEnabled = false;
+  final FrameSaver _frameSaver = FrameSaver();
+  bool _streamSizeLogged = false;
+
+  /// 모델별 입력 회전. 세로(기본)면 각도·위치·노면 = 센서 회전, 분류기 = 0으로
+  /// 지금과 같다.
+  CameraMountRotations get _modelRotations => CameraMountRotations.of(
+      _mount, _controller?.description.sensorOrientation ?? 90);
+
+  /// 초광각(0.6배)을 걸거나(켬) 1배로 되돌린다(끔, [atInit]이면 건너뜀).
+  /// 플러그인은 줌 실패를 예외 없이 에러 스트림으로만 보낸다
+  /// (`camera_android_camerax` 0.6.19+1 `android_camera_camerax.dart:885-895`)
+  /// — 그 스트림을 잠깐 들어 실패를 잡는다. 조용히 1배로 돌지 않게 기록과
+  /// 디버그 박스에 남긴다(설계 금지 1번).
+  Future<void> _applyUltraWide(bool atInit) async {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
+    if (!_ultraWideEnabled) {
+      if (atInit) return;
+      final err = await _setZoomChecked(controller, 1.0);
+      EventLog.instance.log('zoomSet', {
+        'req': 1.0,
+        'ok': err == null,
+        if (err != null) 'err': err,
+      });
+      if (mounted) {
+        setState(() {
+          _zoomStatus = ZoomApplyStatus.off;
+          _zoomTarget = null;
+        });
+      }
+      return;
+    }
+    final target = ultraWideZoomTarget(_zoomMin);
+    if (target == null) {
+      EventLog.instance.log('zoomSet', {
+        'req': ultraWideZoom,
+        'ok': false,
+        'why': 'unsupported',
+        'zoomMin': _zoomMin,
+      });
+      if (mounted) {
+        setState(() {
+          _zoomStatus = ZoomApplyStatus.unsupported;
+          _zoomTarget = null;
+        });
+      }
+      return;
+    }
+    final err = await _setZoomChecked(controller, target);
+    EventLog.instance.log('zoomSet', {
+      'req': target,
+      'ok': err == null,
+      'zoomMin': _zoomMin,
+      if (err != null) 'err': err,
+    });
+    if (mounted) {
+      setState(() {
+        _zoomStatus =
+            err == null ? ZoomApplyStatus.applied : ZoomApplyStatus.failed;
+        _zoomTarget = target;
+      });
+    }
+  }
+
+  /// 줌을 걸고, 예외나 그 사이 에러 스트림 이벤트가 있으면 그 내용을 돌려준다.
+  /// 플러그인은 에러를 `setZoomLevel`이 끝나기 전에 넣지만 스트림 전달은 비동기라
+  /// 300ms 더 듣는다(초광각 설정을 켰을 때만 드는 지연).
+  Future<String?> _setZoomChecked(
+      CameraController controller, double zoom) async {
+    String? err;
+    StreamSubscription<Object>? sub;
+    try {
+      sub = CameraPlatform.instance
+          .onCameraError(controller.cameraId)
+          .listen((e) => err ??= e.description);
+    } catch (e) {
+      err = 'error stream: $e';
+    }
+    try {
+      await controller.setZoomLevel(zoom);
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+    } catch (e) {
+      err ??= '$e';
+    } finally {
+      await sub?.cancel();
+    }
+    return err;
+  }
+
+  Future<void> _setUltraWideEnabled(bool enabled) async {
+    EventLog.instance.log('set', {'key': 'ultraWide', 'value': enabled});
+    if (mounted) setState(() => _ultraWideEnabled = enabled);
+    await _applyUltraWide(false);
+  }
+
+  void _setCameraMount(CameraMount mount) {
+    if (mount == _mount) return;
+    final r = CameraMountRotations.of(
+        mount, _controller?.description.sensorOrientation ?? 90);
+    EventLog.instance.log('set', {
+      'key': 'mount',
+      'value': mount.name,
+      'rot': r.upright,
+      'crot': r.classifier,
+    });
+    // 방향이 바뀌면 이전 방향으로 잰 각도·위치는 뜻이 없다.
+    _angleSmoother.reset();
+    _positionSmoother.reset();
+    if (mounted) {
+      setState(() {
+        _mount = mount;
+        _arrowStripeAngle = null;
+        _smoothedPosition = null;
+      });
+    }
+  }
+
+  Future<void> _setFrameSaveEnabled(bool enabled) async {
+    EventLog.instance.log('set', {'key': 'frameSave', 'value': enabled});
+    if (enabled) {
+      try {
+        await _frameSaver.start(DateTime.now());
+        EventLog.instance.log('frame.start', {
+          'dir': _frameSaver.sessionDir?.path.split(RegExp(r'[\\/]')).last,
+          'mb': _frameSaver.totalBytes ~/ (1024 * 1024),
+        });
+      } catch (e) {
+        EventLog.instance.log('frame.start', {'err': '$e'});
+        _frameSaver.lastError = '$e';
+        if (mounted) setState(() {});
+        return;
+      }
+    } else {
+      _frameSaver.stop();
+    }
+    if (mounted) setState(() => _frameSaveEnabled = enabled);
+  }
+
+  /// 저장 프레임을 공유 창으로 넘긴다(가장 최근 저장 묶음). 기록 보내기와 같은 방식.
+  Future<String?> _shareFrames() async {
+    final files = await _frameSaver.latestSessionFiles();
+    if (files.isEmpty) return _strings.settingsFrameShareEmpty;
+    try {
+      final result = await SharePlus.instance.share(ShareParams(
+        files: [for (final f in files) XFile(f.path, mimeType: 'image/jpeg')],
+        subject: 'crosswalk frames $buildShaShort',
+      ));
+      EventLog.instance.log(
+          'frame.share', {'files': files.length, 'status': result.status.name});
+      return null;
+    } catch (e) {
+      EventLog.instance.log('frame.share', {'files': files.length, 'err': '$e'});
+      return _strings.settingsFrameShareFailed;
+    }
+  }
+
   // T105: 주의 구역 안내(실험, 별도 스위치 — 사용자 확정 Q4). 같은 분할 결과를 쓴다.
   // 판정표는 `docs/CautionGuidance.md`, 로직은 `CautionGuide`.
   final CautionGuide _cautionGuide = CautionGuide();
@@ -599,7 +802,7 @@ class _CameraScreenState extends State<CameraScreen>
     }
     _surfaceFrameCount++;
     if (_surfaceFrameCount % 10 != 9) return;
-    final rot = _controller?.description.sensorOrientation ?? 90;
+    final rot = _modelRotations.upright;
     final surfClock = Stopwatch()..start();
     final f = _surfaceEstimator.estimate(image, rot);
     if (f == null) {
@@ -741,7 +944,7 @@ class _CameraScreenState extends State<CameraScreen>
       // 학습 라벨이 EXIF 보정된 화면(세로) 방향 기준이라, 센서 버퍼를 그대로
       // 넣으면 약 90도 계통 오차가 난다. sensorOrientation만큼 시계방향
       // 회전을 적용해 맞춘다(angle_estimator.dart의 sensorCoord).
-      final rot = _controller?.description.sensorOrientation ?? 90;
+      final rot = _modelRotations.upright;
       final angleClock = Stopwatch()..start();
       raw = _angleEstimator.estimate(image, rot);
       angleMs = angleClock.elapsedMilliseconds;
@@ -931,7 +1134,7 @@ class _CameraScreenState extends State<CameraScreen>
     double? raw;
     int? posMs;
     if (DirectionResolver.isOnCrosswalk(_guidanceLabel) && !_noCall) {
-      final rot = _controller?.description.sensorOrientation ?? 90;
+      final rot = _modelRotations.upright;
       final posClock = Stopwatch()..start();
       raw = _positionEstimator.estimate(image, rot);
       posMs = posClock.elapsedMilliseconds;
@@ -983,6 +1186,16 @@ class _CameraScreenState extends State<CameraScreen>
       });
     }
   }
+
+  String get _devCaptureLine => devCaptureText(
+        ultraWide: _ultraWideEnabled,
+        zoomStatus: _zoomStatus,
+        zoomTarget: _zoomTarget,
+        mount: _mount,
+        frameSave: _frameSaveEnabled,
+        savedFrames: _frameSaver.savedCount,
+        frameError: _frameSaver.lastError,
+      );
 
   String _stripeDebugText() {
     if (!_angleEstimator.isReady) return '보정 모델 준비 중';
@@ -1261,6 +1474,13 @@ class _CameraScreenState extends State<CameraScreen>
                   eventLogEnabled: EventLog.instance.enabled,
                   onEventLogChanged: EventLog.instance.setEnabled,
                   onShareEventLog: _shareEventLog,
+                  ultraWideEnabled: _ultraWideEnabled,
+                  onUltraWideChanged: _setUltraWideEnabled,
+                  cameraMount: _mount,
+                  onCameraMountChanged: _setCameraMount,
+                  frameSaveEnabled: _frameSaveEnabled,
+                  onFrameSaveChanged: _setFrameSaveEnabled,
+                  onShareFrames: _shareFrames,
                 ),
               ),
             );
@@ -1670,6 +1890,8 @@ class _CameraScreenState extends State<CameraScreen>
                                   '${_stripeDebugText()}  ·  빌드 $buildShaShort'
                                   // T117: 폰 초광각 접근 가능 여부(최소 줌 < 1).
                                   '\n${zoomProbeText(_zoomMin, _zoomMax, _backCameraCount)}'
+                                  // B안 ①: 개발 설정이 하나라도 켜졌을 때만 한 줄.
+                                  '${_devCaptureLine.isEmpty ? '' : '\n$_devCaptureLine'}'
                                   // T104: 노면 안내가 켜져 있으면 발 앞 칸 비율(%).
                                   '${_surfaceEnabled || _cautionEnabled ? '\n노면 앞: ${_lastSurface?.front ?? '-'}' : ''}',
                                   textAlign: TextAlign.center,

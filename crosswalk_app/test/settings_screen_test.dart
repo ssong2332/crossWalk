@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:crosswalk_app/localization/app_strings.dart';
 import 'package:crosswalk_app/screens/settings_screen.dart';
+import 'package:crosswalk_app/services/dev_capture.dart';
 import 'package:crosswalk_app/services/feedback_service.dart';
 
 void main() {
@@ -471,5 +472,83 @@ void main() {
         expect(feedback.vibrationDurationMs, greaterThan(500));
       },
     );
+  });
+
+  group('SettingsScreen — 개발용 수집 (B안 ①)', () {
+    Widget build({
+      ValueChanged<bool>? onUltraWide,
+      ValueChanged<CameraMount>? onMount,
+      ValueChanged<bool>? onFrameSave,
+      Future<String?> Function()? onShareFrames,
+    }) {
+      return MaterialApp(
+        home: SettingsScreen(
+          feedback: FeedbackService(),
+          language: AppLanguage.ko,
+          onLanguageChanged: (_) {},
+          torchEnabled: false,
+          onTorchChanged: (_) async {},
+          powerSaveMode: false,
+          onPowerSaveModeChanged: (_) {},
+          onUltraWideChanged: onUltraWide,
+          onCameraMountChanged: onMount,
+          onFrameSaveChanged: onFrameSave,
+          onShareFrames: onShareFrames,
+        ),
+      );
+    }
+
+    testWidgets('콜백이 없으면 구역을 그리지 않는다(기존 화면 그대로)', (tester) async {
+      tester.view.physicalSize = const Size(800, 5000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(build());
+      await tester.pumpAndSettle();
+      expect(find.text('빌드 dev'), findsOneWidget, reason: '목록 끝까지 빌드됨');
+      expect(find.text('개발용 수집 (초광각)'), findsNothing);
+      expect(find.text('초광각 0.6배'), findsNothing);
+      expect(find.text('프레임 저장'), findsNothing);
+    });
+
+    testWidgets('셋 다 기본 꺼짐(세로)이고, 바꾸면 콜백을 부른다', (tester) async {
+      tester.view.physicalSize = const Size(800, 5000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      bool? ultraWide;
+      CameraMount? mount;
+      bool? frameSave;
+      var shares = 0;
+      await tester.pumpWidget(build(
+        onUltraWide: (v) => ultraWide = v,
+        onMount: (m) => mount = m,
+        onFrameSave: (v) => frameSave = v,
+        onShareFrames: () async {
+          shares++;
+          return '보낼 프레임이 없습니다';
+        },
+      ));
+      await tester.pumpAndSettle();
+
+      final uw = find.widgetWithText(SwitchListTile, '초광각 0.6배');
+      final fs = find.widgetWithText(SwitchListTile, '프레임 저장');
+      expect(tester.widget<SwitchListTile>(uw).value, isFalse);
+      expect(tester.widget<SwitchListTile>(fs).value, isFalse);
+      final seg = tester.widget<SegmentedButton<CameraMount>>(
+          find.byType(SegmentedButton<CameraMount>));
+      expect(seg.selected, {CameraMount.portrait});
+
+      await tester.tap(uw);
+      await tester.tap(find.text('가로·위 왼쪽'));
+      await tester.tap(fs);
+      await tester.pumpAndSettle();
+      expect(ultraWide, isTrue);
+      expect(mount, CameraMount.landscapeTopLeft);
+      expect(frameSave, isTrue);
+
+      await tester.tap(find.text('프레임 보내기 (최근 묶음)'));
+      await tester.pumpAndSettle();
+      expect(shares, 1);
+      expect(find.text('보낼 프레임이 없습니다'), findsOneWidget);
+    });
   });
 }
