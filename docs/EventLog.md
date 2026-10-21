@@ -66,7 +66,7 @@
 | `say.end` | 음성 재생이 끝남 | `text`, `p`, `res`(done/timeout/error/superseded), `dur`(ms) — 다른 안내가 끊으면 짧게 끝난다. T121: superseded = stop을 기다리는 사이 더 새 발화가 시작돼 speak를 보내지 않음(재생 없음) | `_speak` |
 | `say.ttl` | 대기하던 안내가 TTL을 넘겨 버려짐 (T108: 보류한 회복 안내가 2.7초를 넘겨도 / 새 P1을 넣기 전 만료된 대기 항목을 치울 때도) | `text`, `p` | `_drainPending`, `alert`, `_speak` |
 | `say.defer` | 회복 안내를 보류함 (T108 Q1 — front 0.7초 유지 확인 전) / 횡단보도 없음 상태의 멈춤 블록을 1.3초 보류함 (T118) | `text` | `alert`, `surfaceAlert` |
-| `say.cancel` | 보류·대기 안내를 말하지 않고 취소 | `text`, `why`(flicker = front가 아니게 됨 / superseded = 앞에 횡단보도가 멈춤 블록을 대체 / same_dir = 같은 방향 이탈 경고 6초 묶음으로 생략(T120 — 종전 3초 쿨다운이었다면 말했을 때만, 같은 문장은 3초에 1번 기록)) | `alert`, `decideMessage` |
+| `say.cancel` | 보류·대기 안내를 말하지 않고 취소 | `text`, `why`(flicker = front가 아니게 됨 / superseded = 앞에 횡단보도가 멈춤 블록을 대체 / same_dir = 같은 방향 이탈 경고 6초 묶음으로 생략(T120 — 종전 3초 쿨다운이었다면 말했을 때만, 같은 문장은 3초에 1번 기록) / state = 멈춤 블록 보류가 끝나 말하려 할 때 분류 상태가 none(또는 빈 값)이 아니게 바뀜(T118, `feedback_service.dart` `_holdDotBlock`)) | `alert`, `decideMessage` |
 | `vib` | 진동 요청 | `kind`(left/right/recover/road/line_on), `ok`, `mode`(pattern/single), `pat`(ms 배열: 대기·켬·끔…) 또는 `why`(no_vibrator) | `feedback_service.dart` `alert`, `surfaceAlert` |
 
 `vib`는 앱이 진동을 **요청한** 기록이다. 모터가 실제로 떨렸는지, 사용자가 느꼈는지는 체크리스트로만 안다.
