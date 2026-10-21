@@ -10,11 +10,13 @@
 // time as an explicit parameter. Tests drive this method directly on a
 // fresh FeedbackService() instance and never call init() or touch
 // _tts/Vibration.
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:crosswalk_app/localization/app_strings.dart';
+import 'package:crosswalk_app/services/audio_policy.dart';
 import 'package:crosswalk_app/services/crossing_hold.dart';
 import 'package:crosswalk_app/services/event_log.dart';
 import 'package:crosswalk_app/services/feedback_service.dart';
@@ -1280,4 +1282,144 @@ void main() {
       expect(bundled().single['text'], leftMild);
     });
   });
+
+  // T121(사용자 승인 2026-10-21): 이탈 경고가 들리지 않던 문제(F1+F2).
+  // 가짜 TTS는 flutter_tts-4.2.5 안드로이드 동작을 흉내 낸다 — 재생 중에 온 speak는
+  // 재생 없이 곧바로 0을 돌려주고(FlutterTtsPlugin.kt:304-309), stop은 재생 중인
+  // speak의 결과를 0으로 끝낸다(:379-382). stop 왕복에 [stopLatency]가 걸린다.
+  group('삼켜진 이탈 경고 (T121)', () {
+    final ko = AppStrings.of(AppLanguage.ko);
+    const leftEdge = '오른쪽으로 이동하세요. 가장자리입니다';
+
+    List<Map<String, dynamic>> logged(String ev) => EventLog.instance.earlyLines
+        .map((l) => jsonDecode(l) as Map<String, dynamic>)
+        .where((m) => m['ev'] == ev)
+        .toList();
+
+    _FakeTts install() {
+      final fake = _FakeTts();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(ttsChannel, fake.handle);
+      return fake;
+    }
+
+    /// 진입 직전 상태(approach)를 안내 없이 만든다: front -> approach는 침묵.
+    Future<void> toApproach(FeedbackService s) async {
+      await s.alert('front', 0.9);
+      await s.alert('approach', 0.9);
+    }
+
+    testWidgets('① 진입과 이탈이 같은 프레임에 나면 이탈 경고가 재생된다', (tester) async {
+      EventLog.instance.clearForTest();
+      final fake = install();
+      final s = FeedbackService();
+      await toApproach(s);
+      await s.alert('left', 0.9, angleDegrees: mild); // 진입(P1) + 이탈(P0)
+      await tester.pump(const Duration(milliseconds: 150)); // stop 왕복 뒤
+      expect(fake.speaking, leftMild, reason: '들리는 것은 이탈 경고');
+      expect(fake.played, [leftMild]);
+      expect(fake.ignored, isEmpty, reason: '플러그인이 삼킨 speak가 없어야 한다');
+      final entry = logged('say')
+          .where((m) => m['text'] == ko.enteredCrosswalkMessage)
+          .single;
+      expect(entry['act'], 'queue', reason: '진입은 기존 대기 규칙');
+      expect(entry['why'], 'wait_p0');
+      await tester.pump(const Duration(seconds: 5));
+      await _disposeIn(tester, s);
+    });
+
+    testWidgets('② 이탈 경고끼리 64ms 간격이면 나중 것이 재생된다', (tester) async {
+      EventLog.instance.clearForTest();
+      final fake = install();
+      final s = FeedbackService();
+      await s.alert('left', 0.9, angleDegrees: mild);
+      await tester.pump(const Duration(milliseconds: 64)); // 앞 stop이 끝나기 전
+      await s.alert('left', 0.9, angleDegrees: 20, atEdge: true); // 단계 상승
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(fake.speaking, leftEdge);
+      expect(fake.played, [leftEdge], reason: '앞 요청은 speak를 보내지 않는다');
+      expect(fake.ignored, isEmpty);
+      final ends = logged('say.end');
+      expect(ends.single['text'], leftMild);
+      expect(ends.single['res'], 'superseded', reason: '건너뛴 것은 say.end에 남긴다');
+      await tester.pump(const Duration(seconds: 2));
+      expect(logged('say.end').last['text'], leftEdge);
+      expect(logged('say.end').last['res'], 'done');
+      await _disposeIn(tester, s);
+    });
+
+    testWidgets('③ 정책이 아는 재생 중 상태가 실제 재생과 같다', (tester) async {
+      EventLog.instance.clearForTest();
+      final fake = install();
+      final s = FeedbackService();
+      await toApproach(s);
+      await s.alert('left', 0.9, angleDegrees: mild); // 진입 + 이탈
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(fake.speaking, leftMild);
+      expect(s.audioPolicy.activePriority, FeedbackPriority.p0);
+      expect(s.audioPolicy.activeMessage, leftMild);
+      // 이탈 경고가 끝나면 둘 다 조용하다(전에는 진입이 재생 중인데 정책은 조용하다고 봤다).
+      await tester.pump(const Duration(milliseconds: 1000));
+      expect(fake.speaking, isNull);
+      expect(s.audioPolicy.activePriority, isNull);
+      expect(s.audioPolicy.activeMessage, isNull);
+      await tester.pump(const Duration(seconds: 5));
+      await _disposeIn(tester, s);
+    });
+  });
+}
+
+/// T121: 대기 꺼내기 타이머를 정리한다. 최소 간격은 실제 시각으로 재므로 가짜 시계에서는
+/// 대기가 다시 예약된다(위 (g) 주석) — 테스트 끝에 남은 타이머를 dispose로 끈다.
+Future<void> _disposeIn(WidgetTester tester, FeedbackService s) async {
+  unawaited(s.dispose());
+  await tester.pump(const Duration(seconds: 1));
+}
+
+/// T121: flutter_tts-4.2.5 안드로이드(QUEUE_FLUSH + awaitSpeakCompletion)를 흉내 낸 가짜.
+class _FakeTts {
+  _FakeTts();
+
+  static const stopLatency = Duration(milliseconds: 100);
+  static const utterance = Duration(milliseconds: 1000);
+
+  String? speaking;
+  final played = <String>[];
+  final ignored = <String>[];
+  Completer<int>? _pending;
+  Timer? _done;
+
+  Future<Object?> handle(MethodCall call) async {
+    switch (call.method) {
+      case 'stop':
+        // 플랫폼은 stop을 받는 즉시 적용하고, 응답만 늦게 돌아온다.
+        _finish(0);
+        await Future<void>.delayed(stopLatency);
+        return 1;
+      case 'speak':
+        final args = call.arguments;
+        final text = args is Map ? args['text'] as String : args as String;
+        if (speaking != null) {
+          ignored.add(text);
+          return 0;
+        }
+        speaking = text;
+        played.add(text);
+        final c = Completer<int>();
+        _pending = c;
+        _done = Timer(utterance, () => _finish(1));
+        return c.future;
+      default:
+        return 1;
+    }
+  }
+
+  void _finish(int value) {
+    _done?.cancel();
+    _done = null;
+    final c = _pending;
+    _pending = null;
+    speaking = null;
+    if (c != null && !c.isCompleted) c.complete(value);
+  }
 }

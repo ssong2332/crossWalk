@@ -194,6 +194,8 @@ P0 발화 시간은 예산에 **누적되지 않는다** — 안전 경고가 �
 | T118 보완 — 블록 보류 상태 재확인 (리뷰 2-a, 2026-10-20) | 1.3초 보류 타이머가 울릴 때 마지막 상태를 다시 본다. 그사이 횡단보도 없음(none·콜드스타트)이 아니게 됐으면(예: none→front 횡단 시작) 말하지 않음(`say.cancel` why=state). 마지막 상태가 위(front·hold 중)·crossed·approach면 보류 없이 바로 처리(종전대로) | `FeedbackService._holdDotBlock`, `holdsDotBlock` |
 | T118 보완 — 일찍 해제 뒤 건넘 안내 창 (리뷰 3-a, 2026-10-20) | hold가 발밑 인도로 일찍 풀린 뒤 none/approach→crossed는 **hold 시작 + 10초와 해제 + 5초 중 늦은 쪽**까지 "건넜습니다". 6e194b0은 해제 + 5초만 봐서, hold 시작 + 10초(일찍 풀기 전 hold→crossed가 안내되던 창)보다 짧아질 수 있었다(hold 시작 5초 안에 풀리면, 예: 3초 해제 → 8~10초 crossed 침묵) | `FeedbackService.groundReleaseCrossedUntil`, `CrossingHold.releasedHoldStartedAt` |
 | T118 대기 꺼내기 | 타이머를 간격 끝 + 20ms에 울린다 — 일찍 울려 같은 ms에 대기를 반복하던 문제(10/19 L3471~L3484) | `FeedbackService.drainDelay` |
+| T121 F1 새 요청이 이김 (사용자 승인 2026-10-21) | `stop`을 기다리는 동안 더 새 발화가 시작됐으면 이 발화는 `speak`를 보내지 않는다(`say.end` res=`superseded`). 전에는 플랫폼 순서가 stop·stop·speak·speak로 꼬여, 플러그인이 재생 중에 온 새 speak를 재생 없이 성공으로 돌려줬다(flutter_tts-4.2.5 `FlutterTtsPlugin.kt:304-309`). 그 결과 정책이 끊으라고 한 새 발화가 삼켜지고, 정책은 실제로 재생 중인 앞 발화를 '재생 없음'으로 봤다. 근거: 녹화 10/16 L627, 10/19 L3381(이탈 경고 대신 "진입했습니다"), 이탈끼리 64·68ms(10/02 L1606, L2321). 정책이 대기·버림으로 정한 요청은 재생 경로에 오지 않으므로 낮은 등급이 이기는 일은 없다 | `FeedbackService._speak` |
+| T121 F2 같은 프레임 순서 | 한 번의 `alert`에서 이탈 경고(P0)와 구간 안내(P1, 예: "진입했습니다")가 함께 나면 **이탈 경고를 먼저** 요청한다. 구간 안내는 이탈 경고 재생 중이라 기존 대기 규칙(`wait_p0`, TTL 3초 — §2·§3)을 따른다 | `FeedbackService.alert` |
 
 Q1 판정표:
 
