@@ -49,16 +49,16 @@ void main() {
       // T51: new 5-class label.
       expect(strings.labelApproach, '앞에 횡단보도');
       // T63: 이탈 정도(모델 확신도 근사치)에 따른 2단계 문구.
-      expect(strings.leftDeviationMessageMild, '오른쪽으로 이동하세요');
-      expect(strings.leftDeviationMessageSevere, '즉시 오른쪽으로 이동하세요');
-      expect(strings.rightDeviationMessageMild, '왼쪽으로 이동하세요');
-      expect(strings.rightDeviationMessageSevere, '즉시 왼쪽으로 이동하세요');
+      expect(strings.leftDeviationMessageMild, '오른쪽으로 가세요');
+      expect(strings.leftDeviationMessageSevere, '즉시 오른쪽으로 가세요');
+      expect(strings.rightDeviationMessageMild, '왼쪽으로 가세요');
+      expect(strings.rightDeviationMessageSevere, '즉시 왼쪽으로 가세요');
       expect(strings.recoveredMessage, '직진하세요');
       // T102: 끝 전용 문구.
       expect(strings.labelLeftEdge, '왼쪽 끝');
       expect(strings.labelRightEdge, '오른쪽 끝');
-      expect(strings.leftEdgeMessage, '오른쪽으로 이동하세요. 가장자리입니다');
-      expect(strings.rightEdgeMessage, '왼쪽으로 이동하세요. 가장자리입니다');
+      expect(strings.leftEdgeMessage, '오른쪽으로 가세요. 가장자리입니다');
+      expect(strings.rightEdgeMessage, '왼쪽으로 가세요. 가장자리입니다');
       expect(strings.edgeTurnedMessage, '그대로 가세요');
       // T104: 노면 안내(사용자 확정 2026-09-30).
       expect(strings.surfaceRoadMessage, '차도입니다');

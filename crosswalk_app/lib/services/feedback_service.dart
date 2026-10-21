@@ -147,7 +147,7 @@ class FeedbackService {
       drainMargin;
 
   /// T118(사용자 확정 A, 2026-10-20): 횡단보도 없음 상태의 "멈춤 블록입니다"는
-  /// 잠깐 보류한다. 그사이 "앞에 횡단보도가 있습니다"가 나오면 그것만 말한다.
+  /// 잠깐 보류한다. 그사이 "앞에 횡단보도"가 나오면 그것만 말한다.
   /// 기록 17건 중 블록 뒤 앞에 횡단보도가 온 7건이 모두 1.25초 안이었다.
   static const dotBlockHold = Duration(milliseconds: 1300);
   Timer? _dotBlockTimer;
@@ -290,7 +290,7 @@ class FeedbackService {
   @visibleForTesting
   ///
   /// T102: [atEdge]면(끝 규칙이 낸 left/right) 강도와 무관하게 끝 전용 문구
-  /// ("오른쪽으로 이동하세요. 가장자리입니다")를 낸다. 끝 각도는 ±20으로
+  /// ("오른쪽으로 가세요. 가장자리입니다")를 낸다. 끝 각도는 ±20으로
   /// 고정돼 심함(25) 기준에 닿지 않으므로 "즉시" 변형은 없다.
   String? decideMessage(
       String detectedClass, double? angleDegrees, DateTime now,
@@ -366,7 +366,7 @@ class FeedbackService {
     return message;
   }
 
-  // T63: 구간이 바뀌었다는 1회성 사실 안내. "왼쪽/오른쪽으로 이동하세요"처럼
+  // T63: 구간이 바뀌었다는 1회성 사실 안내. "왼쪽/오른쪽으로 가세요"처럼
   // 반복되는 경고가 아니므로 decideMessage와 분리했고, 클래스가 실제로
   // 바뀐 프레임에서만 값을 낸다 — 매 프레임 재확인하는 것이 아니다.
   // 3초 재쿨다운은 판정이 approach<->front 사이에서 떨릴 때(flicker) 같은
@@ -795,7 +795,7 @@ class FeedbackService {
     // 반복 경고가 아니라 1회성 사실이므로 이탈 경고보다 낮은 우선순위다.
     final phaseMessage = decidePhaseMessage(previous, detectedClass, now);
     if (phaseMessage != null) {
-      // T108 Q3: "앞에 횡단보도가 있습니다"는 재생 중이거나 대기 중인
+      // T108 Q3: "앞에 횡단보도"는 재생 중이거나 대기 중인
       // "멈춤 블록입니다"를 대체한다(같은 연석에서 같은 뜻 — 멈춰서 확인).
       final dotBlock = AppStrings.of(_language).surfaceDotBlockMessage;
       final supersedes = supersedesDotBlock(

@@ -120,7 +120,7 @@ class DirectionResolver {
   }
 
   /// T102: 최종 상태 [resolvedLabel]이 끝 규칙에서 나왔는가(음성·화면 문구용).
-  ///   left/right + 끝 → 끝 안내("…이동하세요. 가장자리입니다" / "왼쪽 끝"),
+  ///   left/right + 끝 → 끝 안내("…가세요. 가장자리입니다" / "왼쪽 끝"),
   ///   front + 끝 → 이미 중앙 쪽으로 틀었음("그대로 가세요").
   ///   none/approach면 옛 위치값이 남아 있어도 false.
   static bool isEdge(
