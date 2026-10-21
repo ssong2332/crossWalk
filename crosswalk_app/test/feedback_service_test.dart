@@ -490,6 +490,75 @@ void main() {
       );
       expect(after, isNotNull);
     });
+
+    // T123(사용자 결정 2026-10-21): 3초 재쿨다운은 같은 문장끼리만.
+    // 10/21 기록: "앞에 횡단보도" 뒤 0.87~2.87초 만에 위로 들어오면 "진입했습니다"가
+    // 요청조차 되지 않았다(10번 중 8번).
+    test('앞에 횡단보도 직후 진입은 3초 안이어도 안내한다 (T123)', () {
+      final s = FeedbackService();
+      final t0 = DateTime(2026, 10, 21, 17, 15, 0);
+      final ko = AppStrings.of(AppLanguage.ko);
+      expect(s.decidePhaseMessage('none', 'approach', t0),
+          ko.approachAheadMessage);
+      expect(
+          s.decidePhaseMessage(
+              'approach', 'front', t0.add(const Duration(milliseconds: 870))),
+          ko.enteredCrosswalkMessage);
+    });
+
+    test('진입 직후 건넘도 서로 막지 않는다 (T123)', () {
+      final s = FeedbackService();
+      final t0 = DateTime(2026, 10, 21, 17, 15, 0);
+      final ko = AppStrings.of(AppLanguage.ko);
+      expect(s.decidePhaseMessage('approach', 'left', t0),
+          ko.enteredCrosswalkMessage);
+      expect(
+          s.decidePhaseMessage(
+              'front', 'crossed', t0.add(const Duration(seconds: 1))),
+          ko.crossedCrosswalkMessage);
+    });
+
+    test('같은 문장은 여전히 3초 안에 다시 말하지 않는다 (T123)', () {
+      final s = FeedbackService();
+      final t0 = DateTime(2026, 10, 21, 17, 15, 0);
+      final ko = AppStrings.of(AppLanguage.ko);
+      expect(s.decidePhaseMessage('none', 'approach', t0),
+          ko.approachAheadMessage);
+      expect(
+          s.decidePhaseMessage(
+              'approach', 'front', t0.add(const Duration(seconds: 1))),
+          ko.enteredCrosswalkMessage);
+      // 떨림: approach -> none -> approach -> front 가 3초 안에 다시 일어남.
+      expect(
+          s.decidePhaseMessage(
+              'none', 'approach', t0.add(const Duration(seconds: 2))),
+          isNull);
+      expect(
+          s.decidePhaseMessage(
+              'approach', 'front', t0.add(const Duration(milliseconds: 2500))),
+          isNull);
+      expect(
+          s.decidePhaseMessage(
+              'approach', 'front', t0.add(const Duration(milliseconds: 4000))),
+          ko.enteredCrosswalkMessage);
+    });
+
+    testWidgets('alert(): none -> approach -> front가 바로 이어져도 진입 요청 (T123)',
+        (tester) async {
+      EventLog.instance.clearForTest();
+      final ko = AppStrings.of(AppLanguage.ko);
+      final s = FeedbackService();
+      await s.alert('none', 0.9);
+      await s.alert('approach', 0.9);
+      await s.alert('front', 0.9);
+      final says = EventLog.instance.earlyLines
+          .map((l) => jsonDecode(l) as Map<String, dynamic>)
+          .where((m) => m['ev'] == 'say')
+          .map((m) => m['text'])
+          .toList();
+      expect(says, [ko.approachAheadMessage, ko.enteredCrosswalkMessage]);
+      await _disposeIn(tester, s);
+    });
   });
 
   // T63: 이탈에서 회복했을 때만 1회 발화. 처음부터 똑바로 가는 경우
