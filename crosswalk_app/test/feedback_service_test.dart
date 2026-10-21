@@ -25,10 +25,10 @@ import 'package:crosswalk_app/services/surface_guide.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  const leftMild = '오른쪽으로 이동하세요';
-  const leftSevere = '즉시 오른쪽으로 이동하세요';
-  const rightMild = '왼쪽으로 이동하세요';
-  const rightSevere = '즉시 왼쪽으로 이동하세요';
+  const leftMild = '오른쪽으로 가세요';
+  const leftSevere = '즉시 오른쪽으로 가세요';
+  const rightMild = '왼쪽으로 가세요';
+  const rightSevere = '즉시 왼쪽으로 가세요';
   // T84: decideMessage(class, angleDegrees, now)의 두 번째 인자는 각도
   // 모델의 보정 각도(도)다. |각도| >= FeedbackService.severeAngleDegrees(25)
   // 이면 심함. 아래 두 상수로 강도와 무관한 기존 쿨다운/전이 테스트를
@@ -277,18 +277,18 @@ void main() {
     test('returns the exact left-deviation Korean messages (mild/severe)', () {
       expect(
         FeedbackService().decideMessage('left', mild, DateTime(2026, 1, 1)),
-        '오른쪽으로 이동하세요',
+        '오른쪽으로 가세요',
       );
       expect(
         FeedbackService().decideMessage('left', severe, DateTime(2026, 1, 1)),
-        '즉시 오른쪽으로 이동하세요',
+        '즉시 오른쪽으로 가세요',
       );
     });
 
     test('returns the exact right-deviation Korean messages (mild/severe)', () {
       expect(
         FeedbackService().decideMessage('right', mild, DateTime(2026, 1, 1)),
-        '왼쪽으로 이동하세요',
+        '왼쪽으로 가세요',
       );
       expect(
         FeedbackService().decideMessage('right', severe, DateTime(2026, 1, 1)),
@@ -425,13 +425,13 @@ void main() {
               t0.add(const Duration(seconds: 2))), isNull);
     });
 
-    // T93: none(또는 콜드스타트) -> approach는 "앞에 횡단보도가 있습니다".
+    // T93: none(또는 콜드스타트) -> approach는 "앞에 횡단보도".
     test('none/콜드스타트 -> approach는 앞에 횡단보도 안내를 낸다 (T93)', () {
       final t0 = DateTime(2026, 1, 1, 12, 0, 0);
       expect(FeedbackService().decidePhaseMessage('none', 'approach', t0),
-          '앞에 횡단보도가 있습니다.');
+          '앞에 횡단보도');
       expect(FeedbackService().decidePhaseMessage('', 'approach', t0),
-          '앞에 횡단보도가 있습니다.',
+          '앞에 횡단보도',
           reason: '앱을 켰을 때 이미 앞에 횡단보도가 있으면 알려야 한다');
     });
 
@@ -699,9 +699,9 @@ void main() {
 
     test('끝이면 끝 전용 문구(B안)를 낸다', () {
       expect(FeedbackService().decideMessage('left', 20, t0, atEdge: true),
-          '오른쪽으로 이동하세요. 가장자리입니다');
+          '오른쪽으로 가세요. 가장자리입니다');
       expect(FeedbackService().decideMessage('right', -20, t0, atEdge: true),
-          '왼쪽으로 이동하세요. 가장자리입니다');
+          '왼쪽으로 가세요. 가장자리입니다');
     });
 
     test('끝이 아니면 기존 문구 그대로', () {
@@ -716,7 +716,7 @@ void main() {
       expect(
         service.decideMessage('left', 20, t0.add(const Duration(seconds: 1)),
             atEdge: true),
-        '오른쪽으로 이동하세요. 가장자리입니다',
+        '오른쪽으로 가세요. 가장자리입니다',
       );
       // 끝이 유지되면 쿨다운이 다시 걸린다.
       expect(
@@ -1122,8 +1122,8 @@ void main() {
   // 단계 = 가장자리 2 > 즉시 1 > 보통 0. 마지막으로 '말한' 단계와 비교한다.
   // 시각을 인자로 받는 순수 판정이라 타이머가 없다 — 가짜 시계 대신 시각을 직접 준다.
   group('같은 방향 이탈 묶음 (T120)', () {
-    const leftEdge = '오른쪽으로 이동하세요. 가장자리입니다';
-    const rightEdge = '왼쪽으로 이동하세요. 가장자리입니다';
+    const leftEdge = '오른쪽으로 가세요. 가장자리입니다';
+    const rightEdge = '왼쪽으로 가세요. 가장자리입니다';
     final t0 = DateTime(2026, 10, 20, 12, 0, 0);
     Duration ms(int v) => Duration(milliseconds: v);
 
@@ -1289,7 +1289,7 @@ void main() {
   // speak의 결과를 0으로 끝낸다(:379-382). stop 왕복에 [stopLatency]가 걸린다.
   group('삼켜진 이탈 경고 (T121)', () {
     final ko = AppStrings.of(AppLanguage.ko);
-    const leftEdge = '오른쪽으로 이동하세요. 가장자리입니다';
+    const leftEdge = '오른쪽으로 가세요. 가장자리입니다';
 
     List<Map<String, dynamic>> logged(String ev) => EventLog.instance.earlyLines
         .map((l) => jsonDecode(l) as Map<String, dynamic>)
