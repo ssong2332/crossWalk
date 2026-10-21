@@ -190,6 +190,9 @@ class AppStrings {
   final String settingsSurfaceGuidanceNote;
   final String settingsCautionGuidanceLabel;
   final String settingsCautionGuidanceNote;
+  // T125: 노면 횡단보도 확인(개발, 기본 꺼짐).
+  final String settingsCrosswalkGateLabel;
+  final String settingsCrosswalkGateNote;
   // T106: 개발용 기록 — 켜기/끄기(기본 켬)와 기록 보내기.
   final String settingsDevLogSectionHeader;
   final String settingsDevLogLabel;
@@ -339,6 +342,8 @@ class AppStrings {
     required this.settingsSurfaceGuidanceNote,
     required this.settingsCautionGuidanceLabel,
     required this.settingsCautionGuidanceNote,
+    required this.settingsCrosswalkGateLabel,
+    required this.settingsCrosswalkGateNote,
     required this.settingsDevLogSectionHeader,
     required this.settingsDevLogLabel,
     required this.settingsDevLogNote,
@@ -462,6 +467,9 @@ class AppStrings {
     settingsCautionGuidanceLabel: '주의 구역 안내 (실험)',
     settingsCautionGuidanceNote: '맨홀·그레이팅("발밑 주의")과 가로수 구역("가로수")을 '
         '음성으로 알려줍니다. 횡단보도 안내 중에는 말하지 않습니다. 배터리를 더 씁니다.',
+    settingsCrosswalkGateLabel: '노면 횡단보도 확인 (개발)',
+    settingsCrosswalkGateNote: '노면 모델이 횡단보도를 거의 못 보면 "앞에 횡단보도"를 '
+        '말하지 않습니다. 노면 안내나 주의 구역 안내가 켜져 있을 때만 동작합니다.',
     settingsDevLogSectionHeader: '개발용 기록',
     settingsDevLogLabel: '기록 남기기',
     settingsDevLogNote: '진동·음성·판정 결과를 이 폰에만 기록합니다. '
@@ -613,6 +621,9 @@ class AppStrings {
     settingsCautionGuidanceNote: 'Announces manholes and gratings ("Watch your step") and '
         'street tree zones ("Street tree"). Silent while crosswalk guidance is active. '
         'Uses more battery.',
+    settingsCrosswalkGateLabel: 'Surface crosswalk check (dev)',
+    settingsCrosswalkGateNote: 'Skips "Crosswalk ahead" when the surface model barely '
+        'sees a crosswalk. Works only while surface or caution guidance is on.',
     settingsDevLogSectionHeader: 'Developer log',
     settingsDevLogLabel: 'Keep a log',
     settingsDevLogNote: 'Records vibration, speech and detection results '

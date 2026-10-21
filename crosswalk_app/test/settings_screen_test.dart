@@ -43,6 +43,8 @@ void main() {
     ValueChanged<bool>? onSurfaceGuidanceChanged,
     bool cautionGuidanceEnabled = false,
     ValueChanged<bool>? onCautionGuidanceChanged,
+    bool crosswalkGateEnabled = false,
+    ValueChanged<bool>? onCrosswalkGateChanged,
     bool eventLogEnabled = true,
     ValueChanged<bool>? onEventLogChanged,
     Future<String?> Function()? onShareEventLog,
@@ -60,6 +62,8 @@ void main() {
         onSurfaceGuidanceChanged: onSurfaceGuidanceChanged,
         cautionGuidanceEnabled: cautionGuidanceEnabled,
         onCautionGuidanceChanged: onCautionGuidanceChanged,
+        crosswalkGateEnabled: crosswalkGateEnabled,
+        onCrosswalkGateChanged: onCrosswalkGateChanged,
         eventLogEnabled: eventLogEnabled,
         onEventLogChanged: onEventLogChanged,
         onShareEventLog: onShareEventLog,
@@ -222,6 +226,29 @@ void main() {
       await tester.pumpAndSettle();
       expect(caution, isTrue);
       expect(surface, isNull, reason: '노면 안내 스위치는 건드리지 않는다');
+    });
+
+    testWidgets('T125: 노면 횡단보도 확인 — 기본 꺼짐, 켜면 onCrosswalkGateChanged(true)',
+        (tester) async {
+      tester.view.physicalSize = const Size(800, 5000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      bool? gate;
+      await tester.pumpWidget(buildSettingsScreen(
+        feedback: FeedbackService(),
+        language: AppLanguage.ko,
+        onLanguageChanged: (_) {},
+        onCrosswalkGateChanged: (v) => gate = v,
+      ));
+      await tester.pumpAndSettle();
+      final finder =
+          find.widgetWithText(SwitchListTile, '노면 횡단보도 확인 (개발)');
+      await tester.ensureVisible(finder);
+      await tester.pumpAndSettle();
+      expect(tester.widget<SwitchListTile>(finder).value, isFalse);
+      await tester.tap(finder);
+      await tester.pumpAndSettle();
+      expect(gate, isTrue);
     });
   });
 

@@ -47,7 +47,8 @@ class SurfaceRegion {
       this.dot = 0,
       this.stairs = 0,
       this.manholeGrating = 0,
-      this.treeZone = 0});
+      this.treeZone = 0,
+      this.crosswalk = 0});
 
   final double sidewalk;
   final double road;
@@ -56,6 +57,9 @@ class SurfaceRegion {
   final double stairs;
   final double manholeGrating;
   final double treeZone;
+
+  /// T125: 기록용(판정표에는 안 씀).
+  final double crosswalk;
 
   @override
   String toString() => '인도 ${_p(sidewalk)} 차도 ${_p(road)} '
@@ -68,21 +72,29 @@ class SurfaceFeatures {
   const SurfaceFeatures(
       {this.left = const SurfaceRegion(),
       this.front = const SurfaceRegion(),
-      this.right = const SurfaceRegion()});
+      this.right = const SurfaceRegion(),
+      this.crosswalkAll = 0});
 
   final SurfaceRegion left;
   final SurfaceRegion front;
   final SurfaceRegion right;
 
-  /// 모델 출력 로짓 `[클래스][세로][가로]`(배치 차원 제거)에서 아래 절반만 argmax해
-  /// 세 칸의 비율을 낸다. 크기는 리스트 길이에서 읽는다.
+  /// T125: **화면 전체**(위 절반 포함)의 횡단보도 픽셀 비율 — 노면 횡단보도 확인
+  /// (`CrosswalkSurfaceGate`)과 기록에 쓴다. 학습 사진 분석(`surface_cw.csv` cw_all)과 같은 정의.
+  final double crosswalkAll;
+
+  /// 모델 출력 로짓 `[클래스][세로][가로]`(배치 차원 제거)에서 아래 절반을 argmax해
+  /// 세 칸의 비율을 낸다. 크기는 리스트 길이에서 읽는다. T125: 위 절반도 argmax해
+  /// 화면 전체 횡단보도 비율([crosswalkAll])만 센다.
   static SurfaceFeatures fromLogits(List logits) {
     final nCls = logits.length;
     final h = (logits[0] as List).length;
     final w = ((logits[0] as List)[0] as List).length;
     final counts = List.generate(3, (_) => List<int>.filled(SurfaceClass.count, 0));
     final totals = List<int>.filled(3, 0);
-    for (var y = h ~/ 2; y < h; y++) {
+    var crosswalkPixels = 0;
+    for (var y = 0; y < h; y++) {
+      final bottom = y >= h ~/ 2;
       final rows = [for (var c = 0; c < nCls; c++) (logits[c] as List)[y] as List];
       for (var x = 0; x < w; x++) {
         var best = 0;
@@ -94,6 +106,8 @@ class SurfaceFeatures {
             best = c;
           }
         }
+        if (best == SurfaceClass.crosswalk) crosswalkPixels++;
+        if (!bottom) continue;
         final region = x < w ~/ 3 ? 0 : (x < 2 * w ~/ 3 ? 1 : 2);
         if (best < SurfaceClass.count) counts[region][best]++;
         totals[region]++;
@@ -109,10 +123,15 @@ class SurfaceFeatures {
         stairs: counts[i][SurfaceClass.stairs] / t,
         manholeGrating: counts[i][SurfaceClass.manholeGrating] / t,
         treeZone: counts[i][SurfaceClass.treeZone] / t,
+        crosswalk: counts[i][SurfaceClass.crosswalk] / t,
       );
     }
 
-    return SurfaceFeatures(left: r(0), front: r(1), right: r(2));
+    return SurfaceFeatures(
+        left: r(0),
+        front: r(1),
+        right: r(2),
+        crosswalkAll: h * w == 0 ? 0 : crosswalkPixels / (h * w));
   }
 }
 

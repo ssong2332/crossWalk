@@ -12,6 +12,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../services/classifier.dart';
 import '../services/crossing_hold.dart';
+import '../services/crosswalk_surface_gate.dart';
 import '../services/dev_capture.dart';
 import '../services/event_log.dart';
 import '../services/surface_estimator.dart';
@@ -549,12 +550,25 @@ class _CameraScreenState extends State<CameraScreen>
       });
     }
     if (result != null) {
+      // T125: 노면 횡단보도 확인(개발, 기본 꺼짐) — approach인데 최근 노면 판정에
+      // 횡단보도가 거의 없으면 none으로 낮춘다(CrosswalkSurfaceGate 표). 위(front·
+      // left·right) 판정은 건드리지 않는다.
+      final gate = _crosswalkGate.apply(result.label,
+          enabled: _crosswalkGateEnabled, now: DateTime.now());
+      if (gate.verdict != null) {
+        EventLog.instance.log('cwgate', {
+          'v': gate.verdict,
+          'cw': gate.maxRatio,
+          'n': gate.samples,
+          'surf': _surfaceRunning,
+        });
+      }
       // T87: 방향은 각도 모델이 정한다 — 분류기 결과는 "없음/앞/위"로만 쓴다.
       // 여기서 정한 상태를 문구·화살표·음성·진동이 전부 공유한다.
       // 각도는 화살표와 같은 보정값(`_arrowStripeAngle`, 최대 10프레임 전).
       // T98: 끝이면 위치 규칙이 각도보다 앞선다(DirectionResolver 표).
       final resolved = DirectionResolver.resolve(
-          result.label, _arrowStripeAngle,
+          gate.label, _arrowStripeAngle,
           position: _smoothedPosition, previous: _guidanceLabel);
       // T103: 횡단보도 위에서 줄무늬가 사라지면(none/approach) 10초 동안
       // "횡단 중"으로 붙잡는다(CrossingHold 표). 그동안 방향 안내는 멈추고
@@ -796,10 +810,22 @@ class _CameraScreenState extends State<CameraScreen>
   final CautionGuide _cautionGuide = CautionGuide();
   bool _cautionEnabled = false;
 
+  // T125: 노면 횡단보도 확인(개발, 기본 꺼짐). 노면 판정(위 두 스위치 중 하나가
+  // 켜졌을 때만 돎)의 화면 전체 횡단보도 비율을 받아 approach를 거른다. 이 설정
+  // 때문에 노면 모델을 따로 켜지는 않는다 — 꺼져 있으면 기록에 `na`만 남긴다.
+  final CrosswalkSurfaceGate _crosswalkGate = CrosswalkSurfaceGate();
+  bool _crosswalkGateEnabled = false;
+
+  bool get _surfaceRunning =>
+      (_surfaceEnabled || _cautionEnabled) && _surfaceEstimator.isReady;
+
+  void _setCrosswalkGateEnabled(bool enabled) {
+    EventLog.instance.log('set', {'key': 'cwGate', 'value': enabled});
+    if (mounted) setState(() => _crosswalkGateEnabled = enabled);
+  }
+
   void _updateSurfaceGuidance(CameraImage image) {
-    if (!(_surfaceEnabled || _cautionEnabled) || !_surfaceEstimator.isReady) {
-      return;
-    }
+    if (!_surfaceRunning) return;
     _surfaceFrameCount++;
     if (_surfaceFrameCount % 10 != 9) return;
     final rot = _modelRotations.upright;
@@ -809,10 +835,12 @@ class _CameraScreenState extends State<CameraScreen>
       EventLog.instance.log('surf', {'ok': false, 'dur': surfClock.elapsedMilliseconds});
       return;
     }
+    _crosswalkGate.note(f.crosswalkAll, DateTime.now());
     // T118: hold 중이면 발밑(앞 구역)이 인도·점자블록인지 센다(CrossingHold 표).
     _crossingHold.noteGround(f.front.sidewalk + f.front.linear + f.front.dot);
     // T106: 세 칸의 비율 — 순서 [인도, 차도, 선형, 점형] (docs/EventLog.md).
     // T105: 뒤에 [맨홀·그레이팅, 가로수 구역, 계단]을 붙인다(앞 4개 순서는 그대로).
+    // T125: 맨 뒤에 [횡단보도]를 붙이고, 화면 전체 횡단보도 비율은 `cw`로 남긴다.
     List<double> ratios(SurfaceRegion r) => [
           r.sidewalk,
           r.road,
@@ -821,12 +849,14 @@ class _CameraScreenState extends State<CameraScreen>
           r.manholeGrating,
           r.treeZone,
           r.stairs,
+          r.crosswalk,
         ];
     EventLog.instance.log('surf', {
       'ok': true,
       'L': ratios(f.left),
       'F': ratios(f.front),
       'R': ratios(f.right),
+      'cw': f.crosswalkAll,
       'st': _fieldState,
       'dur': surfClock.elapsedMilliseconds,
     });
@@ -1471,6 +1501,8 @@ class _CameraScreenState extends State<CameraScreen>
                   onSurfaceGuidanceChanged: _setSurfaceEnabled,
                   cautionGuidanceEnabled: _cautionEnabled,
                   onCautionGuidanceChanged: _setCautionEnabled,
+                  crosswalkGateEnabled: _crosswalkGateEnabled,
+                  onCrosswalkGateChanged: _setCrosswalkGateEnabled,
                   eventLogEnabled: EventLog.instance.enabled,
                   onEventLogChanged: EventLog.instance.setEnabled,
                   onShareEventLog: _shareEventLog,
