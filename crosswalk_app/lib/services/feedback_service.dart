@@ -77,7 +77,10 @@ class FeedbackService {
   /// 현재 클래스로 덮어써서 이 목적에 쓸 수 없다.
   String? _lastSeverityClass;
 
-  DateTime? _lastPhaseAt;
+  /// T123(사용자 결정 2026-10-21): 진행 안내 3초 재쿨다운은 **같은 문장끼리만** 건다.
+  /// 전에는 공통 하나라서 "앞에 횡단보도" 뒤 0.87~2.87초 만에 위로 들어오면
+  /// "진입했습니다"가 요청조차 되지 않았다(10/21 기록, 10번 중 8번).
+  final Map<String, DateTime> _lastPhaseAt = {};
 
   /// T118: "발밑이 인도"라서 hold를 일찍 푼 시각. 이 뒤 [groundReleaseCrossedWindow]
   /// 안에 crossed가 오면 none/approach -> crossed여도 "건넜습니다"를 낸다(A2).
@@ -418,17 +421,20 @@ class FeedbackService {
         (previousClass == 'none' || previousClass == '');
     if (!entering && !exiting && !approaching) return null;
 
-    if (_lastPhaseAt != null &&
-        now.difference(_lastPhaseAt!).inSeconds < _cooldownSeconds) {
+    final strings = AppStrings.of(_language);
+    final message = approaching
+        ? strings.approachAheadMessage
+        : entering
+            ? strings.enteredCrosswalkMessage
+            : strings.crossedCrosswalkMessage;
+    // T123: 같은 문장만 3초 안에 다시 말하지 않는다(떨림 방지). 다른 진행 안내는
+    // 서로 막지 않는다.
+    final last = _lastPhaseAt[message];
+    if (last != null && now.difference(last).inSeconds < _cooldownSeconds) {
       return null;
     }
-    _lastPhaseAt = now;
-
-    final strings = AppStrings.of(_language);
-    if (approaching) return strings.approachAheadMessage;
-    return entering
-        ? strings.enteredCrosswalkMessage
-        : strings.crossedCrosswalkMessage;
+    _lastPhaseAt[message] = now;
+    return message;
   }
 
   // T63: 이탈(left/right)에서 정상(front)으로 돌아왔을 때만 1회 발화한다.
