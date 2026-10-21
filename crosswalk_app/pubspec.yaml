@@ -11,6 +11,9 @@ dependencies:
   flutter:
     sdk: flutter
   camera: ^0.11.0+2
+  # B안 ①: 줌 실패가 에러 스트림으로만 와서 CameraPlatform.onCameraError를 듣는다
+  # (camera 0.11.2가 이 스트림을 노출하지 않음). 이미 camera가 끌어온 2.12.0.
+  camera_platform_interface: ^2.12.0
   onnxruntime: ^1.4.0
   flutter_tts: ^4.0.2
   vibration: ^2.0.0

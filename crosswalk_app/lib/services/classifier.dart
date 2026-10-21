@@ -204,10 +204,14 @@ class Classifier {
     return actualHash == expectedHash;
   }
 
-  ClassificationResult? processFrame(CameraImage cameraImage) {
+  /// [rotationDegrees]: 224로 줄인 입력을 시계방향으로 돌릴 각도. 세로 장착은
+  /// 0(학습과 같은 센서 방향 그대로) — 가로 장착 개발 설정(B안 ①)에서만
+  /// 0이 아니다(`CameraMountRotations`).
+  ClassificationResult? processFrame(CameraImage cameraImage,
+      {int rotationDegrees = 0}) {
     if (!shouldProcessFrame()) return null;
 
-    final input = _preprocessCamera(cameraImage);
+    final input = _preprocessCamera(cameraImage, rotationDegrees);
     if (input == null) return null;
 
     final inputTensor = OrtValueTensor.createTensorWithDataList(
@@ -277,7 +281,7 @@ class Classifier {
     return ClassificationResult(label, conf);
   }
 
-  Float32List? _preprocessCamera(CameraImage image) {
+  Float32List? _preprocessCamera(CameraImage image, int rotationDegrees) {
     try {
       img.Image? decoded;
 
@@ -289,7 +293,8 @@ class Classifier {
         return null;
       }
 
-      final resized = resizeForModelInput(decoded);
+      final resized =
+          rotateModelInput(resizeForModelInput(decoded), rotationDegrees);
 
       // NCHW 포맷 [1, 3, 224, 224] + ImageNet 정규화
       const mean = [0.485, 0.456, 0.406];
@@ -350,6 +355,17 @@ class Classifier {
         width: _inputSize,
         height: _inputSize,
         interpolation: img.Interpolation.average);
+  }
+
+  /// B안 ①(가로 장착): 224x224로 줄인 입력을 [rotationDegrees]만큼 시계방향으로
+  /// 돌린다(`copyRotate` = `AngleEstimator.sensorCoord`와 같은 관례). 정사각형으로
+  /// 누른 뒤라 "돌리고 누르기"와 같은 결과이고, 5만 픽셀만 돌리므로 싸다.
+  /// 0이면 입력을 그대로 돌려준다 — 세로 장착(기본)의 동작은 바뀌지 않는다.
+  @visibleForTesting
+  static img.Image rotateModelInput(img.Image resized, int rotationDegrees) {
+    final r = rotationDegrees % 360;
+    if (r == 0) return resized;
+    return img.copyRotate(resized, angle: r);
   }
 
   /// (T29) iOS BGRA8888 is a single plane. `image.planes[0].bytes` is a

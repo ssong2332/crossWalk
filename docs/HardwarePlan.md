@@ -179,4 +179,12 @@ Owner: planner (see AGENTS.md). 결정은 사용자 확정(2026-10-12 대화). �
 ### 9-5. 대안 — 폰 자체를 가슴에 다는 1단계
 앱이 폰 초광각을 열 수 있다면(T117), USB 카메라 없이 **폰을 가슴 하네스에 다는** 1단계도 가능하다. 장점: 구매 0원, USB 인식 문제 없음. 단점: 폰이 가슴에 있어 무겁고, 2단계 기기 카메라(IMX708 등)와 센서가 달라 데이터 연속성이 떨어진다. 채택 여부는 T117 결과 후 결정.
 
+**진행 (B안, 2026-10-21):** T117 실기기 기록에서 `zoomMin 0.6` → 비용 0원으로 폰 초광각 1단계 시작(사용자 승인). 설계: `train/phone_ultrawide/design.md`.
+
+| 단계 | 상태 | 내용 |
+|---|---|---|
+| ① 앱 준비 | 코드 완료, 실기기 확인 전 | 개발 설정 3개(모두 기본 꺼짐, 꺼져 있으면 지금 동작 그대로): **초광각 0.6배**(`setZoomLevel`, 실패·불가를 기록 `zoomSet`과 디버그 박스에 표시), **폰 방향**(세로 / 가로·위 왼쪽 / 가로·위 오른쪽 — 모델 입력만 돌림, 화면은 세로 고정), **프레임 저장**(1초 1장 JPEG, 500MB 상한, "프레임 보내기"로만 밖으로). 기록 버그 수정: `camera.pw/ph` 숫자 + 첫 프레임 `camera.frame.iw/ih`. 코드 `crosswalk_app/lib/services/dev_capture.dart` |
+| ② 실기기 수집 | 대기 | 사용 방식(사용자 2026-10-21): 평소 **세로로 손에 들고** 사용, 하네스·거치대 없음, 폰 갤럭시 S25 울트라. 평소 앱은 세로 1배 그대로, 수집할 때만 가로 + 0.6배 |
+| ③ 성능 비교 · ④ 재학습(T113) | 대기 | 설계 §3 |
+
 출처: Pi Hut(B0305·B0448), RobotShop(B0305), Farnell·Elektor·SparkFun(Camera Module 3 Wide), Waveshare(IMX462), eBay(ELP L100), Arducam(B0468), welectron(UB021201), pub.dev(UVC 패키지 3종), source.android.com(External USB cameras).
