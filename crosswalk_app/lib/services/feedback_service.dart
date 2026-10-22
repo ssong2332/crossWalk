@@ -66,6 +66,30 @@ class FeedbackService {
   static int deviationLevel({required bool severe, required bool atEdge}) =>
       atEdge ? 2 : (severe ? 1 : 0);
 
+  /// T124(사용자 확정 2026-10-21): 직전 [decideMessage]가 '빠른 상승' 문장을 골랐는가.
+  /// 빠른 상승 = 앞 이탈 경고가 아직 재생 중인데 같은 방향 단계가 오름(T3).
+  /// 그때는 짧은 문장(`…RapidMessage`)을 사용자 속도의 [rapidRateFactor]배로 말한다.
+  bool _lastDecisionRapid = false;
+  @visibleForTesting
+  bool get lastDecisionRapid => _lastDecisionRapid;
+
+  /// T124: 빠른 상승 문장의 속도 배율과 상한(설정 슬라이더 최댓값,
+  /// `settings_screen.dart`의 TTS 속도 Slider max).
+  static const rapidRateFactor = 1.2;
+  static const maxSpeechRate = 1.0;
+
+  /// T124: 빠른 상승 문장의 속도 — 사용자 설정 × 1.2, 설정 범위 상한 안.
+  @visibleForTesting
+  static double rapidRate(double userRate) {
+    final r = userRate * rapidRateFactor;
+    return r > maxSpeechRate ? maxSpeechRate : r;
+  }
+
+  /// T124: 플러그인에 마지막으로 보낸 속도. 발화마다 자기 속도(빠른 상승이면
+  /// [rapidRate], 아니면 사용자 설정)와 다르면 먼저 바꾼다 — 그래서 다음 발화에서
+  /// 저절로 원래 속도로 돌아간다. null이면 아직 보낸 적 없음(사용자 설정으로 본다).
+  double? _appliedRate;
+
   // T63: 매 alert() 호출마다(메시지가 실제로 나갔는지와 무관하게) 갱신되는
   // "직전 판정 클래스". 구간 전이(진입/이탈 완료/복귀)를 감지하려면 발화
   // 여부와 무관하게 진짜 이전 프레임의 클래스를 알아야 한다 — _lastAlertClass는
@@ -220,6 +244,7 @@ class FeedbackService {
   Future<void> init({AppLanguage language = AppLanguage.ko}) async {
     _language = language;
     await _tts.setLanguage(ttsLocaleCode(_language));
+    _appliedRate = _speechRate;
     await _tts.setSpeechRate(_speechRate);
     await _tts.setVolume(1.0);
 
@@ -329,8 +354,25 @@ class FeedbackService {
         angleDegrees != null && angleDegrees.abs() >= severeAngleDegrees, now);
     final level = deviationLevel(severe: severe, atEdge: atEdge);
     final strings = AppStrings.of(_language);
+    // T124: 빠른 상승(T3) — 같은 방향 단계가 올랐고, 앞 이탈 경고가 아직 재생 중.
+    final deviationPlaying =
+        audioPolicy.activePriority == FeedbackPriority.p0 &&
+            (audioPolicy.activeRank ?? P0Rank.deviation) == P0Rank.deviation;
+    final rapid = _lastAlertTime != null &&
+        _lastAlertClass == detectedClass &&
+        level > _lastAlertLevel! &&
+        deviationPlaying;
+    _lastDecisionRapid = false;
     final String message;
-    if (atEdge) {
+    if (rapid) {
+      message = atEdge
+          ? (detectedClass == 'left'
+              ? strings.leftEdgeRapidMessage
+              : strings.rightEdgeRapidMessage)
+          : (detectedClass == 'left'
+              ? strings.leftSevereRapidMessage
+              : strings.rightSevereRapidMessage);
+    } else if (atEdge) {
       message = detectedClass == 'left'
           ? strings.leftEdgeMessage
           : strings.rightEdgeMessage;
@@ -366,6 +408,7 @@ class FeedbackService {
     _lastAlertLevel = level;
     _bundleLogAt = now;
     _bundleLogText = message;
+    _lastDecisionRapid = rapid;
     return message;
   }
 
@@ -554,6 +597,7 @@ class FeedbackService {
   Future<void> updateSpeechRate(double rate) async {
     _speechRate = rate;
     EventLog.instance.log('set', {'key': 'speechRate', 'value': rate});
+    _appliedRate = rate;
     try {
       await _tts.setSpeechRate(rate);
     } catch (e) {
@@ -621,6 +665,7 @@ class FeedbackService {
     P0Rank rank = P0Rank.deviation,
     bool supersedes = false,
     DateTime? requestedAt,
+    double? rate,
   }) async {
     final now = DateTime.now();
     // T108: 대기 슬롯에서 다시 꺼낸 요청은 처음 요청 시각을 그대로 쓴다(TTL 기준).
@@ -652,6 +697,8 @@ class FeedbackService {
       'p': priority.index,
       'act': action.name,
       'why': why,
+      // T124: 빠른 상승 문장이면 요청한 속도.
+      if (rate != null) 'rate': rate,
     });
     if (action == SpeechAction.drop) return;
     if (action == SpeechAction.queue) {
@@ -665,6 +712,10 @@ class FeedbackService {
     audioPolicy.markStarted(priority, rank: rank, message: message);
     final start = DateTime.now();
     var result = 'done';
+    // T124: 이 발화의 속도. 바꿨으면 그 값과 바꾸는 데 걸린 시간을 say.end에 남긴다
+    // (실기기에서 변경·복귀 지연을 재기 위해).
+    final wantRate = rate ?? _speechRate;
+    int? rateMs;
     await _tts.stop();
     try {
       // T121 F1: stop을 기다리는 동안 더 새 발화가 시작됐으면 speak를 보내지 않는다.
@@ -672,6 +723,18 @@ class FeedbackService {
       // 재생 중에 온 speak(새것)를 재생 없이 성공으로 돌려준다(flutter_tts-4.2.5
       // FlutterTtsPlugin.kt:304-309) — 정책이 끊으라고 한 새 발화가 삼켜졌다
       // (10/16 L627, 10/19 L3381: 이탈 경고 대신 "진입했습니다"가 들림).
+      if (generation == _speechGeneration &&
+          (_appliedRate ?? _speechRate) != wantRate) {
+        final t = DateTime.now();
+        _appliedRate = wantRate;
+        try {
+          await _tts.setSpeechRate(wantRate);
+        } catch (e) {
+          // 속도를 못 바꿔도 안전 안내는 말한다.
+          debugPrint('FeedbackService._speak: setSpeechRate error: $e');
+        }
+        rateMs = DateTime.now().difference(t).inMilliseconds;
+      }
       if (generation != _speechGeneration) {
         result = 'superseded';
       } else {
@@ -695,6 +758,8 @@ class FeedbackService {
         'p': priority.index,
         'res': result,
         'dur': end.difference(start).inMilliseconds,
+        if (rateMs != null) 'rate': wantRate,
+        if (rateMs != null) 'rateMs': rateMs,
       });
       // T108: 다른 발화에 끊겨 끝났으면 새 발화의 '재생 중' 상태를 지우지 않는다.
       final current = generation == _speechGeneration;
@@ -794,7 +859,9 @@ class FeedbackService {
     final message =
         decideMessage(detectedClass, angleDegrees, now, atEdge: atEdge);
     if (message != null) {
-      unawaited(_speak(message, priority: FeedbackPriority.p0));
+      unawaited(_speak(message,
+          priority: FeedbackPriority.p0,
+          rate: _lastDecisionRapid ? rapidRate(_speechRate) : null));
     }
 
     // 구간 전이 안내(P1) — "횡단보도에 진입했습니다" / "횡단보도를 건넜습니다".

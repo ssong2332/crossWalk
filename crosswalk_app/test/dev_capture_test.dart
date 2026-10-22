@@ -1,5 +1,6 @@
 // B안 ① 개발 설정(초광각 0.6배·가로 장착·프레임 저장)의 순수 로직 테스트.
 // 설계: train/phone_ultrawide/design.md §1·§2·§3.
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -237,8 +238,6 @@ void main() {
     setUp(() => tmp = Directory.systemTemp.createTempSync('frames_test'));
     tearDown(() => tmp.deleteSync(recursive: true));
 
-    Future<void> settle() => Future<void>.delayed(const Duration(milliseconds: 20));
-
     test('1초 간격만 저장하고, 상한을 넘으면 오래된 것부터 지운다', () async {
       final saver = FrameSaver(
         baseDir: () async => tmp,
@@ -251,8 +250,16 @@ void main() {
       final results = <FrameSaveResult>[];
       for (var i = 0; i < 4; i++) {
         final t = t0.add(Duration(milliseconds: 1000 * i));
-        expect(saver.maybeSave(image, t, onDone: results.add), isTrue);
-        await settle();
+        // 고정 대기(20ms) 대신 저장 완료를 기다린다 — 실제 파일 쓰기·삭제가
+        // 느리면 다음 저장이 '바쁨'으로 건너뛰어져 가끔 실패했다(CI 39604916380).
+        final done = Completer<void>();
+        expect(
+            saver.maybeSave(image, t, onDone: (r) {
+              results.add(r);
+              done.complete();
+            }),
+            isTrue);
+        await done.future;
         // 같은 초 안의 다음 프레임은 건너뛴다
         expect(saver.maybeSave(image, t.add(const Duration(milliseconds: 33))),
             isFalse);

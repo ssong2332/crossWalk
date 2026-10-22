@@ -1358,7 +1358,6 @@ void main() {
   // speak의 결과를 0으로 끝낸다(:379-382). stop 왕복에 [stopLatency]가 걸린다.
   group('삼켜진 이탈 경고 (T121)', () {
     final ko = AppStrings.of(AppLanguage.ko);
-    const leftEdge = '오른쪽으로 가세요. 가장자리입니다';
 
     List<Map<String, dynamic>> logged(String ev) => EventLog.instance.earlyLines
         .map((l) => jsonDecode(l) as Map<String, dynamic>)
@@ -1405,14 +1404,16 @@ void main() {
       await tester.pump(const Duration(milliseconds: 64)); // 앞 stop이 끝나기 전
       await s.alert('left', 0.9, angleDegrees: 20, atEdge: true); // 단계 상승
       await tester.pump(const Duration(milliseconds: 200));
-      expect(fake.speaking, leftEdge);
-      expect(fake.played, [leftEdge], reason: '앞 요청은 speak를 보내지 않는다');
+      // T124: 앞 경고가 아직 재생 중(정책 기준)이라 빠른 상승 문장이 나간다.
+      const rapidEdge = '오른쪽! 가장자리';
+      expect(fake.speaking, rapidEdge);
+      expect(fake.played, [rapidEdge], reason: '앞 요청은 speak를 보내지 않는다');
       expect(fake.ignored, isEmpty);
       final ends = logged('say.end');
       expect(ends.single['text'], leftMild);
       expect(ends.single['res'], 'superseded', reason: '건너뛴 것은 say.end에 남긴다');
       await tester.pump(const Duration(seconds: 2));
-      expect(logged('say.end').last['text'], leftEdge);
+      expect(logged('say.end').last['text'], rapidEdge);
       expect(logged('say.end').last['res'], 'done');
       await _disposeIn(tester, s);
     });
@@ -1436,6 +1437,132 @@ void main() {
       await _disposeIn(tester, s);
     });
   });
+
+  // T124(사용자 확정 2026-10-21): 빠른 상승 — 앞 이탈 경고가 아직 재생 중일 때
+  // 같은 방향 단계가 오르면 짧은 문장을 사용자 속도 × 1.2로 말한다(T3·M1).
+  group('빠른 상승 (T124)', () {
+    final t0 = DateTime(2026, 10, 21, 18, 0, 0);
+    Duration ms(int v) => Duration(milliseconds: v);
+    const leftEdge = '오른쪽으로 가세요. 가장자리입니다';
+
+    /// 정책이 '이탈 경고 재생 중'으로 보게 한다(실제 재생은 alert 테스트에서).
+    void playing(FeedbackService s, String message,
+            {P0Rank rank = P0Rank.deviation}) =>
+        s.audioPolicy
+            .markStarted(FeedbackPriority.p0, rank: rank, message: message);
+
+    test('T3: 앞 이탈 경고 재생 중 + 단계 상승 -> 짧은 문장', () {
+      final s = FeedbackService();
+      expect(s.decideMessage('left', mild, t0), leftMild);
+      playing(s, leftMild);
+      expect(s.decideMessage('left', 20, t0.add(ms(271)), atEdge: true),
+          '오른쪽! 가장자리');
+      expect(s.lastDecisionRapid, isTrue);
+
+      final s2 = FeedbackService();
+      expect(s2.decideMessage('left', mild, t0), leftMild);
+      playing(s2, leftMild);
+      expect(s2.decideMessage('left', severe, t0.add(ms(225))), '오른쪽, 지금');
+    });
+
+    test('왼쪽으로 가야 할 때(right 이탈)는 "왼쪽"', () {
+      final s = FeedbackService();
+      expect(s.decideMessage('right', -mild, t0), rightMild);
+      playing(s, rightMild);
+      expect(s.decideMessage('right', -20, t0.add(ms(300)), atEdge: true),
+          '왼쪽! 가장자리');
+      final s2 = FeedbackService();
+      expect(s2.decideMessage('right', -mild, t0), rightMild);
+      playing(s2, rightMild);
+      expect(s2.decideMessage('right', -severe, t0.add(ms(300))), '왼쪽, 지금');
+    });
+
+    test('즉시 -> 가장자리 상승도 재생 중이면 짧은 가장자리 문장', () {
+      final s = FeedbackService();
+      expect(s.decideMessage('left', severe, t0), leftSevere);
+      playing(s, leftSevere);
+      expect(s.decideMessage('left', 20, t0.add(ms(500)), atEdge: true),
+          '오른쪽! 가장자리');
+    });
+
+    test('앞 경고가 끝난 뒤의 상승은 지금 문장 그대로', () {
+      final s = FeedbackService();
+      expect(s.decideMessage('left', mild, t0), leftMild);
+      // 재생 중 아님(정책 재생 상태 없음)
+      expect(s.decideMessage('left', 20, t0.add(ms(1700)), atEdge: true),
+          leftEdge);
+      expect(s.lastDecisionRapid, isFalse);
+    });
+
+    test('재생 중인 것이 회복 안내(P0-3)면 빠른 상승이 아니다', () {
+      final s = FeedbackService();
+      expect(s.decideMessage('left', mild, t0), leftMild);
+      playing(s, '직진하세요', rank: P0Rank.recovery);
+      expect(s.decideMessage('left', severe, t0.add(ms(300))), leftSevere);
+      expect(s.lastDecisionRapid, isFalse);
+    });
+
+    test('방향이 바뀌거나 처음 경고면 재생 중이어도 지금 문장 그대로', () {
+      final s = FeedbackService();
+      expect(s.decideMessage('left', mild, t0), leftMild);
+      playing(s, leftMild);
+      expect(s.decideMessage('right', -severe, t0.add(ms(300))), rightSevere);
+      expect(s.lastDecisionRapid, isFalse);
+
+      final s2 = FeedbackService();
+      playing(s2, leftMild);
+      expect(s2.decideMessage('left', 20, t0, atEdge: true), leftEdge,
+          reason: '비교할 앞 경고가 없다');
+    });
+
+    test('속도: 사용자 설정 × 1.2, 상한 1.0', () {
+      expect(FeedbackService.rapidRate(0.5), closeTo(0.6, 1e-9));
+      expect(FeedbackService.rapidRate(0.1), closeTo(0.12, 1e-9));
+      expect(FeedbackService.rapidRate(0.9), 1.0);
+      expect(FeedbackService.rapidRate(1.0), 1.0);
+    });
+
+    testWidgets('alert(): 빠른 상승은 1.2배로 말하고 다음 발화에서 원래 속도로 돌아간다',
+        (tester) async {
+      EventLog.instance.clearForTest();
+      final fake = _FakeTts();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(ttsChannel, fake.handle);
+      final s = FeedbackService();
+      await s.alert('left', 0.9, angleDegrees: mild);
+      await tester.pump(const Duration(milliseconds: 300)); // 재생 중
+      expect(fake.speaking, leftMild);
+      await s.alert('left', 0.9, angleDegrees: 20, atEdge: true); // 빠른 상승
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(fake.speaking, '오른쪽! 가장자리');
+      await tester.pump(const Duration(seconds: 2)); // 끝까지
+      await s.alert('right', 0.9, angleDegrees: -mild); // 다음 발화
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(fake.speaking, rightMild);
+      expect(fake.rates, [closeTo(0.6, 1e-9), 0.5],
+          reason: '빠른 상승 전에 0.6, 다음 발화 전에 0.5로 복귀');
+      expect(fake.played, [leftMild, '오른쪽! 가장자리', rightMild]);
+
+      final lines = EventLog.instance.earlyLines
+          .map((l) => jsonDecode(l) as Map<String, dynamic>)
+          .toList();
+      final say = lines.where((m) => m['ev'] == 'say').toList();
+      expect(say.map((m) => m['rate']), [null, closeTo(0.6, 1e-9), null]);
+      final ends = lines.where((m) => m['ev'] == 'say.end').toList();
+      final rapidEnd = ends.firstWhere((m) => m['text'] == '오른쪽! 가장자리');
+      expect(rapidEnd['rate'], closeTo(0.6, 1e-9));
+      expect(rapidEnd['rateMs'], isA<int>());
+      await tester.pump(const Duration(seconds: 2));
+      final restoreEnd = EventLog.instance.earlyLines
+          .map((l) => jsonDecode(l) as Map<String, dynamic>)
+          .lastWhere((m) => m['ev'] == 'say.end' && m['text'] == rightMild);
+      expect(restoreEnd['rate'], 0.5);
+      expect(restoreEnd['rateMs'], isA<int>());
+      final first = ends.firstWhere((m) => m['text'] == leftMild);
+      expect(first.containsKey('rate'), isFalse, reason: '속도를 안 바꾼 발화는 기록 그대로');
+      await _disposeIn(tester, s);
+    });
+  });
 }
 
 /// T121: 대기 꺼내기 타이머를 정리한다. 최소 간격은 실제 시각으로 재므로 가짜 시계에서는
@@ -1454,6 +1581,8 @@ class _FakeTts {
 
   String? speaking;
   final played = <String>[];
+  // T124: setSpeechRate로 받은 속도(순서대로).
+  final rates = <double>[];
   final ignored = <String>[];
   Completer<int>? _pending;
   Timer? _done;
@@ -1478,6 +1607,9 @@ class _FakeTts {
         _pending = c;
         _done = Timer(utterance, () => _finish(1));
         return c.future;
+      case 'setSpeechRate':
+        rates.add((call.arguments as num).toDouble());
+        return 1;
       default:
         return 1;
     }

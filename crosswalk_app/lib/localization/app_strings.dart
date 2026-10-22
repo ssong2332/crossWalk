@@ -113,6 +113,14 @@ class AppStrings {
   // 쓰지 않는다 — 차도 위에서 첫 단어가 "왼쪽"이면 반대로 반응할 수 있다.
   final String leftEdgeMessage;
   final String rightEdgeMessage;
+
+  // T124(사용자 확정 2026-10-21): 앞 이탈 경고가 아직 재생 중일 때 같은 방향 단계가
+  // 오르면(빠른 상승) 이 짧은 문장을 쓴다. 전에는 "오른쪽으로 가…"가 끊기고
+  // 같은 첫머리로 다시 시작해 반복처럼 들렸다. 방향을 맨 앞에 둔다.
+  final String leftEdgeRapidMessage;
+  final String rightEdgeRapidMessage;
+  final String leftSevereRapidMessage;
+  final String rightSevereRapidMessage;
   // T102: 끝인데 이미 중앙 쪽으로 틀어 직진 판정(T100 a안)일 때 1회 확인.
   // "직진하세요"(recoveredMessage)는 줄무늬에 다시 나란히 서라는 뜻으로
   // 들려 끝에 머물게 할 수 있어 쓰지 않는다.
@@ -305,6 +313,10 @@ class AppStrings {
     required this.recoveredMessage,
     required this.leftEdgeMessage,
     required this.rightEdgeMessage,
+    required this.leftEdgeRapidMessage,
+    required this.rightEdgeRapidMessage,
+    required this.leftSevereRapidMessage,
+    required this.rightSevereRapidMessage,
     required this.edgeTurnedMessage,
     required this.surfaceRoadMessage,
     required this.surfaceDotBlockMessage,
@@ -426,6 +438,10 @@ class AppStrings {
     recoveredMessage: '직진하세요',
     leftEdgeMessage: '오른쪽으로 가세요. 가장자리입니다',
     rightEdgeMessage: '왼쪽으로 가세요. 가장자리입니다',
+    leftEdgeRapidMessage: '오른쪽! 가장자리',
+    rightEdgeRapidMessage: '왼쪽! 가장자리',
+    leftSevereRapidMessage: '오른쪽, 지금',
+    rightSevereRapidMessage: '왼쪽, 지금',
     edgeTurnedMessage: '그대로 가세요',
     surfaceRoadMessage: '차도입니다',
     surfaceDotBlockMessage: '멈춤 블록입니다',
@@ -579,6 +595,11 @@ class AppStrings {
     recoveredMessage: 'Go straight',
     leftEdgeMessage: "Move to the right. You're at the edge",
     rightEdgeMessage: "Move to the left. You're at the edge",
+    // T124: 영어 짧은 문장은 아직 정하지 않았다 — 기존 문장 그대로(속도만 바뀜).
+    leftEdgeRapidMessage: "Move to the right. You're at the edge",
+    rightEdgeRapidMessage: "Move to the left. You're at the edge",
+    leftSevereRapidMessage: 'Move right now',
+    rightSevereRapidMessage: 'Move left now',
     edgeTurnedMessage: 'Keep going',
     surfaceRoadMessage: 'Road ahead',
     surfaceDotBlockMessage: 'Stop blocks',
