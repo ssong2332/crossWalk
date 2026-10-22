@@ -67,6 +67,21 @@ void main() {
       }
     });
 
+    test('T125: 횡단보도 비율 — 화면 전체(위 절반 포함)와 칸별', () {
+      // 4행 × 6열. 위 2행: 가운데 2열 횡단보도. 아래 2행: 앞 칸 1열만 횡단보도, 나머지 인도.
+      List<List<double>> plane(int cls) => List.generate(4, (y) => List.generate(6, (x) {
+            final cw = y < 2 ? (x == 2 || x == 3) : x == 2;
+            final want = cw ? SurfaceClass.crosswalk : SurfaceClass.sidewalk;
+            return cls == want ? 9.0 : 0.0;
+          }));
+      final f = SurfaceFeatures.fromLogits(
+          List.generate(SurfaceClass.count, (c) => plane(c)));
+      expect(f.crosswalkAll, closeTo(6 / 24, 1e-9));
+      expect(f.front.crosswalk, 0.5);
+      expect(f.left.crosswalk, 0.0);
+      expect(f.left.sidewalk, 1.0, reason: '아래 절반 칸 비율은 그대로');
+    });
+
     test('6클래스 로짓도 동작한다 — 주의 구역 비율은 0 (T105)', () {
       final f = SurfaceFeatures.fromLogits(
           List.generate(6, (c) => uniform(c, SurfaceClass.sidewalk)));

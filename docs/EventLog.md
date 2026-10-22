@@ -49,7 +49,7 @@
 | `log.on` / `log.off` | 설정에서 기록을 켬/끔 | — | `event_log.dart` `setEnabled` |
 | `log.share` | 기록 보내기 | `files`(개수), `status`(공유 창 결과) 또는 `err` | `camera_screen.dart` `_shareEventLog` |
 | `app.life` | 앱 생명주기 변화 | `state`(resumed/inactive/hidden/paused/detached) | `camera_screen.dart` `didChangeAppLifecycleState` |
-| `set` | 설정 변경 | `key`(lang/speechRate/vibrationMs/surface/caution/torch/powerSave/ultraWide/mount/frameSave), `value`. `mount`면 `rot`(각도·위치·노면 입력 회전)·`crot`(분류기 입력 회전)도 | `feedback_service.dart`, `camera_screen.dart` |
+| `set` | 설정 변경 | `key`(lang/speechRate/vibrationMs/surface/caution/cwGate/torch/powerSave/ultraWide/mount/frameSave), `value`. `mount`면 `rot`(각도·위치·노면 입력 회전)·`crot`(분류기 입력 회전)도 | `feedback_service.dart`, `camera_screen.dart` |
 | `model` | 모델 불러오기 | `name`(cls/angle/pos/surface), `ok`, `dur`(ms) 또는 `err` | `camera_screen.dart` `_initCamera`, `_setSurfaceEnabled` |
 | `camera` | 카메라 스트림 시작 | `ok`, `sensor`(센서 회전), `pw`·`ph`(미리보기 폭·높이 숫자 — 2026-10-21 전 기록은 `preview` 문자열이고 릴리스에서 "Instance of 'Size'"로 찍혀 쓸 수 없음), `zoomMin`·`zoomMax`, `cams` | `camera_screen.dart` `_initCamera` |
 | `camera.frame` | 카메라를 연 뒤 첫 프레임 (B안 ①) | `iw`·`ih`(이미지 스트림 실제 폭·높이, 센서 방향), `fmt` | `camera_screen.dart` `_onFrame` |
@@ -61,7 +61,8 @@
 | `cls` | 분류기가 실제로 돈 프레임 (처리 프레임 5개 중 1번) | `best`(최고 클래스), `conf`(스무딩 평균 확률), `ok`(임계값 통과), `probs`(이번 프레임 6클래스), `avg`(스무딩 평균 6클래스), `dur`(ms) | `camera_screen.dart` `_onFrame` |
 | `angle` | 각도 모델이 돈 프레임 | `raw`, `smooth`, `label`, `dur` | `_updateAngleEstimate` |
 | `pos` | 위치 모델이 돈 프레임 | `raw`, `smooth`, `label`, `dur` | `_updatePositionEstimate` |
-| `surf` | 노면 모델이 돈 프레임 (노면 안내나 주의 구역 안내가 켜졌을 때만) | `L`/`F`/`R` = **[인도, 차도, 선형, 점형, 맨홀·그레이팅, 가로수 구역, 계단] 비율** (T105가 뒤 3개를 붙임 — 앞 4개 순서는 그대로), `st`(화면 상태), `dur`, `ok` | `_updateSurfaceGuidance` |
+| `surf` | 노면 모델이 돈 프레임 (노면 안내나 주의 구역 안내가 켜졌을 때만) | `L`/`F`/`R` = **[인도, 차도, 선형, 점형, 맨홀·그레이팅, 가로수 구역, 계단, 횡단보도] 비율** (T105가 5~7번째, T125가 8번째를 붙임 — 앞 순서는 그대로), `cw`(T125: **화면 전체** 횡단보도 비율), `st`(화면 상태), `dur`, `ok` | `_updateSurfaceGuidance` |
+| `cwgate` | 노면 횡단보도 확인(T125, 설정 켬)이 approach 판정을 평가함 — 분류기가 approach를 낸 프레임마다 | `v`(keep = 유지 / drop = none으로 낮춤 / na = 적용 불가: 최근 노면 판정 없음), `cw`(최근 노면 판정 횡단보도 비율 최대값, na면 null), `n`(쓴 노면 판정 수), `surf`(노면 모델이 도는 중인지) | `CameraScreen` 분류 결과 처리 |
 | `caut.ev` | 주의 구역 판정표 이벤트 (T105) | `names`(manholeGrating/treeZone 목록), `st` | `_updateSurfaceGuidance` |
 | `hold.end` | "횡단 중" 유지를 발밑이 인도라서 일찍 풂 (T118 — 10초 만료·위·crossed로 풀린 것은 `state`만 남음) | `why`(ground), `to`(이번 판정) | `CameraScreen` 분류 결과 처리 |
 | `surf.ev` | 노면 판정표 이벤트 | `names`(road/dotBlock/linearOn/linearRight/linearLeft/linearLost 목록), `st` | `_updateSurfaceGuidance` |
