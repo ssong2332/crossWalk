@@ -52,12 +52,25 @@ class EventLog {
   bool _starting = false;
   Timer? _timer;
 
+  /// T129: [log]에 들어온 사건을 그대로 넘겨받는 화면 구독자. 기본 null.
+  void Function(String event, Map<String, Object?> data, DateTime at)? tap;
+
   /// 쓰기 실패 횟수(기록 자체의 건강 상태). 실패한 묶음은 버린다.
   int writeErrors = 0;
 
   /// 사건 하나를 남긴다. [data] 값: 문자열·정수·불·null·실수(소수 4자리로
   /// 반올림, NaN·무한대는 null)·enum(이름)·리스트·맵. 그 밖은 문자열로 바꾼다.
   void log(String event, [Map<String, Object?> data = const {}]) {
+    // T129: 화면 구독자(촉각 악보). 기록 켬/끔과 무관하게 같은 사건을 받는다.
+    // null이면(기본) 비용은 이 비교 하나뿐이다.
+    final t = tap;
+    if (t != null) {
+      try {
+        t(event, data, DateTime.now());
+      } catch (_) {
+        // 화면 표시 때문에 안내 경로가 깨지면 안 된다
+      }
+    }
     if (!_enabled) return;
     final String line;
     try {

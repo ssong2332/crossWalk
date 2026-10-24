@@ -16,6 +16,7 @@ import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show SemanticsNode, DebugSemanticsDumpOrder;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wakelock_plus_platform_interface/messages.g.dart';
@@ -247,6 +248,37 @@ void main() {
         await tester.pump();
 
         expect(find.byType(BackdropFilter), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'T129: TalkBack은 안내 문장 → 판독부 → 음성/진동·설정 순으로 읽는다',
+      (tester) async {
+        final handle = tester.ensureSemantics();
+        // 권한 응답 없이 첫 프레임 — 로딩 상태(안내 문장 = "초기화 중...").
+        await tester.pumpWidget(const MaterialApp(home: CameraScreen()));
+        await tester.pump();
+
+        final order = <String>[];
+        void walk(SemanticsNode node) {
+          if (node.label.isNotEmpty) order.add(node.label);
+          for (final c in node.debugListChildrenInOrder(
+              DebugSemanticsDumpOrder.traversalOrder)) {
+            walk(c);
+          }
+        }
+
+        walk(tester.getSemantics(find.byType(Scaffold)));
+        final headline = order.indexWhere((l) => l.contains('초기화 중'));
+        final disclaimer =
+            order.indexWhere((l) => l.contains('흰지팡이나 안내견을 대신하지 않습니다'));
+        final voice = order.indexOf('음성 안내');
+        final settings = order.indexOf('설정');
+        expect(headline, isNonNegative, reason: '$order');
+        expect(headline, lessThan(disclaimer), reason: '$order');
+        expect(disclaimer, lessThan(voice), reason: '$order');
+        expect(voice, lessThan(settings), reason: '$order');
+        handle.dispose();
       },
     );
 

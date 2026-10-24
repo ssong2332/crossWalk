@@ -55,6 +55,8 @@ class SettingsScreen extends StatefulWidget {
     this.eventLogEnabled = true,
     this.onEventLogChanged,
     this.onShareEventLog,
+    this.scoreEnabled = false,
+    this.onScoreChanged,
     this.ultraWideEnabled = false,
     this.onUltraWideChanged,
     this.cameraMount = CameraMount.portrait,
@@ -99,6 +101,10 @@ class SettingsScreen extends StatefulWidget {
   final ValueChanged<bool>? onEventLogChanged;
   final Future<String?> Function()? onShareEventLog;
 
+  // T129: 촉각 악보(개발, 기본 꺼짐). 콜백이 없으면 이 줄을 그리지 않는다.
+  final bool scoreEnabled;
+  final ValueChanged<bool>? onScoreChanged;
+
   // B안 ①: 데이터 수집용 개발 설정(모두 기본 꺼짐, `dev_capture.dart`).
   // [onUltraWideChanged]가 없으면 이 구역을 그리지 않는다.
   // [onShareFrames]는 성공이면 null, 실패·빈 저장이면 띄울 문구를 돌려준다.
@@ -135,6 +141,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late bool _crosswalkGate;
   late bool _eventLog;
   bool _sharingLog = false;
+  late bool _score;
   late bool _ultraWide;
   late CameraMount _mount;
   late bool _frameSave;
@@ -153,6 +160,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _cautionGuidance = widget.cautionGuidanceEnabled;
     _crosswalkGate = widget.crosswalkGateEnabled;
     _eventLog = widget.eventLogEnabled;
+    _score = widget.scoreEnabled;
     _ultraWide = widget.ultraWideEnabled;
     _mount = widget.cameraMount;
     _frameSave = widget.frameSaveEnabled;
@@ -212,6 +220,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _toggleEventLog(bool value) {
     setState(() => _eventLog = value);
     widget.onEventLogChanged?.call(value);
+  }
+
+  void _toggleScore(bool value) {
+    setState(() => _score = value);
+    widget.onScoreChanged?.call(value);
   }
 
   Future<void> _shareEventLog() async {
@@ -562,6 +575,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           const TextStyle(color: Colors.white38, fontSize: 12),
                     ),
                   ),
+                  if (widget.onScoreChanged != null)
+                    SwitchListTile(
+                      value: _score,
+                      onChanged: _toggleScore,
+                      activeColor: _colorAccent,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        _strings.settingsScoreLabel,
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                      subtitle: Text(
+                        _strings.settingsScoreNote,
+                        style: const TextStyle(
+                            color: Colors.white38, fontSize: 12),
+                      ),
+                    ),
                   if (widget.onShareEventLog != null)
                     OutlinedButton.icon(
                       onPressed: _sharingLog ? null : _shareEventLog,

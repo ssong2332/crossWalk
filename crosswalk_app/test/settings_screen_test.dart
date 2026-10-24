@@ -48,6 +48,8 @@ void main() {
     bool eventLogEnabled = true,
     ValueChanged<bool>? onEventLogChanged,
     Future<String?> Function()? onShareEventLog,
+    bool scoreEnabled = false,
+    ValueChanged<bool>? onScoreChanged,
   }) {
     return MaterialApp(
       home: SettingsScreen(
@@ -67,6 +69,8 @@ void main() {
         eventLogEnabled: eventLogEnabled,
         onEventLogChanged: onEventLogChanged,
         onShareEventLog: onShareEventLog,
+        scoreEnabled: scoreEnabled,
+        onScoreChanged: onScoreChanged,
       ),
     );
   }
@@ -291,6 +295,49 @@ void main() {
       await tester.tap(finder);
       await tester.pumpAndSettle();
       expect(toggledTo, isFalse);
+    });
+
+    testWidgets('T129: 촉각 악보는 기본 꺼짐이고, 켜면 onScoreChanged(true)를 호출한다',
+        (tester) async {
+      bool? toggledTo;
+      await tester.pumpWidget(buildSettingsScreen(
+        feedback: FeedbackService(),
+        language: AppLanguage.ko,
+        onLanguageChanged: (_) {},
+        onEventLogChanged: (_) {},
+        onScoreChanged: (v) => toggledTo = v,
+      ));
+      await tester.pumpAndSettle();
+      final finder = find.widgetWithText(SwitchListTile, '촉각 악보 (개발)');
+      await tester.scrollUntilVisible(
+        finder,
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      expect(tester.widget<SwitchListTile>(finder).value, isFalse);
+      await tester.tap(finder);
+      await tester.pumpAndSettle();
+      expect(toggledTo, isTrue);
+      expect(tester.widget<SwitchListTile>(finder).value, isTrue);
+    });
+
+    testWidgets('T129: onScoreChanged가 없으면 촉각 악보 줄을 그리지 않는다',
+        (tester) async {
+      await tester.pumpWidget(buildSettingsScreen(
+        feedback: FeedbackService(),
+        language: AppLanguage.ko,
+        onLanguageChanged: (_) {},
+        onEventLogChanged: (_) {},
+      ));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.widgetWithText(SwitchListTile, '기록 남기기'),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('촉각 악보 (개발)'), findsNothing);
     });
 
     testWidgets('기록 보내기를 누르면 onShareEventLog를 부르고, 돌려준 문구를 띄운다',
