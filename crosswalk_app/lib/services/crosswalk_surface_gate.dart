@@ -10,20 +10,30 @@
 ///   | #  | 조건                                           | 결과 라벨 | 기록 `v` |
 ///   | 1  | 설정 꺼짐                                      | 그대로    | (안 남김) |
 ///   | 2  | 분류 라벨이 approach가 아님                    | 그대로    | (안 남김) |
+///   | 2b | 초광각 0.6배 켬 또는 가로 장착 (T126)          | approach  | `skip`   |
 ///   | 3  | 최근 노면 판정 없음(노면 모델 안 돎·오래됨)      | approach  | `na`     |
 ///   | 4  | 최근 노면 판정의 횡단보도 비율 최대값 >= 1%      | approach  | `keep`   |
 ///   | 5  | 최근 노면 판정의 횡단보도 비율 최대값 < 1%       | none      | `drop`   |
 /// "최근" = 마지막 [window]개 중 [maxAge] 안의 것. 기준값(1%, 5개, 2.5초)은 추정이다.
+///
+/// T126(2b행): 노면 모델은 세로·1배 사진으로만 학습했다. 10/24 실기기 13:37:26
+/// 가로(landscapeTopRight)+0.6배에서 진짜 횡단보도 줄무늬를 차도로 봐(cw 0, 영상
+/// `Screen_Recording_20261024_133741.mp4`, 6초 뒤 실제 진입) 규칙이 켜져 있었다면
+/// 진짜 approach를 내렸을 것이다. 그래서 학습 조건 밖에서는 쉰다(`why` = 이유).
 library;
 
 class CrosswalkGateResult {
-  const CrosswalkGateResult(this.label, {this.verdict, this.maxRatio, this.samples = 0});
+  const CrosswalkGateResult(this.label,
+      {this.verdict, this.maxRatio, this.samples = 0, this.why});
 
   /// 피드백으로 보낼 라벨.
   final String label;
 
-  /// 판정표 3~5행이면 `na`/`keep`/`drop`, 평가하지 않았으면(1·2행) null.
+  /// 판정표 2b·3~5행이면 `skip`/`na`/`keep`/`drop`, 평가하지 않았으면(1·2행) null.
   final String? verdict;
+
+  /// `skip`일 때 쉰 이유 — `wide`(0.6배) / `landscape`(가로) / `wide,landscape`.
+  final String? why;
 
   /// 창 안 횡단보도 비율의 최대값(창이 비었으면 null).
   final double? maxRatio;
@@ -55,8 +65,15 @@ class CrosswalkSurfaceGate {
   void reset() => _samples.clear();
 
   CrosswalkGateResult apply(String label,
-      {required bool enabled, required DateTime now}) {
+      {required bool enabled,
+      required DateTime now,
+      bool ultraWide = false,
+      bool landscape = false}) {
     if (!enabled || label != 'approach') return CrosswalkGateResult(label);
+    if (ultraWide || landscape) {
+      final why = [if (ultraWide) 'wide', if (landscape) 'landscape'].join(',');
+      return CrosswalkGateResult(label, verdict: 'skip', why: why);
+    }
     final recent = [
       for (final (t, r) in _samples)
         if (now.difference(t) <= maxAge) r

@@ -105,4 +105,51 @@ void main() {
     g.reset();
     expect(g.apply('approach', enabled: true, now: at(last)).verdict, 'na');
   });
+
+  // T126: 노면 모델은 세로·1배로만 학습 — 0.6배·가로에서는 쉰다(approach 그대로).
+  test('2b행: 0.6배면 cw 0이어도 approach 그대로, skip why=wide', () {
+    final g = CrosswalkSurfaceGate();
+    final last = feed(g, [0, 0, 0, 0, 0]);
+    final r = g.apply('approach', enabled: true, now: at(last), ultraWide: true);
+    expect(r.label, 'approach');
+    expect(r.verdict, 'skip');
+    expect(r.why, 'wide');
+  });
+
+  test('2b행: 가로 장착이면 approach 그대로, skip why=landscape (10/24 13:37:26)', () {
+    final g = CrosswalkSurfaceGate();
+    final last = feed(g, [0, 0, 0, 0, 0]);
+    final r = g.apply('approach', enabled: true, now: at(last), landscape: true);
+    expect(r.label, 'approach');
+    expect(r.verdict, 'skip');
+    expect(r.why, 'landscape');
+  });
+
+  test('2b행: 둘 다면 why=wide,landscape', () {
+    final g = CrosswalkSurfaceGate();
+    final r = g.apply('approach',
+        enabled: true, now: at(0), ultraWide: true, landscape: true);
+    expect(r.verdict, 'skip');
+    expect(r.why, 'wide,landscape');
+  });
+
+  test('2b행: 꺼짐이거나 approach가 아니면 skip도 안 남긴다', () {
+    final g = CrosswalkSurfaceGate();
+    expect(
+        g.apply('approach', enabled: false, now: at(0), ultraWide: true).verdict,
+        isNull);
+    expect(
+        g.apply('front', enabled: true, now: at(0), landscape: true).verdict,
+        isNull);
+  });
+
+  test('세로·1배는 기존대로 cw < 1%면 drop', () {
+    final g = CrosswalkSurfaceGate();
+    final last = feed(g, [0, 0, 0, 0, 0]);
+    final r = g.apply('approach',
+        enabled: true, now: at(last), ultraWide: false, landscape: false);
+    expect(r.label, 'none');
+    expect(r.verdict, 'drop');
+    expect(r.why, isNull);
+  });
 }

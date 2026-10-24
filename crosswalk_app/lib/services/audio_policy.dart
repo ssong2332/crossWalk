@@ -43,7 +43,8 @@ enum SpeechAction {
   speakNow,
 
   /// 대기 슬롯(한 칸)에 넣는다. P1만 쓴다 — 재생 중인 P0·P1이 끝나거나 최소
-  /// 간격이 지나면 꺼낸다(T108). 처음 요청에서 TTL(3초)이 지나면 버린다.
+  /// 간격이 지나면 꺼낸다(T108). TTL(3초)이 지나면 버린다 — T126: 기다리는 동안
+  /// P0가 재생됐으면 마지막 P0가 끝난 때부터 센다(상한 [AudioPolicy.maxPendingWait]).
   queue,
 
   /// 버린다. 큐에 쌓지 않는다 — 늦게 도착한 안내는 정보가 아니라 오정보다.
@@ -71,10 +72,21 @@ class AudioPolicy {
     FeedbackPriority.p3: Duration.zero,
   };
 
+  /// T126: 대기 항목이 처음 요청부터 기다릴 수 있는 최대 시간. TTL을 P0가 끝난
+  /// 때부터 세므로 P0가 쉬지 않고 이어지면 끝없이 기다릴 수 있어 상한을 둔다.
+  /// 근거(추정): 10/24 실기기(`logs/log_20261024_132008-12.jsonl`) P0 뒤에서 만료된
+  /// 진입 안내 6건을 이 규칙으로 다시 세면 꺼낼 수 있는 시각(마지막 P0 종료 +
+  /// 최소 간격 1.5초)이 요청 뒤 3.0·3.6·4.0·4.6·5.8초, 1건만 11.0초(13:27:39 —
+  /// 횡단 약 16초 중 2/3 지점). 8초는 앞 5건을 담고, 1m/s로 약 8m(보통 횡단보도
+  /// 절반쯤)다 — 그보다 늦은 "진입했습니다"는 오정보로 본다.
+  static const maxPendingWait = Duration(seconds: 8);
+
   FeedbackPriority? _active;
   P0Rank? _activeRank;
   String? _activeMessage;
   DateTime? _lastSpeechEnd;
+  // T126: 마지막으로 (끊기지 않고) 끝난 P0의 종료 시각 — 대기 항목 TTL의 기준.
+  DateTime? _lastP0End;
   final List<_Span> _spans = <_Span>[];
 
   /// 대기 슬롯 — 최대 1개. 더 높은 등급이 오면 덮어쓰고, 같은 등급은 대체
@@ -218,6 +230,7 @@ class AudioPolicy {
       _activeMessage = null;
     }
     if (current) _lastSpeechEnd = end;
+    if (current && priority == FeedbackPriority.p0) _lastP0End = end;
     if (priority != FeedbackPriority.p0) {
       _spans.add(_Span(start, end));
       final cutoff = end.subtract(budgetWindow);
@@ -244,17 +257,33 @@ class AudioPolicy {
     return true;
   }
 
-  /// 대기 항목이 TTL을 넘겼으면 비우고 그 문구를 돌려준다. 없거나 아직
-  /// 유효하면 null.
+  /// T126: 대기 항목이 만료됐으면 그 이유(`ttl` / `max_wait`), 아니면 null.
+  ///
+  /// 10/24 실기기: 진입 안내 12건 중 6건이 진입과 함께 시작된 이탈 경고(P0) 뒤에서
+  /// 기다리다 처음 요청부터 센 TTL 3초로 버려졌다. 그래서 TTL은 처음 요청과 그
+  /// 뒤에 끝난 마지막 P0 종료 중 늦은 쪽부터 센다. P0가 재생 중인 동안은 TTL이
+  /// 흐르지 않는다(상한 [maxPendingWait]만 본다). P1 재생·최소 간격 대기는 전과
+  /// 같다(처음 요청부터).
+  String? pendingExpiry(DateTime now) {
+    final pri = pendingPriority;
+    final at = pendingAt;
+    if (pri == null || at == null) return null;
+    if (now.difference(at) > maxPendingWait) return 'max_wait';
+    if (_active == FeedbackPriority.p0) return null;
+    final p0End = _lastP0End;
+    final from = p0End != null && p0End.isAfter(at) ? p0End : at;
+    return isExpired(pri, from, now) ? 'ttl' : null;
+  }
+
+  /// 대기 항목이 만료됐으면([pendingExpiry]) 비우고 그 문구를 돌려준다. 없거나
+  /// 아직 유효하면 null.
   ///
   /// TTL은 꺼낼 때(`_drainPending`)만 확인됐다. P0가 쉬지 않고 이어지면 꺼낼
   /// 기회가 없어, 이미 만료된 항목이 슬롯을 지키며 새 P1을 `slot_full`로 버렸다
   /// (10/12 기록 L1929 "진입했습니다" 대기 -> L2066 "건넜습니다" 버림, 7.7초 전
   /// 만료). 넣기 전에 이것을 불러 죽은 항목을 치운다.
   String? takeExpiredPending(DateTime now) {
-    final pri = pendingPriority;
-    final at = pendingAt;
-    if (pri == null || at == null || !isExpired(pri, at, now)) return null;
+    if (pendingExpiry(now) == null) return null;
     final msg = pendingMessage;
     clearPending();
     return msg;
@@ -272,6 +301,7 @@ class AudioPolicy {
     _activeRank = null;
     _activeMessage = null;
     _lastSpeechEnd = null;
+    _lastP0End = null;
     _spans.clear();
     clearPending();
   }
