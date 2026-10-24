@@ -208,6 +208,9 @@ class AppStrings {
   final String settingsDevLogShare;
   final String settingsDevLogShareEmpty;
   final String settingsDevLogShareFailed;
+  // T129: 촉각 악보(디버그 상자 자리에 음성·대기·만료·진동을 시간축으로 그림).
+  final String settingsScoreLabel;
+  final String settingsScoreNote;
   // B안 ①: 데이터 수집용 개발 설정(초광각 0.6배·장착 방향·프레임 저장).
   final String settingsDevCaptureSectionHeader;
   final String settingsUltraWideLabel;
@@ -362,6 +365,8 @@ class AppStrings {
     required this.settingsDevLogShare,
     required this.settingsDevLogShareEmpty,
     required this.settingsDevLogShareFailed,
+    required this.settingsScoreLabel,
+    required this.settingsScoreNote,
     required this.settingsDevCaptureSectionHeader,
     required this.settingsUltraWideLabel,
     required this.settingsUltraWideNote,
@@ -494,6 +499,9 @@ class AppStrings {
     settingsDevLogShare: '기록 보내기',
     settingsDevLogShareEmpty: '보낼 기록이 없습니다',
     settingsDevLogShareFailed: '기록을 보내지 못했습니다',
+    settingsScoreLabel: '촉각 악보 (개발)',
+    settingsScoreNote: '화면 아래 상자에 음성(말하는 중·대기·만료)과 진동을 '
+        '시간 순서로 그립니다. 화면 녹화 분석용입니다. 켜 두는 동안 화면을 계속 다시 그립니다.',
     settingsDevCaptureSectionHeader: '개발용 수집 (초광각)',
     settingsUltraWideLabel: '초광각 0.6배',
     settingsUltraWideNote: '카메라를 0.6배로 엽니다. 실패하면 화면 아래 상자에 '
@@ -655,6 +663,10 @@ class AppStrings {
     settingsDevLogShare: 'Send log',
     settingsDevLogShareEmpty: 'No log to send',
     settingsDevLogShareFailed: 'Could not send the log',
+    settingsScoreLabel: 'Haptic score (dev)',
+    settingsScoreNote: 'Draws speech (speaking, waiting, expired) and vibration '
+        'over time in the box at the bottom, for screen-recording review. '
+        'Redraws the screen continuously while on.',
     settingsDevCaptureSectionHeader: 'Developer capture (ultra-wide)',
     settingsUltraWideLabel: 'Ultra-wide 0.6x',
     settingsUltraWideNote: 'Opens the camera at 0.6x. If it fails, the box at the '

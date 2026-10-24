@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart' show OrdinalSortKey;
 import 'package:flutter/services.dart';
 import 'package:camera/camera.dart';
 import 'package:camera_platform_interface/camera_platform_interface.dart'
@@ -23,6 +24,9 @@ import '../services/angle_estimator.dart';
 import '../services/position_estimator.dart';
 import '../services/ground_projection.dart';
 import '../services/stripe_direction_estimator.dart';
+import '../services/score_timeline.dart';
+import '../widgets/haptic_score.dart';
+import '../widgets/slab_guidance.dart';
 import '../localization/app_strings.dart';
 import 'settings_screen.dart';
 
@@ -657,6 +661,21 @@ class _CameraScreenState extends State<CameraScreen>
   final FrameSaver _frameSaver = FrameSaver();
   bool _streamSizeLogged = false;
 
+  // T129: 촉각 악보(개발, 기본 꺼짐). 켜면 EventLog와 같은 사건을 받아 디버그
+  // 상자 안에 시간축으로 그린다. 끄면 구독을 풀어 비용이 없다.
+  bool _scoreEnabled = false;
+  final ScoreTimeline _score = ScoreTimeline();
+
+  void _onScoreEvent(String event, Map<String, Object?> data, DateTime at) =>
+      _score.add(event, data, at);
+
+  void _setScoreEnabled(bool enabled) {
+    EventLog.instance.log('set', {'key': 'score', 'value': enabled});
+    EventLog.instance.tap = enabled ? _onScoreEvent : null;
+    if (!enabled) _score.clear();
+    if (mounted) setState(() => _scoreEnabled = enabled);
+  }
+
   /// 모델별 입력 회전. 세로(기본)면 각도·위치·노면 = 센서 회전, 분류기 = 0으로
   /// 지금과 같다.
   CameraMountRotations get _modelRotations => CameraMountRotations.of(
@@ -1262,6 +1281,7 @@ class _CameraScreenState extends State<CameraScreen>
   @override
   void dispose() {
     _noCallTicker?.cancel();
+    if (_scoreEnabled) EventLog.instance.tap = null;
     WidgetsBinding.instance.removeObserver(this);
     WakelockPlus.disable();
     _pulseController.dispose();
@@ -1315,8 +1335,11 @@ class _CameraScreenState extends State<CameraScreen>
     required IconData icon,
     required bool active,
     required String semanticLabel,
+    required double order,
   }) {
     return Semantics(
+      // T129: 상단 크롬 안 읽기 순서(음성 0 → 진동 0.5 → 설정 1).
+      sortKey: OrdinalSortKey(order),
       label: semanticLabel,
       // Reviewer fix: announce the actual on/off state as the Semantics
       // `value` (read after the label, e.g. "음성 안내, 켜짐"), so a screen
@@ -1328,7 +1351,12 @@ class _CameraScreenState extends State<CameraScreen>
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: active ? _colorAccent : Colors.black.withValues(alpha: 0.35),
+          // T129: 노란 면 위에서는 반투명 바탕이 노랑에 섞여 아이콘이 안 보인다.
+          color: active
+              ? _colorAccent
+              : _slabSpec.onSlab
+                  ? _colorBg
+                  : Colors.black.withValues(alpha: 0.35),
           border: Border.all(
             color: active ? _colorAccent : Colors.white38,
             width: 1.5,
@@ -1482,10 +1510,16 @@ class _CameraScreenState extends State<CameraScreen>
   // T38/T39: 설정 화면 진입 버튼. SettingsScreen으로 라우팅한다.
   Widget _buildSettingsButton() {
     return Semantics(
+      // T129: 설정 버튼이 알약보다 커서 위치 순으로는 먼저 읽혔다 —
+      // 음성·진동 상태 다음에 읽게 한다.
+      // 상단 크롬 묶음(container)에 흡수되지 않고 제 노드를 갖게 한다.
+      container: true,
+      sortKey: const OrdinalSortKey(1),
       label: _strings.settingsButtonLabel,
       button: true,
       child: Material(
-        color: Colors.black.withValues(alpha: 0.35),
+        color:
+            _slabSpec.onSlab ? _colorBg : Colors.black.withValues(alpha: 0.35),
         shape: const CircleBorder(
           side: BorderSide(color: Colors.white38, width: 1.5),
         ),
@@ -1511,6 +1545,8 @@ class _CameraScreenState extends State<CameraScreen>
                   eventLogEnabled: EventLog.instance.enabled,
                   onEventLogChanged: EventLog.instance.setEnabled,
                   onShareEventLog: _shareEventLog,
+                  scoreEnabled: _scoreEnabled,
+                  onScoreChanged: _setScoreEnabled,
                   ultraWideEnabled: _ultraWideEnabled,
                   onUltraWideChanged: _setUltraWideEnabled,
                   cameraMount: _mount,
@@ -1603,24 +1639,28 @@ class _CameraScreenState extends State<CameraScreen>
     return _strings.cameraStateDescriptions[_fieldState] ?? '';
   }
 
-  // 가장자리 펄스는 **가야 할 방향**을 가리킨다: state가 'left'면 목표는
-  // 오른쪽이므로 오른쪽 가장자리가 맥동한다.
-  //
-  // T79(2026-09-07): 화살표도 이제 같은 "가야 할 방향"을 가리킨다
-  // (`StateFieldPainter.paint`의 T79 주석 참고). T63 시점에는 화살표가
-  // 이탈 방향을, 펄스가 목표 방향을 맡아 채널이 갈렸으나, T78의 지면
-  // 화살표가 라벨 규약대로 목표 방향을 가리키면서 둘이 어긋났기 때문이다.
-  // 이탈 방향은 문구와 색이 계속 전달한다.
-  String? get _pulseEdge {
-    if (_fieldState == 'left') return 'right';
-    if (_fieldState == 'right') return 'left';
-    return null;
+  /// T129: 시안 A "큰 글씨 슬랩" 표현. 표는 `SlabSpec` 문서.
+  ///
+  /// 이전의 가장자리 번짐(T63/T64 `_buildEdgePulse`)을 대신한다 — 가야 할 쪽을
+  /// 가리키는 역할은 노란 면이 붙는 쪽이 맡는다.
+  SlabSpec get _slabSpec =>
+      SlabSpec.from(_fieldState, severe: _severe, atEdge: _atEdge);
+
+  /// 큰 글자: 이탈이면 **가야 할 방향**("왼쪽으로"), 아니면 화면 제목.
+  String get _slabBigText {
+    final sub = _fieldSubline;
+    return _slabSpec.deviating && sub.isNotEmpty ? sub : _fieldHeadline;
   }
 
-  /// 펄스 컨트롤러를 현재 상태에 맞춰 켜고 끈다. build()마다 호출해도
-  /// 안전하다 — isAnimating을 먼저 확인해 중복 repeat()/stop() 호출을 막는다.
+  /// 작은 글자: 이탈이면 관측 문구("오른쪽 끝"), 아니면 보조 한 줄.
+  String get _slabSmallText =>
+      _slabSpec.deviating ? _fieldHeadline : _fieldSubline;
+
+  /// 위험 막대 밝기 흔들기를 켜고 끈다. build()마다 호출해도 안전하다 —
+  /// isAnimating을 먼저 확인해 중복 repeat()/stop() 호출을 막는다.
+  /// 900ms 왕복이라 밝기 변화는 1.8초에 한 번(초당 0.56회, WCAG 2.3.1의 3회 이하).
   void _syncPulseAnimation(bool reducedMotion) {
-    final active = _pulseEdge != null && !reducedMotion;
+    final active = _slabSpec.level == SlabLevel.edge && !reducedMotion;
     if (active && !_pulseController.isAnimating) {
       _pulseController.repeat(reverse: true);
     } else if (!active && _pulseController.isAnimating) {
@@ -1628,63 +1668,22 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
-  /// 목표 방향 가장자리 펄스 — 화면 전체 높이를 쓰는 은은한 번짐(ambient
-  /// glow)이다. 접근성: `MediaQuery.disableAnimations`가 켜져 있으면(모션 감소
-  /// 설정) 애니메이션 대신 고정 밝기로 표시한다.
-  ///
-  /// T64(사용자 지적, 2026-08-24 — "펄스가 전체적으로 보이도록, 지금은 너무
-  /// 형식적으로 끊겨 있어"): 초판은 상태 필드 영역(위·아래 여백 제외)에만
-  /// 갇힌 56~88px 고정폭 막대였다 — 화면 일부에만 걸쳐 있어 잘린 사각형처럼
-  /// 보였다. 이제 화면 전체 높이(SafeArea 밖, 최상위 Stack)에 걸쳐 그리고,
-  /// 폭도 화면 너비의 비율로 잡아(약함 32% / 심함 48%) 화면 크기가 달라져도
-  /// 비례한다. 3단 그라디언트(가장자리->중간->투명)로 경계를 더 부드럽게
-  /// 풀었다 — 2단 그라디언트는 중간 지점에서 밝기가 급격히 꺾여 보인다.
-  Widget _buildEdgePulse(Color color, bool reducedMotion) {
-    final edge = _pulseEdge;
-    if (edge == null) return const SizedBox.shrink();
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth * (_severe ? 0.48 : 0.32);
-        final peakAlpha = _severe ? 0.42 : 0.26;
-        final alignment =
-            edge == 'right' ? Alignment.centerRight : Alignment.centerLeft;
-        final gradientBegin = alignment;
-        final gradientEnd =
-            edge == 'right' ? Alignment.centerLeft : Alignment.centerRight;
-
-        Widget bar(double alpha) => Align(
-              alignment: alignment,
-              child: IgnorePointer(
-                child: Container(
-                  width: width,
-                  height: double.infinity,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: gradientBegin,
-                      end: gradientEnd,
-                      stops: const [0.0, 0.55, 1.0],
-                      colors: [
-                        color.withValues(alpha: alpha),
-                        color.withValues(alpha: alpha * 0.35),
-                        color.withValues(alpha: 0),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            );
-
-        if (reducedMotion) return bar(peakAlpha * 0.7);
-
-        return AnimatedBuilder(
-          animation: _pulseController,
-          builder: (context, _) {
-            final t = Curves.easeInOut.transform(_pulseController.value);
-            return bar(peakAlpha * 0.35 + peakAlpha * 0.65 * t);
-          },
-        );
-      },
+  /// 화살표: 노란 면 위면 검정, 보통 이탈이면 노랑, 그 외는 상태 색.
+  /// 즉시(62%)면 화살표도 면 안에만 그린다 — 면 경계에 걸치면 반은 노랑 위,
+  /// 반은 어두운 바탕 위라 어느 색이든 한쪽에서 안 보인다.
+  Widget _buildSlabArrow(SlabSpec spec, Color color, bool reducedMotion) {
+    final ink = spec.onSlab
+        ? kSlabInk
+        : spec.deviating
+            ? kSlabYellow
+            : color;
+    final field = _buildStateField(ink, reducedMotion);
+    if (spec.level != SlabLevel.severe) return field;
+    return Align(
+      alignment: spec.goSide == SlabSide.right
+          ? Alignment.centerRight
+          : Alignment.centerLeft,
+      child: FractionallySizedBox(widthFactor: spec.coverage, child: field),
     );
   }
 
@@ -1697,6 +1696,7 @@ class _CameraScreenState extends State<CameraScreen>
     final dense = scale > 1.5;
     final color = _fieldColor;
     final reducedMotion = MediaQuery.of(context).disableAnimations;
+    final slab = _slabSpec;
     _syncPulseAnimation(reducedMotion);
 
     // T63/T65: 배터리 절약 모드가 꺼져 있으면(T65부터 기본값) 카메라 프리뷰를
@@ -1718,16 +1718,27 @@ class _CameraScreenState extends State<CameraScreen>
       body: Stack(
         children: [
           if (showPreview) Positioned.fill(child: _buildFullBleedPreview()),
-          // T64: 펄스를 화면 전체 높이로 옮겼다 — 상태 필드 영역에만 갇혀
-          // 있던 초판은 화면 일부에서만 번져 잘린 사각형처럼 보였다.
-          Positioned.fill(child: _buildEdgePulse(color, reducedMotion)),
+          // T129: 노란 면 + 위험 막대(화면 전체 높이). 오류 카드 뒤에는 그리지 않는다.
+          if (!_hasError)
+            Positioned.fill(
+              child: SlabBackdrop(
+                spec: slab,
+                reducedMotion: reducedMotion,
+                pulse: _pulseController,
+              ),
+            ),
           SafeArea(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 // ── 상단 크롬: 음성/진동 표시 + 설정 ──────────────────────────
+                // T129: 화면에서는 맨 위지만 TalkBack은 안내 문장(0) → 판독부(1)
+                // 다음에 읽는다(2).
                 if (!_hasError)
-                  Padding(
+                  Semantics(
+                    container: true,
+                    sortKey: const OrdinalSortKey(2),
+                    child: Padding(
                     padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
@@ -1741,6 +1752,7 @@ class _CameraScreenState extends State<CameraScreen>
                                 icon: Icons.volume_up,
                                 active: active,
                                 semanticLabel: _strings.voiceIndicatorLabel,
+                                order: 0,
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -1750,6 +1762,7 @@ class _CameraScreenState extends State<CameraScreen>
                                 icon: Icons.vibration,
                                 active: active,
                                 semanticLabel: _strings.vibrationIndicatorLabel,
+                                order: 0.5,
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -1769,6 +1782,7 @@ class _CameraScreenState extends State<CameraScreen>
                       ],
                     ),
                   ),
+                  ),
 
                 // ── 상태 필드 ────────────────────────────────────────────────
                 //
@@ -1779,24 +1793,55 @@ class _CameraScreenState extends State<CameraScreen>
                 // 화면에만 그리지 않는다.
                 //
                 // 형태 + 위치가 방향을 말하고, 색은 "이탈인가 아닌가"만 말한다.
+                //
+                // T129(시안 A): 큰 글자 한 줄이 먼저, 화살표가 그 아래. 안내 문장
+                // 라이브 영역도 하단 판독부에서 이 큰 글자로 옮겼다(낭독 문장은 같다).
                 if (!_hasError)
                   Expanded(
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: _isLoading
-                          ? const Center(
-                              child: SizedBox(
-                                width: 32,
-                                height: 32,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 3,
-                                  color: _colorSteel,
-                                ),
-                              ),
-                            )
-                          : RepaintBoundary(
-                              child: _buildStateField(color, reducedMotion),
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Claude Design 1f: 상태 변화는 사용자가 찾아 들어가지
+                          // 않아도 자동으로 낭독되어야 한다.
+                          Semantics(
+                            container: true,
+                            sortKey: const OrdinalSortKey(0),
+                            child: SlabHeadline(
+                              spec: slab,
+                              bigText: _slabBigText,
+                              smallText: _slabSmallText,
+                              semanticsLabel: _fieldSubline.isEmpty
+                                  ? _fieldHeadline
+                                  : '$_fieldHeadline. $_fieldSubline',
+                              color: color,
+                              dimColor: _colorText,
+                              reducedMotion: reducedMotion,
+                              backing: showPreview
+                                  ? _colorBg.withValues(alpha: 0.86)
+                                  : null,
                             ),
+                          ),
+                          Expanded(
+                            child: _isLoading
+                                ? const Center(
+                                    child: SizedBox(
+                                      width: 32,
+                                      height: 32,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 3,
+                                        color: _colorSteel,
+                                      ),
+                                    ),
+                                  )
+                                : RepaintBoundary(
+                                    child: _buildSlabArrow(
+                                        slab, color, reducedMotion),
+                                  ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
 
@@ -1809,69 +1854,35 @@ class _CameraScreenState extends State<CameraScreen>
                 // 최악 휘도(순백 프레임 가정) (1-0.86)*1.0 + 0.86*L(#0E1013)
                 // ≈ 0.15 -> 대비 4.85:1, AA 4.5:1 충족)을 남긴다.
                 if (!_hasError)
-                  Padding(
+                  Semantics(
+                    container: true,
+                    sortKey: const OrdinalSortKey(1),
+                    child: Padding(
                     padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 14),
                       decoration: BoxDecoration(
-                        color: showPreview
-                            ? _colorBg.withValues(alpha: 0.86)
-                            : Colors.transparent,
+                        // T129: 노란 면이 판독부 뒤까지 오면 흐린 글자가 노랑 위에
+                        // 놓이므로 불투명 바탕을 깐다.
+                        color: slab.onSlab
+                            ? _colorBg
+                            : showPreview
+                                ? _colorBg.withValues(alpha: 0.86)
+                                : Colors.transparent,
                         borderRadius: BorderRadius.circular(16),
                       ),
                       child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Claude Design 1f: 상태 변화는 사용자가 찾아 들어가지 않아도
-                        // 자동으로 낭독되어야 한다. 확신도 숫자는 낭독하지 않는다 —
-                        // 걷는 중에 "0.71"은 판단을 돕지 않고 소음이 된다.
-                        Semantics(
-                          liveRegion: true,
-                          label: _fieldSubline.isEmpty
-                              ? _fieldHeadline
-                              : '$_fieldHeadline. $_fieldSubline',
-                          child: ExcludeSemantics(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  _fieldHeadline,
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: color,
-                                    fontSize: 30,
-                                    height: 1.15,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                if (_fieldSubline.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: Text(
-                                      _fieldSubline,
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                        color: _colorText,
-                                        fontSize: 20,
-                                        height: 1.2,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
                         // 2차 정보 — 200% 확대 시 화면에서 버린다 (음성으로만 남는다).
                         // T89: 무판정("판정 없음")일 때는 숨긴다 — 이 값은
                         // 3초 전 마지막 유효 판정의 신뢰도라, "판정 없음 65%"
                         // 처럼 보이면 오도한다(실기기 #15).
                         if (!dense && _confidence > 0 && !_hasError && !_noCall) ...[
                           Padding(
-                            padding: const EdgeInsets.only(top: 10),
+                            padding: const EdgeInsets.only(top: 0),
                             child: Text(
                               '${_strings.confidenceLabel} '
                               '${(_confidence * 100).toStringAsFixed(0)}%',
@@ -1920,7 +1931,11 @@ class _CameraScreenState extends State<CameraScreen>
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 10, vertical: 6),
-                                child: Text(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                Text(
                                   // T99: 어느 커밋의 APK인지 실기기 테스트
                                   // 중 메인 화면에서 바로 보이게 한다
                                   // (설정 화면의 T45 값과 같은 출처).
@@ -1936,6 +1951,18 @@ class _CameraScreenState extends State<CameraScreen>
                                     color: _colorTextDim.withValues(alpha: 0.8),
                                     fontSize: 12,
                                   ),
+                                ),
+                                // T129: 촉각 악보(개발 설정에서 켬). 위 글자 줄은
+                                // 그대로 두고 그 아래에 붙인다.
+                                if (_scoreEnabled)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 6),
+                                    child: HapticScoreView(
+                                      timeline: _score,
+                                      reducedMotion: reducedMotion,
+                                    ),
+                                  ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -1954,6 +1981,7 @@ class _CameraScreenState extends State<CameraScreen>
                       ],
                       ),
                     ),
+                  ),
                   ),
 
                 if (_hasError) Expanded(child: _buildErrorCard()),
