@@ -676,11 +676,13 @@ class FeedbackService {
     if (action == SpeechAction.queue) {
       // 만료된 대기 항목이 슬롯을 막지 않게 먼저 치운다(버린 것은 기록).
       final expiredPriority = audioPolicy.pendingPriority;
+      final expiredWhy = audioPolicy.pendingExpiry(now);
       final expired = audioPolicy.takeExpiredPending(now);
       if (expired != null && expiredPriority != null) {
         EventLog.instance.log('say.ttl', {
           'text': expired,
           'p': expiredPriority.index,
+          if (expiredWhy != null) 'why': expiredWhy,
         });
       }
     }
@@ -783,7 +785,8 @@ class FeedbackService {
   }
 
   /// 대기 슬롯에 남은 항목을 꺼내 발화한다. TTL이 지났으면 버린다 —
-  /// 늦게 도착한 안내는 정보가 아니라 오정보다.
+  /// 늦게 도착한 안내는 정보가 아니라 오정보다. T126: TTL은 마지막 P0가 끝난
+  /// 때부터 센다(`AudioPolicy.pendingExpiry`).
   void _drainPending() {
     final pri = audioPolicy.pendingPriority;
     final msg = audioPolicy.pendingMessage;
@@ -791,9 +794,11 @@ class FeedbackService {
     if (pri == null || msg == null || at == null) return;
     // 그사이 다른 발화가 시작됐으면 그 발화가 끝날 때 다시 꺼낸다.
     if (audioPolicy.activePriority != null) return;
+    final expiredWhy = audioPolicy.pendingExpiry(DateTime.now());
     audioPolicy.clearPending();
-    if (audioPolicy.isExpired(pri, at, DateTime.now())) {
-      EventLog.instance.log('say.ttl', {'text': msg, 'p': pri.index});
+    if (expiredWhy != null) {
+      EventLog.instance.log(
+          'say.ttl', {'text': msg, 'p': pri.index, 'why': expiredWhy});
       return;
     }
     unawaited(_speak(msg, priority: pri, requestedAt: at));

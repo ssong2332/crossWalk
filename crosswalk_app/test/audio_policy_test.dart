@@ -331,6 +331,97 @@ void main() {
     });
   });
 
+  // T126: 대기 항목의 TTL은 마지막 P0가 끝난 때부터 센다 — 10/24 실기기 진입 안내
+  // 12건 중 6건이 이탈 경고 뒤에서 처음 요청부터 센 3초로 버려졌다.
+  group('AudioPolicy — T126 대기 TTL은 P0가 끝난 때부터', () {
+    const entry = '횡단보도에 진입했습니다.';
+    DateTime ms(int v) => t0.add(Duration(milliseconds: v));
+
+    test('10/24 13:25:34 재현: P0가 2.48초에 끝나면 3.98초에 꺼낼 때 아직 유효하다', () {
+      final p = AudioPolicy();
+      p.markStarted(FeedbackPriority.p0);
+      expect(p.putPending(FeedbackPriority.p1, entry, t0), isTrue);
+      p.markFinished(FeedbackPriority.p0, ms(-500), ms(2480));
+      // 전: 처음 요청부터 3.98초 > 3초라 버렸다.
+      expect(p.isExpired(FeedbackPriority.p1, t0, ms(3980)), isTrue);
+      expect(p.pendingExpiry(ms(3980)), isNull);
+      expect(p.takeExpiredPending(ms(3980)), isNull);
+      expect(p.pendingMessage, entry);
+    });
+
+    test('P0가 끝나고 3초가 지나면 만료(ttl)', () {
+      final p = AudioPolicy();
+      p.markStarted(FeedbackPriority.p0);
+      p.putPending(FeedbackPriority.p1, entry, t0);
+      p.markFinished(FeedbackPriority.p0, ms(-500), ms(2480));
+      expect(p.pendingExpiry(ms(5480)), isNull);
+      expect(p.pendingExpiry(ms(5481)), 'ttl');
+    });
+
+    test('P0가 재생 중인 동안은 TTL이 흐르지 않는다', () {
+      final p = AudioPolicy();
+      p.markStarted(FeedbackPriority.p0);
+      p.putPending(FeedbackPriority.p1, entry, t0);
+      expect(p.pendingExpiry(ms(5000)), isNull);
+      expect(p.takeExpiredPending(ms(5000)), isNull);
+    });
+
+    test('상한: P0가 이어져도 처음 요청부터 8초가 지나면 만료(max_wait)', () {
+      expect(AudioPolicy.maxPendingWait, const Duration(seconds: 8));
+      final p = AudioPolicy();
+      p.markStarted(FeedbackPriority.p0);
+      p.putPending(FeedbackPriority.p1, entry, t0);
+      expect(p.pendingExpiry(ms(8000)), isNull);
+      expect(p.pendingExpiry(ms(8001)), 'max_wait');
+      expect(p.takeExpiredPending(ms(8001)), entry);
+      expect(p.pendingPriority, isNull);
+    });
+
+    test('상한: 마지막 P0가 방금 끝났어도 8초가 지났으면 만료 (10/24 13:27:39 — 11초)', () {
+      final p = AudioPolicy();
+      p.markStarted(FeedbackPriority.p0);
+      p.putPending(FeedbackPriority.p1, entry, t0);
+      p.markFinished(FeedbackPriority.p0, ms(8020), ms(9451));
+      expect(p.pendingExpiry(ms(10951)), 'max_wait');
+    });
+
+    test('P0 없이 기다리면(최소 간격·P1 재생) 전과 같이 처음 요청부터 3초', () {
+      final p = AudioPolicy();
+      p.putPending(FeedbackPriority.p1, entry, t0);
+      expect(p.pendingExpiry(ms(3000)), isNull);
+      expect(p.pendingExpiry(ms(3001)), 'ttl');
+    });
+
+    test('요청 전에 끝난 P0는 기준이 아니다', () {
+      final p = AudioPolicy();
+      p.markStarted(FeedbackPriority.p0);
+      p.markFinished(FeedbackPriority.p0, ms(-2000), ms(-500));
+      p.putPending(FeedbackPriority.p1, entry, t0);
+      expect(p.pendingExpiry(ms(3001)), 'ttl');
+    });
+
+    test('끊겨서 끝난 P0(current=false)는 기준이 아니다 — 새 P0가 끝난 때부터', () {
+      final p = AudioPolicy();
+      p.markStarted(FeedbackPriority.p0);
+      p.putPending(FeedbackPriority.p1, entry, t0);
+      p.markStarted(FeedbackPriority.p0, message: '즉시 왼쪽으로 가세요');
+      p.markFinished(FeedbackPriority.p0, ms(-500), ms(1000), current: false);
+      expect(p.pendingExpiry(ms(4500)), isNull, reason: '새 P0 재생 중');
+      p.markFinished(FeedbackPriority.p0, ms(1000), ms(4000));
+      expect(p.pendingExpiry(ms(7000)), isNull);
+      expect(p.pendingExpiry(ms(7001)), 'ttl');
+    });
+
+    test('reset은 P0 종료 기준도 지운다', () {
+      final p = AudioPolicy();
+      p.markStarted(FeedbackPriority.p0);
+      p.markFinished(FeedbackPriority.p0, ms(-500), ms(2000));
+      p.reset();
+      p.putPending(FeedbackPriority.p1, entry, t0);
+      expect(p.pendingExpiry(ms(3001)), 'ttl');
+    });
+  });
+
   group('VibrationPolicy — 좌우 패턴 분리 (§5)', () {
     test('왼쪽은 짧게 두 번, 오른쪽은 길게 한 번', () {
       final left = VibrationPolicy().decidePattern('left', t0, 400);

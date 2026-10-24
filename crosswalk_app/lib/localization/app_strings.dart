@@ -485,7 +485,8 @@ class AppStrings {
         '음성으로 알려줍니다. 횡단보도 안내 중에는 말하지 않습니다. 배터리를 더 씁니다.',
     settingsCrosswalkGateLabel: '노면 횡단보도 확인 (개발)',
     settingsCrosswalkGateNote: '노면 모델이 횡단보도를 거의 못 보면 "앞에 횡단보도"를 '
-        '말하지 않습니다. 노면 안내나 주의 구역 안내가 켜져 있을 때만 동작합니다.',
+        '말하지 않습니다. 노면 안내나 주의 구역 안내가 켜져 있을 때만 동작합니다. '
+        '초광각 0.6배이거나 폰 방향이 가로면 쉽니다(노면 모델이 세로·1배로만 학습됨).',
     settingsDevLogSectionHeader: '개발용 기록',
     settingsDevLogLabel: '기록 남기기',
     settingsDevLogNote: '진동·음성·판정 결과를 이 폰에만 기록합니다. '
@@ -644,7 +645,9 @@ class AppStrings {
         'Uses more battery.',
     settingsCrosswalkGateLabel: 'Surface crosswalk check (dev)',
     settingsCrosswalkGateNote: 'Skips "Crosswalk ahead" when the surface model barely '
-        'sees a crosswalk. Works only while surface or caution guidance is on.',
+        'sees a crosswalk. Works only while surface or caution guidance is on. '
+        'Paused at 0.6x ultra-wide or in landscape (the surface model was trained '
+        'on portrait 1x only).',
     settingsDevLogSectionHeader: 'Developer log',
     settingsDevLogLabel: 'Keep a log',
     settingsDevLogNote: 'Records vibration, speech and detection results '

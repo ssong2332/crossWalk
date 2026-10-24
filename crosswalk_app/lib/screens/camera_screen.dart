@@ -552,12 +552,17 @@ class _CameraScreenState extends State<CameraScreen>
     if (result != null) {
       // T125: 노면 횡단보도 확인(개발, 기본 꺼짐) — approach인데 최근 노면 판정에
       // 횡단보도가 거의 없으면 none으로 낮춘다(CrosswalkSurfaceGate 표). 위(front·
-      // left·right) 판정은 건드리지 않는다.
+      // left·right) 판정은 건드리지 않는다. T126: 0.6배·가로면 노면 모델이 학습
+      // 조건 밖이라 쉰다(skip).
       final gate = _crosswalkGate.apply(result.label,
-          enabled: _crosswalkGateEnabled, now: DateTime.now());
+          enabled: _crosswalkGateEnabled,
+          now: DateTime.now(),
+          ultraWide: _ultraWideEnabled,
+          landscape: _mount != CameraMount.portrait);
       if (gate.verdict != null) {
         EventLog.instance.log('cwgate', {
           'v': gate.verdict,
+          if (gate.why != null) 'why': gate.why,
           'cw': gate.maxRatio,
           'n': gate.samples,
           'surf': _surfaceRunning,
