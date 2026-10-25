@@ -455,7 +455,9 @@ class AppStrings {
     surfaceLinearLostMessage: '점자블록을 벗어났습니다',
     cautionManholeMessage: '발밑 주의',
     cautionTreeMessage: '가로수',
-    enteredCrosswalkMessage: '횡단보도에 진입했습니다.',
+    // T134(사용자 승인 2026-10-25): 짧게 — 재생 약 2.1초 -> 약 1.4초(추정), 끼울 때
+    // 뒤 이탈 경고 음성이 덜 늦도록. 종전 '횡단보도에 진입했습니다.'
+    enteredCrosswalkMessage: '횡단보도 진입.',
     crossedCrosswalkMessage: '횡단보도를 건넜습니다.',
     approachAheadMessage: '앞에 횡단보도',
     voiceIndicatorLabel: '음성 안내',
@@ -617,7 +619,8 @@ class AppStrings {
     surfaceLinearLostMessage: 'You left the guide blocks',
     cautionManholeMessage: 'Watch your step',
     cautionTreeMessage: 'Street tree',
-    enteredCrosswalkMessage: 'You have entered the crosswalk.',
+    // T134: 한국어와 같이 짧게. 종전 'You have entered the crosswalk.'
+    enteredCrosswalkMessage: 'Entering crosswalk.',
     crossedCrosswalkMessage: 'You have crossed the crosswalk.',
     approachAheadMessage: 'Crosswalk ahead.',
     voiceIndicatorLabel: 'Voice guidance',

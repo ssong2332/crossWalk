@@ -348,7 +348,7 @@ void main() {
         final s = FeedbackService();
         expect(
           s.decidePhaseMessage('approach', entering, t0),
-          '횡단보도에 진입했습니다.',
+          '횡단보도 진입.',
           reason: 'approach -> $entering',
         );
       }
