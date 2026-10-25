@@ -45,6 +45,10 @@ class FeedbackService {
   // ([deviationLevel]). 같은 방향이면 이 값보다 올라갈 때만 6초 묶음을 깬다.
   int? _lastAlertLevel;
 
+  /// T132 ④: 이번 프레임의 이탈 단계([deviationLevel]) — 말했는지와 무관하게
+  /// [decideMessage]가 정한 값. left/right가 아니면 null. 진동 반복 간격에 쓴다.
+  int? _frameDeviationLevel;
+
   /// T120: 같은 방향 이탈 경고 묶음 창. 마지막으로 말한 뒤 이 안에서는 단계가
   /// 같거나 내려가면(문장만 바뀐 경우 포함) 말하지 않는다(진동은 그대로).
   /// 근거: `train/audio_occupancy/report.md` §3·§5 B — 기록 재계산(추정).
@@ -333,6 +337,7 @@ class FeedbackService {
     if (detectedClass != 'left' && detectedClass != 'right') {
       severityLatch.reset();
       _lastSeverityClass = null;
+      _frameDeviationLevel = null;
       // T120: front가 [recoveryHold] 이상 이어지면 회복 — 묶음을 푼다. 더 짧은
       // front 깜빡임과 none·approach·crossed는 회복이 아니다(묶음 유지).
       if (detectedClass == 'front') {
@@ -360,6 +365,7 @@ class FeedbackService {
     final severe = severityLatch.update(
         angleDegrees != null && angleDegrees.abs() >= severeAngleDegrees, now);
     final level = deviationLevel(severe: severe, atEdge: atEdge);
+    _frameDeviationLevel = level;
     final strings = AppStrings.of(_language);
     // T124: 빠른 상승(T3) — 같은 방향 단계가 올랐고, 앞 이탈 경고가 아직 재생 중.
     final deviationPlaying =
@@ -750,7 +756,10 @@ class FeedbackService {
 
     final generation = beginSpeechGeneration();
     final start = DateTime.now();
-    final inserted = afterP0 && why == 'after_p0';
+    // T132 ②: 바로 재생된(why=ok) 진입 안내도 끼운 진입 안내와 같은 보호를 받는다
+    // (10/25 저녁 기록: 바로 재생된 진입 2건이 0.97·1.26초 만에 interrupt_p1로 잘림).
+    final inserted = priority == FeedbackPriority.p1 &&
+        message == AppStrings.of(_language).enteredCrosswalkMessage;
     audioPolicy.markStarted(priority,
         rank: rank, message: message, insertedAt: inserted ? start : null);
     var result = 'done';
@@ -794,6 +803,11 @@ class FeedbackService {
       debugPrint('FeedbackService._speak: TTS error: $e');
     } finally {
       final end = DateTime.now();
+      // T108: 다른 발화에 끊겨 끝났으면 새 발화의 '재생 중' 상태를 지우지 않는다.
+      final current = generation == _speechGeneration;
+      // T132 ②: 더 새 발화가 시작돼(stop) 끝났으면 cut — 전에는 done이라 dur로만
+      // 구분했다.
+      if (result == 'done' && !current) result = 'cut';
       // T106: 끝난 시각·걸린 시간. 다른 안내가 끊었으면(stop) 짧게 끝난다.
       EventLog.instance.log('say.end', {
         'text': message,
@@ -803,11 +817,10 @@ class FeedbackService {
         if (rateMs != null) 'rate': wantRate,
         if (rateMs != null) 'rateMs': rateMs,
       });
-      // T108: 다른 발화에 끊겨 끝났으면 새 발화의 '재생 중' 상태를 지우지 않는다.
-      final current = generation == _speechGeneration;
       finishSpeechGeneration(generation);
       audioPolicy.markFinished(priority, start, end, current: current);
       // T131: 끼워 넣은 진입 안내가 끝나면(끊겼어도) 기다리게 한 P0를 내보낸다.
+      // T132 ②: 바로 재생된 진입 안내도 같다.
       if (inserted) _releaseInsertHeld();
       if (current) {
         // T131: P0가 끝났는데 진입 안내가 대기 중이면 최소 간격 없이 바로 끼워 넣는다.
@@ -904,6 +917,8 @@ class FeedbackService {
 
   /// T106: 진동 기록 한 줄의 내용. [kind]는 left·right·recover·road·line_on.
   /// 앱이 진동을 **요청한** 기록이다 — 모터가 실제로 떨렸는지는 알 수 없다.
+  /// T132 ④: 방향 진동이면 [level](`lvl`, 이탈 단계)과 [gapMs](`gap`, 적용한
+  /// 같은 방향 반복 간격)를 붙인다.
   @visibleForTesting
   static Map<String, Object?> vibrationLogData(
     String kind,
@@ -911,13 +926,22 @@ class FeedbackService {
     required bool hasVibrator,
     required bool supportsPattern,
     required int fallbackMs,
+    int? level,
+    int? gapMs,
   }) {
-    if (!hasVibrator) return {'kind': kind, 'ok': false, 'why': 'no_vibrator'};
+    final extra = {
+      if (level != null) 'lvl': level,
+      if (gapMs != null) 'gap': gapMs,
+    };
+    if (!hasVibrator) {
+      return {'kind': kind, 'ok': false, 'why': 'no_vibrator', ...extra};
+    }
     return {
       'kind': kind,
       'ok': true,
       'mode': supportsPattern ? 'pattern' : 'single',
       'pat': supportsPattern ? pattern : <int>[0, fallbackMs],
+      ...extra,
     };
   }
 
@@ -1048,8 +1072,10 @@ class FeedbackService {
     // 방향 정보가 음성에만 존재했고, 도로 소음에 음성이 묻히면 방향이 통째로
     // 사라졌다. `front`로 복귀할 때는 짧은 확인 진동 1회가 나간다.
     // 음성이 쿨다운에 걸린 프레임에서도 진동 판단은 별도로 수행한다.
-    final pattern =
-        vibrationPolicy.decidePattern(detectedClass, now, _vibrationDurationMs);
+    // T132 ④: 같은 방향 반복 간격은 이번 프레임의 이탈 단계로 정한다.
+    final pattern = vibrationPolicy.decidePattern(
+        detectedClass, now, _vibrationDurationMs,
+        level: _frameDeviationLevel ?? 0);
 
     // T106: 경고 입력과 이번에 낸 것(음성 문장 여부·진동 여부). 말이 안 나간
     // 이유(쿨다운)도 이 줄과 'say' 줄을 함께 보면 알 수 있다.
@@ -1067,6 +1093,11 @@ class FeedbackService {
     if (pattern == null) return;
 
     final kind = detectedClass == 'front' ? 'recover' : detectedClass;
+    // T132 ④: 방향 진동이면 단계와 적용한 반복 간격(ms)을 함께 남긴다.
+    final directional = kind == 'left' || kind == 'right';
+    final level = directional ? vibrationPolicy.lastLevel : null;
+    final gapMs =
+        directional ? vibrationPolicy.lastInterval.inMilliseconds : null;
     if (await Vibration.hasVibrator() ?? false) {
       // 패턴 진동을 지원하지 않는 기기에서는 단일 진동으로 내려간다.
       // 방향은 음성으로만 전달되지만, 아무 알림도 없는 것보다는 낫다.
@@ -1081,7 +1112,9 @@ class FeedbackService {
           vibrationLogData(kind, pattern,
               hasVibrator: true,
               supportsPattern: supportsPattern,
-              fallbackMs: _vibrationDurationMs));
+              fallbackMs: _vibrationDurationMs,
+              level: level,
+              gapMs: gapMs));
       final total = pattern.fold<int>(0, (a, b) => a + b);
       activateVibrationIndicator(total > 0 ? total : _vibrationDurationMs);
     } else {
@@ -1090,7 +1123,9 @@ class FeedbackService {
           vibrationLogData(kind, pattern,
               hasVibrator: false,
               supportsPattern: false,
-              fallbackMs: _vibrationDurationMs));
+              fallbackMs: _vibrationDurationMs,
+              level: level,
+              gapMs: gapMs));
     }
   }
 

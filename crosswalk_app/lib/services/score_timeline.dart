@@ -26,7 +26,8 @@ class ScoreSpeech {
   final double? rate;
   DateTime? end;
 
-  /// `say.end`의 res(done·superseded·timeout·error). 열려 있으면 null.
+  /// `say.end`의 res(done·cut·superseded·timeout·error). 열려 있으면 null.
+  /// T132: cut = 더 새 발화에 끊김.
   String? result;
 
   bool get open => end == null;

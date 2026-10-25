@@ -209,14 +209,14 @@ void main() {
     DateTime at(int ms) => t0.add(Duration(milliseconds: ms));
 
     test('첫 경고는 그대로', () {
-      final g = EdgeAngleFlipGuard();
+      final g = EdgeAngleFlipGuard(enabled: true);
       final d = g.apply('left', previous: 'front', angleDegrees: 20, now: t0);
       expect(d.label, 'left');
       expect(d.held, isFalse);
     });
 
     test('19:28 재현: 각도 left 뒤 0.25초에 끝 right → 막고 직전 상태(front) 유지', () {
-      final g = EdgeAngleFlipGuard();
+      final g = EdgeAngleFlipGuard(enabled: true);
       g.apply('left', previous: 'front', angleDegrees: 21, now: t0);
       g.apply('front', previous: 'left', angleDegrees: 6, now: at(1295));
       final d = g.apply('right',
@@ -229,7 +229,7 @@ void main() {
     });
 
     test('반대 방향 직접 전환(left → right)도 막으면 left 유지', () {
-      final g = EdgeAngleFlipGuard();
+      final g = EdgeAngleFlipGuard(enabled: true);
       g.apply('left', previous: 'front', angleDegrees: 20, now: t0);
       final d = g.apply('right',
           previous: 'left', position: 1.2, angleDegrees: 5, now: at(500));
@@ -238,7 +238,7 @@ void main() {
     });
 
     test('1초가 지나면 뒤집는다', () {
-      final g = EdgeAngleFlipGuard();
+      final g = EdgeAngleFlipGuard(enabled: true);
       g.apply('left', previous: 'front', angleDegrees: 20, now: t0);
       g.apply('front', previous: 'left', angleDegrees: 5, now: at(200));
       final d = g.apply('right',
@@ -248,7 +248,7 @@ void main() {
     });
 
     test('같은 출처(각도→각도)의 반대 전환은 그대로 (실제로 급히 튼 경우)', () {
-      final g = EdgeAngleFlipGuard();
+      final g = EdgeAngleFlipGuard(enabled: true);
       g.apply('left', previous: 'front', angleDegrees: 20, now: t0);
       final d =
           g.apply('right', previous: 'left', angleDegrees: -20, now: at(300));
@@ -257,7 +257,7 @@ void main() {
     });
 
     test('같은 방향 경고는 출처가 바뀌어도 그대로', () {
-      final g = EdgeAngleFlipGuard();
+      final g = EdgeAngleFlipGuard(enabled: true);
       g.apply('right', previous: 'front', angleDegrees: -20, now: t0);
       final d = g.apply('right',
           previous: 'right', position: 1.3, angleDegrees: 5, now: at(300));
@@ -266,7 +266,7 @@ void main() {
     });
 
     test('막은 판정은 기억을 갱신하지 않는다 — 1초 넘게 이어지지 않음', () {
-      final g = EdgeAngleFlipGuard();
+      final g = EdgeAngleFlipGuard(enabled: true);
       g.apply('left', previous: 'front', angleDegrees: 20, now: t0);
       expect(
           g
@@ -283,7 +283,7 @@ void main() {
     });
 
     test('위를 벗어나면(none/approach/crossed) 기억을 지운다 — 다음 경고는 첫 경고', () {
-      final g = EdgeAngleFlipGuard();
+      final g = EdgeAngleFlipGuard(enabled: true);
       g.apply('left', previous: 'front', angleDegrees: 20, now: t0);
       expect(g.apply('none', previous: 'left', now: at(100)).label, 'none');
       final d = g.apply('right',
@@ -292,11 +292,24 @@ void main() {
     });
 
     test('직전 상태가 위가 아니면 막지 않는다', () {
-      final g = EdgeAngleFlipGuard();
+      final g = EdgeAngleFlipGuard(enabled: true);
       g.apply('left', previous: 'front', angleDegrees: 20, now: t0);
       final d = g.apply('right',
           previous: 'hold', position: 1.2, angleDegrees: 5, now: at(300));
       expect(d.held, isFalse);
+    });
+
+    // T132 ③: 기본으로 꺼져 있다 — 같은 19:28 재현도 막지 않는다.
+    test('T132: 기본값은 꺼짐 — 막지 않고 받은 판정 그대로', () {
+      expect(EdgeAngleFlipGuard.enabledByDefault, isFalse);
+      final g = EdgeAngleFlipGuard();
+      expect(g.enabled, isFalse);
+      g.apply('left', previous: 'front', angleDegrees: 21, now: t0);
+      g.apply('front', previous: 'left', angleDegrees: 6, now: at(1295));
+      final d = g.apply('right',
+          previous: 'front', position: 1.01, angleDegrees: 6, now: at(1550));
+      expect(d.held, isFalse);
+      expect(d.label, 'right');
     });
   });
 }

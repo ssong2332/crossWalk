@@ -123,6 +123,7 @@ class AudioPolicy {
   String? get activeMessage => _activeMessage;
 
   /// T131: 재생 중인 끼워 넣은 진입 안내의 시작 시각(아니면 null).
+  /// T132 ②: 바로 재생된 진입 안내도 같다.
   DateTime? get insertStartedAt => _insertStartedAt;
 
   /// T108: 최소 간격이 끝나 P1~P3를 다시 말할 수 있는 시각(직전 발화가 없으면 null).
@@ -358,25 +359,48 @@ class AudioPolicy {
 /// 좌/우가 같은 패턴이던 것을 분리한다. 도로 소음에 음성이 묻혀도 방향이 전달되도록,
 /// 그리고 같은 방향이 지속될 때 음성 대신 진동만으로 알리기 위해서다.
 class VibrationPolicy {
-  /// 같은 방향이 계속될 때 방향 패턴을 다시 내는 간격.
+  /// 같은 방향이 계속될 때 방향 패턴을 다시 내는 간격(이탈 단계 보통 = 0).
   ///
-  /// 3초는 `feedback_service.dart`의 `_cooldownSeconds`와 같은 값이다 —
-  /// 음성 재발화와 같은 박자로 나가야 두 채널이 어긋나지 않는다.
+  /// 3초는 `feedback_service.dart`의 `_cooldownSeconds`와 같은 값이다.
   /// 초판의 간격 점증(1->2->4->8초)은 제거했다: 진동이 8초 간격이면
   /// 음성만 나가고 진동은 없는 구간이 생긴다.
   static const repeatInterval = Duration(seconds: 3);
 
+  /// T132 ④(사용자 선택 A, 2026-10-25): 이탈 단계(`FeedbackService.deviationLevel`)별
+  /// 같은 방향 반복 간격 — 보통 3초, 즉시(심함) 1.5초, 가장자리 1초. 매 프레임
+  /// 지금 단계의 간격으로 마지막 진동부터 잰다: 단계가 오르면 그 간격이 이미
+  /// 지났을 때 바로 내고, 내려가면 바로 느려진다. 음성 6초 묶음(T120)과는 별개다.
+  static const repeatIntervalsByLevel = <Duration>[
+    repeatInterval,
+    Duration(milliseconds: 1500),
+    Duration(seconds: 1),
+  ];
+
+  /// T132 ④: [level]의 반복 간격. 범위 밖이면 가까운 끝 값.
+  static Duration repeatIntervalFor(int level) =>
+      repeatIntervalsByLevel[level.clamp(0, repeatIntervalsByLevel.length - 1)];
+
   String? _lastClass;
   DateTime? _lastVibratedAt;
+  int _lastLevel = 0;
 
   String? get lastClass => _lastClass;
+
+  /// T132 ④: 마지막 [decidePattern] 호출의 이탈 단계와 그 반복 간격(기록용).
+  int get lastLevel => _lastLevel;
+  Duration get lastInterval => repeatIntervalFor(_lastLevel);
 
   /// `Vibration.vibrate(pattern:)`에 넣을 패턴을 돌려준다. null이면 진동하지 않는다.
   ///
   /// [longMs]는 사용자가 설정에서 조정하는 진동 길이다. 짧은 진동은 그 1/4이며
   /// 하한 80ms — 설정을 최소로 낮춰도 두 번의 진동이 한 번처럼 뭉치지 않게 한다.
-  List<int>? decidePattern(String detectedClass, DateTime now, int longMs) {
+  ///
+  /// T132 ④: [level]은 이번 프레임의 이탈 단계(0 보통·1 즉시·2 가장자리) —
+  /// 같은 방향 반복 간격을 정한다([repeatIntervalFor]). 방향 패턴은 그대로다.
+  List<int>? decidePattern(String detectedClass, DateTime now, int longMs,
+      {int level = 0}) {
     final shortMs = (longMs ~/ 4).clamp(80, longMs);
+    _lastLevel = level;
 
     if (detectedClass == 'left' || detectedClass == 'right') {
       if (detectedClass != _lastClass) {
@@ -385,9 +409,11 @@ class VibrationPolicy {
         _lastVibratedAt = now;
         return _directionPattern(detectedClass, shortMs, longMs);
       }
-      // 같은 방향 지속 — 3초마다 다시 낸다 (음성 재발화와 같은 박자).
+      // 같은 방향 지속 — 지금 단계의 간격마다 다시 낸다(T132 ④).
       final last = _lastVibratedAt;
-      if (last != null && now.difference(last) < repeatInterval) return null;
+      if (last != null && now.difference(last) < repeatIntervalFor(level)) {
+        return null;
+      }
       _lastVibratedAt = now;
       return _directionPattern(detectedClass, shortMs, longMs);
     }
@@ -417,5 +443,6 @@ class VibrationPolicy {
   void reset() {
     _lastClass = null;
     _lastVibratedAt = null;
+    _lastLevel = 0;
   }
 }

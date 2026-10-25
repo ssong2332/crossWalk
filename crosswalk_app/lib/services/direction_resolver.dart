@@ -195,8 +195,22 @@ class FlipGuardDecision {
 /// '마지막으로 있던 때' = 그 방향 상태였던 마지막 판정 시각(직진으로 바뀐 순간 포함).
 /// 막은 판정은 기억을 갱신하지 않는다 — 막는 것이 [window]를 넘겨 이어지지 않게.
 /// 1초는 사용자 결정 값이다(실기기 뒤 조정).
+///
+/// T132 ③(사용자 승인 2026-10-25): **꺼 둔다**([enabledByDefault] = false). 10/25
+/// 주간·저녁 두 시험에서 틀린 경고를 막았다고 확인된 묶음 0, 맞는 경고를 0.2~0.9초
+/// 늦춘 묶음 6(`train/field_1025b/fliphold.json`). 꺼져 있으면 [apply]는 받은
+/// 판정을 그대로 돌려주고 막지 않는다(`flip.hold` 기록도 없음). 코드는 지우지 않고
+/// 상수로 끈다 — 다시 켜 볼 때 이 상수만 바꾸면 되고, 판정표 테스트도 남는다.
 class EdgeAngleFlipGuard {
+  EdgeAngleFlipGuard({this.enabled = enabledByDefault});
+
   static const window = Duration(seconds: 1);
+
+  /// T132 ③: 앱이 쓰는 기본값. false면 막지 않는다.
+  static const enabledByDefault = false;
+
+  /// false면 [apply]가 아무것도 막지 않는다.
+  final bool enabled;
 
   String? _dir;
   String? _source;
@@ -207,6 +221,7 @@ class EdgeAngleFlipGuard {
       double? position,
       double? angleDegrees,
       required DateTime now}) {
+    if (!enabled) return FlipGuardDecision(resolved);
     if (!DirectionResolver.isOnCrosswalk(resolved)) {
       reset();
       return FlipGuardDecision(resolved);

@@ -1192,6 +1192,8 @@ class _CameraScreenState extends State<CameraScreen>
 
   // T130: 끝↔각도 뒤집힘 막기(`EdgeAngleFlipGuard` 표). 분류·각도·위치 세 경로가
   // 같은 기억을 쓴다. 막았으면 `flip.hold`로 남겨 실기기에서 횟수를 센다.
+  // T132 ③: 기본으로 꺼져 있다(`EdgeAngleFlipGuard.enabledByDefault`) — 막지 않고
+  // `flip.hold`도 남지 않는다.
   final EdgeAngleFlipGuard _flipGuard = EdgeAngleFlipGuard();
 
   FlipGuardDecision _guardFlip(

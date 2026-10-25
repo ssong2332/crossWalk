@@ -882,6 +882,50 @@ void main() {
       expect(d['pat'], [0, 500]);
     });
 
+    test('T132: 방향 진동이면 단계(lvl)와 적용 간격(gap ms)을 붙인다', () {
+      final d = FeedbackService.vibrationLogData('right', [0, 500],
+          hasVibrator: true,
+          supportsPattern: true,
+          fallbackMs: 500,
+          level: 2,
+          gapMs: 1000);
+      expect(d['lvl'], 2);
+      expect(d['gap'], 1000);
+      final n = FeedbackService.vibrationLogData('left', [0, 125, 125, 125],
+          hasVibrator: false,
+          supportsPattern: false,
+          fallbackMs: 500,
+          level: 1,
+          gapMs: 1500);
+      expect(n, {
+        'kind': 'left',
+        'ok': false,
+        'why': 'no_vibrator',
+        'lvl': 1,
+        'gap': 1500
+      });
+    });
+
+    test('T132: alert()는 이번 프레임 단계로 진동 간격을 정하고 기록한다', () async {
+      // 테스트 호스트는 진동기가 없다(ok=false) — 단계·간격이 기록되는지만 본다.
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      await s.alert('right', 0.9, angleDegrees: -20, atEdge: true);
+      expect(s.vibrationPolicy.lastLevel, 2);
+      // 같은 방향, 단계가 내려감(가장자리 → 보통): 음성은 묶여도 진동 간격은 바로 3초.
+      await s.alert('right', 0.9, angleDegrees: -mild);
+      expect(s.vibrationPolicy.lastLevel, 0);
+      expect(s.vibrationPolicy.lastInterval, const Duration(seconds: 3));
+      final vib = EventLog.instance.earlyLines
+          .map((l) => jsonDecode(l) as Map<String, dynamic>)
+          .where((m) => m['ev'] == 'vib')
+          .toList();
+      expect(vib.first['kind'], 'right');
+      expect(vib.first['lvl'], 2);
+      expect(vib.first['gap'], 1000);
+      await s.dispose();
+    });
+
     test('진동기가 없으면 ok=false와 이유', () {
       final d = FeedbackService.vibrationLogData('recover', [0, 125],
           hasVibrator: false, supportsPattern: false, fallbackMs: 500);
@@ -1602,6 +1646,74 @@ void main() {
               .where((m) => m['text'] == ko.enteredCrosswalkMessage)
               .single['why'],
           'max_wait');
+      await tester.pump(const Duration(seconds: 5));
+      await _disposeIn(tester, s);
+    });
+
+    // T132 ②: 바로 재생된(why=ok) 진입 안내도 끼운 진입 안내와 같은 보호.
+    testWidgets('T132: 바로 재생된 진입 안내 재생 중의 이탈 경고는 끊지 않고 끝난 뒤 나간다',
+        (tester) async {
+      EventLog.instance.clearForTest();
+      final fake = install();
+      final s = FeedbackService();
+      await toApproach(s);
+      await s.alert('front', 0.9); // 진입만 — 바로 재생
+      expect(
+          logged('say')
+              .where((m) => m['text'] == ko.enteredCrosswalkMessage)
+              .single['why'],
+          'ok');
+      await tester.pump(const Duration(milliseconds: 300)); // 진입 재생 중
+      await s.alert('left', 0.9, angleDegrees: mild);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(fake.speaking, ko.enteredCrosswalkMessage, reason: '끊지 않는다');
+      expect(logged('say.defer').single, containsPair('why', 'insert'));
+      // 진입 끝(100 + 1000) -> stop 100 -> 이탈 경고.
+      await tester.pump(const Duration(milliseconds: 850));
+      expect(fake.speaking, leftMild);
+      expect(fake.played, [ko.enteredCrosswalkMessage, leftMild]);
+      expect(
+          logged('say.end')
+              .where((m) => m['text'] == ko.enteredCrosswalkMessage)
+              .single['res'],
+          'done');
+      await tester.pump(const Duration(seconds: 5));
+      await _disposeIn(tester, s);
+    });
+
+    testWidgets('T132: 바로 재생된 진입 안내도 차도 경고는 바로 끊는다(res=cut)',
+        (tester) async {
+      EventLog.instance.clearForTest();
+      final fake = install();
+      final s = FeedbackService();
+      await toApproach(s);
+      await s.alert('front', 0.9);
+      await tester.pump(const Duration(milliseconds: 300));
+      await s.surfaceAlert([SurfaceEvent.road]);
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(fake.speaking, ko.surfaceRoadMessage);
+      expect(logged('say.defer'), isEmpty);
+      expect(
+          logged('say.end')
+              .where((m) => m['text'] == ko.enteredCrosswalkMessage)
+              .single['res'],
+          'cut');
+      await tester.pump(const Duration(seconds: 5));
+      await _disposeIn(tester, s);
+    });
+
+    testWidgets('T132: 다른 안내에 끊긴 발화는 say.end res=cut, 끝까지 간 것은 done',
+        (tester) async {
+      EventLog.instance.clearForTest();
+      install();
+      final s = FeedbackService();
+      await s.alert('left', 0.9, angleDegrees: mild);
+      await tester.pump(const Duration(milliseconds: 500));
+      await s.alert('right', 0.9, angleDegrees: -mild); // 방향 바뀜 — P0가 P0를 끊음
+      await tester.pump(const Duration(seconds: 3));
+      final ends = logged('say.end');
+      expect(ends.firstWhere((m) => m['text'] == leftMild)['res'], 'cut');
+      expect(ends.firstWhere((m) => m['text'] == rightMild)['res'], 'done');
       await tester.pump(const Duration(seconds: 5));
       await _disposeIn(tester, s);
     });
