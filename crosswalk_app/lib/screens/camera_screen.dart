@@ -576,9 +576,13 @@ class _CameraScreenState extends State<CameraScreen>
       // 여기서 정한 상태를 문구·화살표·음성·진동이 전부 공유한다.
       // 각도는 화살표와 같은 보정값(`_arrowStripeAngle`, 최대 10프레임 전).
       // T98: 끝이면 위치 규칙이 각도보다 앞선다(DirectionResolver 표).
-      final resolved = DirectionResolver.resolve(
+      final resolvedRaw = DirectionResolver.resolve(
           gate.label, _arrowStripeAngle,
           position: _smoothedPosition, previous: _guidanceLabel);
+      // T130: 끝↔각도가 1초 안에 반대로 뒤집히면 직전 상태를 유지한다.
+      final flip =
+          _guardFlip(resolvedRaw, _smoothedPosition, _arrowStripeAngle);
+      final resolved = flip.label;
       // T103: 횡단보도 위에서 줄무늬가 사라지면(none/approach) 10초 동안
       // "횡단 중"으로 붙잡는다(CrossingHold 표). 그동안 방향 안내는 멈추고
       // alert도 부르지 않는다 — 각도·위치 갱신은 `_guidanceLabel`이 위가
@@ -593,13 +597,16 @@ class _CameraScreenState extends State<CameraScreen>
             holdStartedAt: _crossingHold.releasedHoldStartedAt);
       }
       // T102: 끝 규칙에서 나온 상태면 끝 전용 음성·화면 문구를 쓴다.
-      // (hold는 위가 아니므로 isEdge가 false다.)
-      final atEdge = DirectionResolver.isEdge(
-          label, _smoothedPosition, _arrowStripeAngle);
+      // (hold는 위가 아니므로 isEdge가 false다.) T130: 뒤집힘을 막았으면 끝 안내를
+      // 쓰지 않는다(막은 쪽이 끝 판정일 수 있다).
+      final atEdge = !flip.held &&
+          DirectionResolver.isEdge(
+              label, _smoothedPosition, _arrowStripeAngle);
       if (label != CrossingHold.holdLabel) {
         // T84: 강도 판정용 각도 — 화살표와 같은 보정값을 넘긴다.
         _feedback.alert(label, result.confidence,
-            angleDegrees: _effectiveAngle, atEdge: atEdge);
+            angleDegrees: flip.held ? _arrowStripeAngle : _effectiveAngle,
+            atEdge: atEdge);
       }
       if (mounted) {
         setState(() {
@@ -1026,22 +1033,28 @@ class _CameraScreenState extends State<CameraScreen>
     // alert를 불러 음성·진동도 같은 방향을 말하게 한다(쿨다운은 alert가
     // 알아서 건다).
     String? relabel;
+    var angleFlipHeld = false;
     if (DirectionResolver.isOnCrosswalk(_guidanceLabel) && !_noCall) {
       final next = DirectionResolver.resolve(_guidanceLabel, smoothed,
           position: _smoothedPosition, previous: _guidanceLabel);
-      if (next != _guidanceLabel) relabel = next;
+      // T130: 끝↔각도 뒤집힘 막기.
+      final flip = _guardFlip(next, _smoothedPosition, smoothed);
+      angleFlipHeld = flip.held;
+      if (flip.label != _guidanceLabel) relabel = flip.label;
     }
     // T102: 끝 여부는 상태 라벨이 그대로여도 바뀔 수 있다(예: left가 일반
     // 이탈에서 끝 규칙으로). 그때도 끝 안내가 나가도록 alert를 부른다.
-    final atEdge = DirectionResolver.isEdge(
-        relabel ?? _guidanceLabel, _smoothedPosition, smoothed);
+    final atEdge = !angleFlipHeld &&
+        DirectionResolver.isEdge(
+            relabel ?? _guidanceLabel, _smoothedPosition, smoothed);
     final edgeChanged = atEdge != _atEdge &&
         DirectionResolver.isOnCrosswalk(_guidanceLabel) &&
         !_noCall;
     if (relabel != null || edgeChanged) {
       _feedback.alert(relabel ?? _guidanceLabel, _confidence,
-          angleDegrees:
-              DirectionResolver.edgeSteerAngle(_smoothedPosition, smoothed) ??
+          angleDegrees: angleFlipHeld
+              ? smoothed
+              : DirectionResolver.edgeSteerAngle(_smoothedPosition, smoothed) ??
                   smoothed,
           atEdge: atEdge);
     }
@@ -1177,6 +1190,29 @@ class _CameraScreenState extends State<CameraScreen>
       DirectionResolver.edgeSteerAngle(_smoothedPosition, _arrowStripeAngle) ??
       _arrowStripeAngle;
 
+  // T130: 끝↔각도 뒤집힘 막기(`EdgeAngleFlipGuard` 표). 분류·각도·위치 세 경로가
+  // 같은 기억을 쓴다. 막았으면 `flip.hold`로 남겨 실기기에서 횟수를 센다.
+  final EdgeAngleFlipGuard _flipGuard = EdgeAngleFlipGuard();
+
+  FlipGuardDecision _guardFlip(
+      String resolved, double? position, double? angleDegrees) {
+    final d = _flipGuard.apply(resolved,
+        previous: _guidanceLabel,
+        position: position,
+        angleDegrees: angleDegrees,
+        now: DateTime.now());
+    if (d.held) {
+      EventLog.instance.log('flip.hold', {
+        'from': d.from,
+        'to': resolved,
+        'src': d.source,
+        'ms': d.sinceMs,
+        'keep': d.label,
+      });
+    }
+    return d;
+  }
+
   void _updatePositionEstimate(CameraImage image) {
     if (!_positionEstimator.isReady) return;
 
@@ -1210,21 +1246,27 @@ class _CameraScreenState extends State<CameraScreen>
 
     // 끝 판정이 바뀌면 상태도 다시 정한다(각도 갱신 때와 같은 경로).
     String? relabel;
+    var posFlipHeld = false;
     if (DirectionResolver.isOnCrosswalk(_guidanceLabel) && !_noCall) {
       final next = DirectionResolver.resolve(_guidanceLabel, _arrowStripeAngle,
           position: smoothed, previous: _guidanceLabel);
-      if (next != _guidanceLabel) relabel = next;
+      // T130: 끝↔각도 뒤집힘 막기.
+      final flip = _guardFlip(next, smoothed, _arrowStripeAngle);
+      posFlipHeld = flip.held;
+      if (flip.label != _guidanceLabel) relabel = flip.label;
     }
     // T102: 각도 경로와 같은 이유로, 라벨이 그대로여도 끝 여부가 바뀌면 alert.
-    final atEdge = DirectionResolver.isEdge(
-        relabel ?? _guidanceLabel, smoothed, _arrowStripeAngle);
+    final atEdge = !posFlipHeld &&
+        DirectionResolver.isEdge(
+            relabel ?? _guidanceLabel, smoothed, _arrowStripeAngle);
     final edgeChanged = atEdge != _atEdge &&
         DirectionResolver.isOnCrosswalk(_guidanceLabel) &&
         !_noCall;
     if (relabel != null || edgeChanged) {
       _feedback.alert(relabel ?? _guidanceLabel, _confidence,
-          angleDegrees:
-              DirectionResolver.edgeSteerAngle(smoothed, _arrowStripeAngle) ??
+          angleDegrees: posFlipHeld
+              ? _arrowStripeAngle
+              : DirectionResolver.edgeSteerAngle(smoothed, _arrowStripeAngle) ??
                   _arrowStripeAngle,
           atEdge: atEdge);
     }

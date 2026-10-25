@@ -1396,6 +1396,65 @@ void main() {
       await _disposeIn(tester, s);
     });
 
+    // T130 A: 대기 중인 진입 안내는 상한 3초, 횡단보도 위를 벗어나면 취소.
+    testWidgets('T130: 이탈 경고 뒤에서 대기하는 진입 안내의 상한은 3초', (tester) async {
+      EventLog.instance.clearForTest();
+      install();
+      final s = FeedbackService();
+      await toApproach(s);
+      await s.alert('left', 0.9, angleDegrees: mild);
+      expect(s.audioPolicy.pendingMessage, ko.enteredCrosswalkMessage);
+      expect(s.audioPolicy.pendingMaxWait, AudioPolicy.entryMaxPendingWait);
+      expect(AudioPolicy.entryMaxPendingWait, const Duration(seconds: 3));
+      await tester.pump(const Duration(seconds: 5));
+      await _disposeIn(tester, s);
+    });
+
+    for (final to in ['crossed', 'none', 'approach']) {
+      testWidgets('T130: 대기 중인 진입 안내는 $to로 바뀌면 취소(say.cancel why=state)',
+          (tester) async {
+        EventLog.instance.clearForTest();
+        install();
+        final s = FeedbackService();
+        await toApproach(s);
+        await s.alert('left', 0.9, angleDegrees: mild);
+        expect(s.audioPolicy.pendingMessage, ko.enteredCrosswalkMessage);
+        await s.alert(to, 0.9);
+        expect(s.audioPolicy.pendingMessage, isNot(ko.enteredCrosswalkMessage));
+        final cancel = logged('say.cancel')
+            .where((m) => m['text'] == ko.enteredCrosswalkMessage)
+            .single;
+        expect(cancel['why'], 'state');
+        await tester.pump(const Duration(seconds: 5));
+        final spoke = logged('say.end')
+            .where((m) => m['text'] == ko.enteredCrosswalkMessage);
+        expect(spoke, isEmpty, reason: '취소한 진입 안내는 재생되지 않는다');
+        await _disposeIn(tester, s);
+      });
+    }
+
+    testWidgets('T130: 위(front/left/right)에 머무는 동안은 진입 안내를 취소하지 않는다',
+        (tester) async {
+      EventLog.instance.clearForTest();
+      install();
+      final s = FeedbackService();
+      await toApproach(s);
+      await s.alert('left', 0.9, angleDegrees: mild);
+      await s.alert('front', 0.9);
+      expect(s.audioPolicy.pendingMessage, ko.enteredCrosswalkMessage);
+      expect(logged('say.cancel'), isEmpty);
+      await tester.pump(const Duration(seconds: 5));
+      await _disposeIn(tester, s);
+    });
+
+    test('T130: 진입 안내가 아닌 대기 항목은 상태가 바뀌어도 취소하지 않는다', () {
+      final s = FeedbackService();
+      s.audioPolicy.putPending(
+          FeedbackPriority.p1, ko.crossedCrosswalkMessage, DateTime(2026));
+      expect(s.cancelPendingEntryOnState('none'), isFalse);
+      expect(s.audioPolicy.pendingMessage, ko.crossedCrosswalkMessage);
+    });
+
     testWidgets('② 이탈 경고끼리 64ms 간격이면 나중 것이 재생된다', (tester) async {
       EventLog.instance.clearForTest();
       final fake = install();

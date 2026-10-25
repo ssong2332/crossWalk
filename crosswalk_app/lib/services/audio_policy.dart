@@ -81,6 +81,13 @@ class AudioPolicy {
   /// 절반쯤)다 — 그보다 늦은 "진입했습니다"는 오정보로 본다.
   static const maxPendingWait = Duration(seconds: 8);
 
+  /// T130: 진입 안내("횡단보도에 진입했습니다.")만 상한을 3초로 줄인다.
+  /// 야간 실기기(`logs/log_20261024_191344.jsonl`, `train/field_1024n/report.md`
+  /// 추가 확인): 8초 상한 때문에 대기하던 진입 안내 6건이 건넌 순간·뒤에 재생됐다
+  /// (지연 4.8~7.5초). 진입은 늦으면 틀린 말이 되지만, 건넜습니다·앞에 횡단보도·
+  /// 멈춤 블록은 늦어도 사실이라 [maxPendingWait]를 그대로 둔다.
+  static const entryMaxPendingWait = Duration(seconds: 3);
+
   FeedbackPriority? _active;
   P0Rank? _activeRank;
   String? _activeMessage;
@@ -94,6 +101,9 @@ class AudioPolicy {
   FeedbackPriority? pendingPriority;
   String? pendingMessage;
   DateTime? pendingAt;
+
+  /// T130: 대기 항목의 상한(null이면 [maxPendingWait]).
+  Duration? pendingMaxWait;
 
   FeedbackPriority? get activePriority => _active;
 
@@ -244,8 +254,9 @@ class AudioPolicy {
   /// 블록을 대체)일 때만 덮어쓴다 — T108 전에는 같은 등급도 덮어써서 먼저 온
   /// "횡단보도를 건넜습니다"가 뒤에 온 안내에 밀려 사라질 수 있었다.
   /// [requestedAt]은 처음 요청 시각이다(TTL은 여기서부터 센다).
+  /// [maxWait]는 이 항목의 상한(T130, null이면 [maxPendingWait]).
   bool putPending(FeedbackPriority priority, String message, DateTime requestedAt,
-      {bool supersedes = false}) {
+      {bool supersedes = false, Duration? maxWait}) {
     final cur = pendingPriority;
     if (cur != null &&
         (priority.index > cur.index || (priority == cur && !supersedes))) {
@@ -254,6 +265,7 @@ class AudioPolicy {
     pendingPriority = priority;
     pendingMessage = message;
     pendingAt = requestedAt;
+    pendingMaxWait = maxWait;
     return true;
   }
 
@@ -268,7 +280,9 @@ class AudioPolicy {
     final pri = pendingPriority;
     final at = pendingAt;
     if (pri == null || at == null) return null;
-    if (now.difference(at) > maxPendingWait) return 'max_wait';
+    if (now.difference(at) > (pendingMaxWait ?? maxPendingWait)) {
+      return 'max_wait';
+    }
     if (_active == FeedbackPriority.p0) return null;
     final p0End = _lastP0End;
     final from = p0End != null && p0End.isAfter(at) ? p0End : at;
@@ -293,6 +307,7 @@ class AudioPolicy {
     pendingPriority = null;
     pendingMessage = null;
     pendingAt = null;
+    pendingMaxWait = null;
   }
 
   @visibleForTesting
