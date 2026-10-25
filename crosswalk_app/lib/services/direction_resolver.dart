@@ -155,3 +155,93 @@ class DirectionResolver {
     return 'front';
   }
 }
+
+/// T130 [EdgeAngleFlipGuard.apply]의 결과.
+class FlipGuardDecision {
+  const FlipGuardDecision(this.label,
+      {this.held = false, this.from, this.source, this.sinceMs});
+
+  /// 최종 상태. 막았으면 직전 상태 그대로.
+  final String label;
+
+  /// 끝↔각도 뒤집힘을 막았는가. 막았으면 끝 안내·끝 각도를 쓰지 않는다.
+  final bool held;
+
+  /// 막았을 때: 직전 경고 방향, 막은 판정의 출처(`edge`/`angle`), 직전 방향에
+  /// 마지막으로 있던 때부터 지난 시간(ms).
+  final String? from;
+  final String? source;
+  final int? sinceMs;
+}
+
+/// T130 (사용자 승인 2026-10-25): 위치 '끝' 판정과 각도 판정이 반대 방향일 때
+/// 1초 안에 반대쪽으로 뒤집지 않는다.
+///
+/// 야간 실기기(`logs/log_20261024_191344.jsonl`, `train/field_1024n/report.md`
+/// 추가 확인): 3초 안 좌우 뒤집힘 25회 중 15회가 끝 규칙과 각도 규칙이 번갈아
+/// 이긴 경우(19:28:22~36 14초에 9번 왕복). 예: 오른쪽 끝(위치 >= 1) → "왼쪽으로
+/// 가세요. 가장자리입니다", 다음 위치가 1 밑 + 각도 +20 → "오른쪽으로 가세요".
+///
+/// 판정표 ([DirectionResolver.resolve] 결과 뒤에 본다, 시간은 인자로 주입):
+///   | # | 조건                                                          | 결과        |
+///   | 1 | 결과가 위(front/left/right)가 아님                            | 그대로, 기억 지움 |
+///   | 2 | 결과 front                                                    | 그대로      |
+///   | 3 | 결과 left/right, 기억한 방향 없음(첫 경고) 또는 같은 방향       | 그대로      |
+///   | 4 | 직전 상태가 위가 아님                                         | 그대로      |
+///   | 5 | 반대 방향 + 출처(끝/각도)가 다름 + 직전 방향에 마지막으로 있던  | **직전 상태 유지** (held) |
+///   |   | 때부터 [window] 안                                            |             |
+///   | 6 | 그 밖(반대 방향이지만 같은 출처, 또는 [window] 지남)           | 그대로      |
+/// 출처: [DirectionResolver.edgeSteerAngle]이 값을 내면 `edge`, 아니면 `angle`.
+/// '마지막으로 있던 때' = 그 방향 상태였던 마지막 판정 시각(직진으로 바뀐 순간 포함).
+/// 막은 판정은 기억을 갱신하지 않는다 — 막는 것이 [window]를 넘겨 이어지지 않게.
+/// 1초는 사용자 결정 값이다(실기기 뒤 조정).
+class EdgeAngleFlipGuard {
+  static const window = Duration(seconds: 1);
+
+  String? _dir;
+  String? _source;
+  DateTime? _lastInDir;
+
+  FlipGuardDecision apply(String resolved,
+      {required String previous,
+      double? position,
+      double? angleDegrees,
+      required DateTime now}) {
+    if (!DirectionResolver.isOnCrosswalk(resolved)) {
+      reset();
+      return FlipGuardDecision(resolved);
+    }
+    if (resolved == 'front') {
+      if (previous == _dir) _lastInDir = now;
+      return FlipGuardDecision(resolved);
+    }
+    final source =
+        DirectionResolver.edgeSteerAngle(position, angleDegrees) != null
+            ? 'edge'
+            : 'angle';
+    final dir = _dir;
+    final lastIn = _lastInDir;
+    if (dir != null &&
+        lastIn != null &&
+        resolved != dir &&
+        source != _source &&
+        DirectionResolver.isOnCrosswalk(previous) &&
+        now.difference(lastIn) < window) {
+      return FlipGuardDecision(previous,
+          held: true,
+          from: dir,
+          source: source,
+          sinceMs: now.difference(lastIn).inMilliseconds);
+    }
+    _dir = resolved;
+    _source = source;
+    _lastInDir = now;
+    return FlipGuardDecision(resolved);
+  }
+
+  void reset() {
+    _dir = null;
+    _source = null;
+    _lastInDir = null;
+  }
+}

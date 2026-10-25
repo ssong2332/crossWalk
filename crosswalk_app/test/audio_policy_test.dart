@@ -333,6 +333,46 @@ void main() {
 
   // T126: 대기 항목의 TTL은 마지막 P0가 끝난 때부터 센다 — 10/24 실기기 진입 안내
   // 12건 중 6건이 이탈 경고 뒤에서 처음 요청부터 센 3초로 버려졌다.
+  // T130: 진입 안내만 상한 3초(maxWait). 다른 P1은 8초 그대로.
+  group('AudioPolicy — T130 항목별 상한', () {
+    DateTime ms(int v) => t0.add(Duration(milliseconds: v));
+
+    test('maxWait 3초면 P0 재생 중이어도 3초 넘으면 max_wait', () {
+      final p = AudioPolicy();
+      p.markStarted(FeedbackPriority.p0);
+      p.putPending(FeedbackPriority.p1, '횡단보도에 진입했습니다.', t0,
+          maxWait: AudioPolicy.entryMaxPendingWait);
+      expect(p.pendingExpiry(ms(3000)), isNull);
+      expect(p.pendingExpiry(ms(3001)), 'max_wait');
+    });
+
+    test('maxWait 없으면 8초 상한 그대로 (T126)', () {
+      final p = AudioPolicy();
+      p.markStarted(FeedbackPriority.p0);
+      p.putPending(FeedbackPriority.p1, '횡단보도를 건넜습니다.', t0);
+      expect(p.pendingMaxWait, isNull);
+      expect(p.pendingExpiry(ms(3001)), isNull);
+      expect(p.pendingExpiry(ms(8001)), 'max_wait');
+    });
+
+    test('P0 끝난 뒤부터 TTL(T126)은 그대로 — 3초 상한 안이면 기준은 P0 종료', () {
+      final p = AudioPolicy();
+      p.markStarted(FeedbackPriority.p0);
+      p.putPending(FeedbackPriority.p1, '횡단보도에 진입했습니다.', t0,
+          maxWait: AudioPolicy.entryMaxPendingWait);
+      p.markFinished(FeedbackPriority.p0, ms(-500), ms(1000));
+      expect(p.pendingExpiry(ms(2500)), isNull);
+    });
+
+    test('clearPending은 항목 상한도 지운다', () {
+      final p = AudioPolicy();
+      p.putPending(FeedbackPriority.p1, 'x', t0,
+          maxWait: AudioPolicy.entryMaxPendingWait);
+      p.clearPending();
+      expect(p.pendingMaxWait, isNull);
+    });
+  });
+
   group('AudioPolicy — T126 대기 TTL은 P0가 끝난 때부터', () {
     const entry = '횡단보도에 진입했습니다.';
     DateTime ms(int v) => t0.add(Duration(milliseconds: v));

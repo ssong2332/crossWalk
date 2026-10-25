@@ -412,6 +412,26 @@ class FeedbackService {
     return message;
   }
 
+  /// T130: 대기 슬롯의 진입 안내를 상태가 crossed·none·approach로 바뀌면 취소한다
+  /// (`say.cancel` why=state). 취소했으면 true.
+  ///
+  /// 야간 실기기(`logs/log_20261024_191344.jsonl`): 이탈 경고 뒤에서 대기하던 진입
+  /// 안내 6건이 건넌 순간·뒤에 재생됐다(지연 4.8~7.5초) — 대기 중인 진입 안내를
+  /// 상태 변화로 거두는 장치가 없었다.
+  @visibleForTesting
+  bool cancelPendingEntryOnState(String detectedClass) {
+    if (detectedClass != 'crossed' &&
+        detectedClass != 'none' &&
+        detectedClass != 'approach') {
+      return false;
+    }
+    final entry = AppStrings.of(_language).enteredCrosswalkMessage;
+    if (audioPolicy.pendingMessage != entry) return false;
+    audioPolicy.clearPending();
+    EventLog.instance.log('say.cancel', {'text': entry, 'why': 'state'});
+    return true;
+  }
+
   // T63: 구간이 바뀌었다는 1회성 사실 안내. "왼쪽/오른쪽으로 가세요"처럼
   // 반복되는 경고가 아니므로 decideMessage와 분리했고, 클래스가 실제로
   // 바뀐 프레임에서만 값을 낸다 — 매 프레임 재확인하는 것이 아니다.
@@ -688,7 +708,11 @@ class FeedbackService {
     }
     if (action == SpeechAction.queue &&
         !audioPolicy.putPending(priority, message, firstAt,
-            supersedes: supersedes)) {
+            supersedes: supersedes,
+            // T130: 진입 안내는 늦으면 틀린 말이라 상한을 3초로 줄인다.
+            maxWait: message == AppStrings.of(_language).enteredCrosswalkMessage
+                ? AudioPolicy.entryMaxPendingWait
+                : null)) {
       // 슬롯 한 칸을 먼저 온 안내가 차지하고 있다.
       action = SpeechAction.drop;
       why = 'slot_full';
@@ -854,6 +878,9 @@ class FeedbackService {
     // 아래에서 _lastRawClass를 덮어쓰기 전에 읽어야 전이를 감지할 수 있다.
     final previous = _lastRawClass ?? '';
     _lastRawClass = detectedClass;
+
+    // T130: 대기 중인 진입 안내는 횡단보도 위를 벗어나면 취소한다.
+    cancelPendingEntryOnState(detectedClass);
 
     // 음성 — 이탈 경고는 P0다. 무음 예산·최소 간격에서 면제되며, 재생 중인
     // 하위 등급 안내를 끊는다. T84: 강도는 각도로 판정한다(confidence는
