@@ -7,6 +7,7 @@ import '../localization/app_strings.dart';
 import 'audio_policy.dart';
 import 'event_log.dart';
 import 'severity_latch.dart';
+import 'stillness_detector.dart';
 import 'surface_guide.dart';
 
 /// T108 Q1: 보류한 회복 안내를 어떻게 할지([FeedbackService.decideHeldRecovery]).
@@ -29,6 +30,21 @@ class FeedbackService {
   /// 소리가 서로 다른 강도를 말하는 일이 없게 한다.
   @visibleForTesting
   final SeverityLatch severityLatch = SeverityLatch();
+
+  /// T133: 가속도로 판단한 '서 있음'. 서 있으면 같은 방향 음성 반복을 멈춘다
+  /// ([decideMessage]). 표본은 `CameraScreen`이 [addAccelerometer]로 넣는다.
+  @visibleForTesting
+  final StillnessDetector stillness = StillnessDetector();
+
+  /// T133: 가속도 표본 하나(m/s², 중력 포함). 서 있음이 바뀌면 `still`을 남긴다.
+  void addAccelerometer(double x, double y, double z, DateTime now) {
+    if (!stillness.add(x, y, z, now)) return;
+    final mot = stillness.motion;
+    EventLog.instance.log('still', {
+      'on': stillness.isStill,
+      if (mot != null) 'mot': double.parse(mot.toStringAsFixed(3)),
+    });
+  }
 
   /// 화면 표시용 — 지금 보고 중인 이탈 강도.
   bool get isSevere => severityLatch.isSevere;
@@ -412,6 +428,22 @@ class FeedbackService {
         _bundleLogText = message;
         EventLog.instance
             .log('say.cancel', {'text': message, 'why': 'same_dir'});
+      }
+      return null;
+    }
+
+    // T133(사용자 승인 안 A, 2026-10-25): 서 있으면 같은 방향 반복(6초 재경고,
+    // 단계가 같거나 내려감)은 말하지 않는다 — 진동은 그대로(T132 ④ 박자).
+    // 첫 경고·방향 바뀜·단계 올라감·회복 뒤 새 이탈은 위 조건에 걸리지 않아 말한다.
+    if (_lastAlertTime != null &&
+        _lastAlertClass == detectedClass &&
+        level <= _lastAlertLevel! &&
+        stillness.isStillAt(now)) {
+      if (_bundleLogText != message ||
+          now.difference(_bundleLogAt!).inSeconds >= _cooldownSeconds) {
+        _bundleLogAt = now;
+        _bundleLogText = message;
+        EventLog.instance.log('say.cancel', {'text': message, 'why': 'still'});
       }
       return null;
     }

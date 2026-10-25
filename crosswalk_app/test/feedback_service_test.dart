@@ -20,6 +20,7 @@ import 'package:crosswalk_app/services/audio_policy.dart';
 import 'package:crosswalk_app/services/crossing_hold.dart';
 import 'package:crosswalk_app/services/event_log.dart';
 import 'package:crosswalk_app/services/feedback_service.dart';
+import 'package:crosswalk_app/services/stillness_detector.dart';
 import 'package:crosswalk_app/services/surface_guide.dart';
 
 void main() {
@@ -1192,6 +1193,98 @@ void main() {
             reason: '처음 1번 + 대기에서 꺼낸 1번');
         expect(says, hasLength(4));
       });
+    });
+  });
+
+  // T133(사용자 승인 안 A): 서 있으면 같은 방향 음성 반복 대신 진동만.
+  group('서 있을 때 같은 방향 반복 생략 (T133)', () {
+    final t0 = DateTime(2026, 10, 25, 18, 9, 35);
+    DateTime at(int ms) => t0.add(Duration(milliseconds: ms));
+    const severe = 30.0;
+
+    /// [fromMs]~[toMs] 동안 가만히 선 가속도(중력만)를 66ms마다 넣는다.
+    void stand(FeedbackService s, int fromMs, int toMs) {
+      for (var ms = fromMs; ms <= toMs; ms += 66) {
+        s.stillness.add(0, 0, 9.81, at(ms));
+      }
+    }
+
+    List<Map<String, dynamic>> cancels() => EventLog.instance.earlyLines
+        .map((l) => jsonDecode(l) as Map<String, dynamic>)
+        .where((m) => m['ev'] == 'say.cancel')
+        .toList();
+
+    test('서 있으면 6초 재경고를 말하지 않는다(say.cancel why=still)', () {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      stand(s, -3000, 0);
+      expect(s.decideMessage('left', mild, at(0)), leftMild, reason: '첫 경고는 말함');
+      stand(s, 66, 6500);
+      expect(s.decideMessage('left', mild, at(6500)), isNull);
+      expect(cancels().last, containsPair('why', 'still'));
+      expect(cancels().last['text'], leftMild);
+      // 진동은 그대로 — 진동 정책은 서 있음과 무관하다.
+      expect(s.vibrationPolicy.decidePattern('left', at(0), 500), isNotNull);
+      expect(s.vibrationPolicy.decidePattern('left', at(3100), 500), isNotNull);
+    });
+
+    test('서 있지 않으면 6초 재경고는 종전대로 말한다', () {
+      final s = FeedbackService();
+      expect(s.decideMessage('left', mild, at(0)), leftMild);
+      expect(s.decideMessage('left', mild, at(6500)), leftMild);
+    });
+
+    test('서 있어도 단계가 오르면 말한다', () {
+      final s = FeedbackService();
+      stand(s, -3000, 0);
+      expect(s.decideMessage('left', mild, at(0)), leftMild);
+      stand(s, 66, 7000);
+      expect(s.decideMessage('left', severe, at(7000)), leftSevere);
+    });
+
+    test('서 있어도 방향이 바뀌면 말한다', () {
+      final s = FeedbackService();
+      stand(s, -3000, 0);
+      expect(s.decideMessage('left', mild, at(0)), leftMild);
+      stand(s, 66, 2000);
+      expect(s.decideMessage('right', mild, at(2000)), rightMild);
+    });
+
+    test('서 있어도 회복(front 0.7초 이상) 뒤 새 이탈은 첫 경고로 말한다', () {
+      final s = FeedbackService();
+      stand(s, -3000, 0);
+      expect(s.decideMessage('left', mild, at(0)), leftMild);
+      stand(s, 66, 9000);
+      s.decideMessage('front', null, at(7000));
+      s.decideMessage('front', null, at(7800));
+      expect(s.decideMessage('left', mild, at(9000)), leftMild);
+    });
+
+    test('센서가 멈추면 서 있음으로 보지 않는다 — 재경고를 말한다', () {
+      final s = FeedbackService();
+      stand(s, -3000, 0);
+      expect(s.decideMessage('left', mild, at(0)), leftMild);
+      expect(s.decideMessage('left', mild, at(6500)), leftMild,
+          reason: '마지막 표본이 6.5초 전');
+    });
+
+    test('addAccelerometer: 서 있음이 바뀌면 still 기록(on, mot)', () {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      for (var ms = 0; ms <= 3000; ms += 66) {
+        s.addAccelerometer(0, 0, 9.81, at(ms));
+      }
+      for (var ms = 3066; ms <= 4000; ms += 66) {
+        s.addAccelerometer(0, 0, ms % 132 == 0 ? 12.0 : 7.6, at(ms));
+      }
+      final still = EventLog.instance.earlyLines
+          .map((l) => jsonDecode(l) as Map<String, dynamic>)
+          .where((m) => m['ev'] == 'still')
+          .toList();
+      expect(still.map((m) => m['on']), [true, false]);
+      expect(still.first['mot'], lessThan(StillnessDetector.stillThreshold));
+      expect(still.last['mot'],
+          greaterThanOrEqualTo(StillnessDetector.moveThreshold));
     });
   });
 
