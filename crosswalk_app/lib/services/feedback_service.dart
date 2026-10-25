@@ -160,6 +160,13 @@ class FeedbackService {
   // T108 Q2: 대기 슬롯의 P1을 최소 간격이 끝나는 시각에 꺼내는 타이머.
   Timer? _drainTimer;
 
+  // T131: 끼워 넣은 진입 안내가 재생되는 동안 기다리게 한 P0(최신 1개).
+  String? _insertHeld;
+  P0Rank _insertHeldRank = P0Rank.deviation;
+  double? _insertHeldRate;
+  String _insertHeldClass = '';
+  Timer? _insertHoldTimer;
+
   /// T118: 대기 꺼내기 타이머 여유. 타이머는 ms로 잘려 예약되는데 간격 판정은
   /// µs 시각을 써서, 몇 µs 일찍 울리면 "아직 간격 안"으로 다시 대기하고 곧바로
   /// 또 울리기를 반복했다(10/19 기록 L3471~L3484, 같은 ms에 14번).
@@ -686,12 +693,19 @@ class FeedbackService {
     bool supersedes = false,
     DateTime? requestedAt,
     double? rate,
+    bool afterP0 = false,
   }) async {
     final now = DateTime.now();
+    // T131: 끼워 넣은 진입 안내 재생 중이면 이탈·회복 P0는 끊지 않고 기다린다.
+    if (priority == FeedbackPriority.p0 &&
+        audioPolicy.holdsP0ForInsert(rank, now)) {
+      _holdP0ForInsert(message, rank, rate, now);
+      return;
+    }
     // T108: 대기 슬롯에서 다시 꺼낸 요청은 처음 요청 시각을 그대로 쓴다(TTL 기준).
     final firstAt = requestedAt ?? now;
     var action = audioPolicy.decide(priority, now,
-        rank: rank, message: message, supersedes: supersedes);
+        rank: rank, message: message, supersedes: supersedes, afterP0: afterP0);
     var why = audioPolicy.lastReason;
     if (action == SpeechAction.queue) {
       // 만료된 대기 항목이 슬롯을 막지 않게 먼저 치운다(버린 것은 기록).
@@ -735,8 +749,10 @@ class FeedbackService {
     }
 
     final generation = beginSpeechGeneration();
-    audioPolicy.markStarted(priority, rank: rank, message: message);
     final start = DateTime.now();
+    final inserted = afterP0 && why == 'after_p0';
+    audioPolicy.markStarted(priority,
+        rank: rank, message: message, insertedAt: inserted ? start : null);
     var result = 'done';
     // T124: 이 발화의 속도. 바꿨으면 그 값과 바꾸는 데 걸린 시간을 say.end에 남긴다
     // (실기기에서 변경·복귀 지연을 재기 위해).
@@ -791,8 +807,64 @@ class FeedbackService {
       final current = generation == _speechGeneration;
       finishSpeechGeneration(generation);
       audioPolicy.markFinished(priority, start, end, current: current);
-      if (current) _scheduleDrain();
+      // T131: 끼워 넣은 진입 안내가 끝나면(끊겼어도) 기다리게 한 P0를 내보낸다.
+      if (inserted) _releaseInsertHeld();
+      if (current) {
+        // T131: P0가 끝났는데 진입 안내가 대기 중이면 최소 간격 없이 바로 끼워 넣는다.
+        if (priority == FeedbackPriority.p0 &&
+            audioPolicy.pendingMessage ==
+                AppStrings.of(_language).enteredCrosswalkMessage) {
+          _drainTimer?.cancel();
+          _drainPending(afterP0: true);
+        } else {
+          _scheduleDrain();
+        }
+      }
     }
+  }
+
+  /// T131: 끼워 넣은 진입 안내 재생 중에 온 P0를 기다리게 한다. 슬롯은 1개 —
+  /// 더 새 P0가 오면 그것으로 바꾼다(지금 상태에 맞는 쪽, 앞의 것은
+  /// `say.cancel` why=superseded). 기다리기 시작하면 `say.defer` why=insert.
+  void _holdP0ForInsert(
+      String message, P0Rank rank, double? rate, DateTime now) {
+    final old = _insertHeld;
+    if (old != null) {
+      EventLog.instance.log('say.cancel', {'text': old, 'why': 'superseded'});
+    }
+    _insertHeld = message;
+    _insertHeldRank = rank;
+    _insertHeldRate = rate;
+    _insertHeldClass = _lastRawClass ?? '';
+    EventLog.instance.log('say.defer', {'text': message, 'why': 'insert'});
+    // 진입 안내가 [AudioPolicy.insertMaxHold] 안에 끝나지 않으면(느린 속도·TTS 멈춤)
+    // 그때 내보낸다 — 이때는 정책이 기다리지 않으므로 진입 안내를 끊는다.
+    final at = audioPolicy.insertStartedAt;
+    if (_insertHoldTimer == null && at != null) {
+      final left = at.add(AudioPolicy.insertMaxHold).difference(now);
+      _insertHoldTimer = Timer(
+          (left.isNegative ? Duration.zero : left) + drainMargin,
+          _releaseInsertHeld);
+    }
+  }
+
+  /// T131: 기다리게 한 P0를 내보낸다. 기다리는 사이 분류 상태가 바뀌었으면
+  /// (예: left 경고를 기다리는데 front로 돌아옴) 늦은 경고라 말하지 않는다
+  /// (`say.cancel` why=state).
+  void _releaseInsertHeld() {
+    _insertHoldTimer?.cancel();
+    _insertHoldTimer = null;
+    final held = _insertHeld;
+    _insertHeld = null;
+    if (held == null) return;
+    if ((_lastRawClass ?? '') != _insertHeldClass) {
+      EventLog.instance.log('say.cancel', {'text': held, 'why': 'state'});
+      return;
+    }
+    unawaited(_speak(held,
+        priority: FeedbackPriority.p0,
+        rank: _insertHeldRank,
+        rate: _insertHeldRate));
   }
 
   /// T108 Q2: 대기 슬롯을 최소 간격이 끝나는 시각에 꺼내도록 예약한다.
@@ -811,7 +883,9 @@ class FeedbackService {
   /// 대기 슬롯에 남은 항목을 꺼내 발화한다. TTL이 지났으면 버린다 —
   /// 늦게 도착한 안내는 정보가 아니라 오정보다. T126: TTL은 마지막 P0가 끝난
   /// 때부터 센다(`AudioPolicy.pendingExpiry`).
-  void _drainPending() {
+  ///
+  /// T131: [afterP0]면 P0가 끝난 직후 끼워 넣는 진입 안내다(최소 간격을 보지 않음).
+  void _drainPending({bool afterP0 = false}) {
     final pri = audioPolicy.pendingPriority;
     final msg = audioPolicy.pendingMessage;
     final at = audioPolicy.pendingAt;
@@ -825,7 +899,7 @@ class FeedbackService {
           'say.ttl', {'text': msg, 'p': pri.index, 'why': expiredWhy});
       return;
     }
-    unawaited(_speak(msg, priority: pri, requestedAt: at));
+    unawaited(_speak(msg, priority: pri, requestedAt: at, afterP0: afterP0));
   }
 
   /// T106: 진동 기록 한 줄의 내용. [kind]는 left·right·recover·road·line_on.
@@ -1126,6 +1200,7 @@ class FeedbackService {
     _vibrationTimer?.cancel();
     _drainTimer?.cancel();
     _dotBlockTimer?.cancel();
+    _insertHoldTimer?.cancel();
     isSpeaking.value = false;
     isVibrating.value = false;
     isSpeaking.dispose();
