@@ -334,6 +334,67 @@ void main() {
   // T126: 대기 항목의 TTL은 마지막 P0가 끝난 때부터 센다 — 10/24 실기기 진입 안내
   // 12건 중 6건이 이탈 경고 뒤에서 처음 요청부터 센 3초로 버려졌다.
   // T130: 진입 안내만 상한 3초(maxWait). 다른 P1은 8초 그대로.
+  // T131: P0가 끝난 직후 진입 안내 끼워 넣기(afterP0)와 그동안 P0 기다리기.
+  group('AudioPolicy — T131 진입 안내 끼워 넣기', () {
+    DateTime ms(int v) => t0.add(Duration(milliseconds: v));
+
+    test('afterP0면 최소 간격 안이어도 바로 말한다 (why=after_p0)', () {
+      final p = AudioPolicy();
+      p.markStarted(FeedbackPriority.p0);
+      p.markFinished(FeedbackPriority.p0, ms(-2000), t0);
+      expect(p.decide(FeedbackPriority.p1, ms(20), afterP0: true),
+          SpeechAction.speakNow);
+      expect(p.lastReason, 'after_p0');
+      // 끼워 넣기가 아니면 종전대로 간격을 기다린다.
+      expect(p.decide(FeedbackPriority.p1, ms(20)), SpeechAction.queue);
+      expect(p.lastReason, 'gap_p1');
+    });
+
+    test('afterP0여도 재생 중인 P0가 있으면 기다린다', () {
+      final p = AudioPolicy();
+      p.markStarted(FeedbackPriority.p0);
+      expect(p.decide(FeedbackPriority.p1, t0, afterP0: true),
+          SpeechAction.queue);
+      expect(p.lastReason, 'wait_p0');
+    });
+
+    test('afterP0여도 무음 예산은 본다', () {
+      final p = AudioPolicy();
+      p.markStarted(FeedbackPriority.p3);
+      p.markFinished(FeedbackPriority.p3, ms(-25000), ms(-100));
+      expect(p.decide(FeedbackPriority.p1, t0, afterP0: true),
+          SpeechAction.drop);
+      expect(p.lastReason, 'budget');
+    });
+
+    test('끼운 진입 재생 중: 이탈·회복 P0는 기다리고 차도는 기다리지 않는다', () {
+      final p = AudioPolicy();
+      p.markStarted(FeedbackPriority.p1, insertedAt: t0);
+      expect(p.insertStartedAt, t0);
+      expect(p.holdsP0ForInsert(P0Rank.deviation, ms(500)), isTrue);
+      expect(p.holdsP0ForInsert(P0Rank.recovery, ms(500)), isTrue);
+      expect(p.holdsP0ForInsert(P0Rank.danger, ms(500)), isFalse);
+    });
+
+    test('끼운 지 3초(insertMaxHold)가 지나면 기다리지 않는다', () {
+      final p = AudioPolicy();
+      expect(AudioPolicy.insertMaxHold, const Duration(seconds: 3));
+      p.markStarted(FeedbackPriority.p1, insertedAt: t0);
+      expect(p.holdsP0ForInsert(P0Rank.deviation, ms(2999)), isTrue);
+      expect(p.holdsP0ForInsert(P0Rank.deviation, ms(3000)), isFalse);
+    });
+
+    test('끼운 것이 아닌 P1 재생 중이거나 끝난 뒤에는 기다리지 않는다', () {
+      final p = AudioPolicy();
+      p.markStarted(FeedbackPriority.p1);
+      expect(p.holdsP0ForInsert(P0Rank.deviation, t0), isFalse);
+      p.markStarted(FeedbackPriority.p1, insertedAt: t0);
+      p.markFinished(FeedbackPriority.p1, t0, ms(2100));
+      expect(p.insertStartedAt, isNull);
+      expect(p.holdsP0ForInsert(P0Rank.deviation, ms(2200)), isFalse);
+    });
+  });
+
   group('AudioPolicy — T130 항목별 상한', () {
     DateTime ms(int v) => t0.add(Duration(milliseconds: v));
 

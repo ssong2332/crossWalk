@@ -88,12 +88,21 @@ class AudioPolicy {
   /// 멈춤 블록은 늦어도 사실이라 [maxPendingWait]를 그대로 둔다.
   static const entryMaxPendingWait = Duration(seconds: 3);
 
+  /// T131: 끼워 넣은 진입 안내([decide]의 `afterP0`)가 재생되는 동안 이탈·회복
+  /// P0를 기다리게 하는 최대 시간. 진입 안내는 기본 속도에서 약 2.1초(10/25 기록
+  /// `logs/log_20261025_113155.jsonl` 재생 5건 중앙값 2145ms)라 보통은 다 말하고
+  /// 끝난다. 이 시간이 지나면(느린 속도·TTS 멈춤) P0가 지금처럼 끊는다 — 이탈 경고의
+  /// 음성 지연을 3초로 묶는다(진동은 기다리지 않는다).
+  static const insertMaxHold = Duration(seconds: 3);
+
   FeedbackPriority? _active;
   P0Rank? _activeRank;
   String? _activeMessage;
   DateTime? _lastSpeechEnd;
   // T126: 마지막으로 (끊기지 않고) 끝난 P0의 종료 시각 — 대기 항목 TTL의 기준.
   DateTime? _lastP0End;
+  // T131: 재생 중인 발화가 P0 뒤에 끼워 넣은 진입 안내면 그 시작 시각.
+  DateTime? _insertStartedAt;
   final List<_Span> _spans = <_Span>[];
 
   /// 대기 슬롯 — 최대 1개. 더 높은 등급이 오면 덮어쓰고, 같은 등급은 대체
@@ -112,6 +121,9 @@ class AudioPolicy {
 
   /// 재생 중인 문구 — 같은 이탈 문구 반복 판단, 연석 겹침(Q3) 판단에 쓴다.
   String? get activeMessage => _activeMessage;
+
+  /// T131: 재생 중인 끼워 넣은 진입 안내의 시작 시각(아니면 null).
+  DateTime? get insertStartedAt => _insertStartedAt;
 
   /// T108: 최소 간격이 끝나 P1~P3를 다시 말할 수 있는 시각(직전 발화가 없으면 null).
   DateTime? get nextAllowedAt => _lastSpeechEnd?.add(minGap);
@@ -135,6 +147,7 @@ class AudioPolicy {
   /// `p0`(즉시) / `min_gap` / `budget` / `ok`.
   /// T108: `same_p0`(같은 이탈 문구가 재생 중) / `wait_p1`(P1 재생 중이라 대기) /
   /// `supersede_p1`(멈춤 블록을 앞에 횡단보도가 대체) / `gap_p1`(최소 간격이라 대기).
+  /// T131: `after_p0`(P0가 끝난 직후 최소 간격 없이 끼워 넣음).
   String lastReason = '';
 
   /// docs/AudioPolicy.md §2 판정표. 부수효과가 없으므로 테스트에서 직접 호출해
@@ -143,12 +156,15 @@ class AudioPolicy {
   ///
   /// T108: [rank]는 P0의 세부 순위(P0가 아니면 무시), [message]는 같은 이탈 문구
   /// 반복을 가리는 데, [supersedes]는 재생 중인 같은 P1을 대체할 때(Q3) 쓴다.
+  /// T131: [afterP0]는 P0가 끝난 직후 끼워 넣는 진입 안내 — 최소 간격을 보지
+  /// 않는다(무음 예산은 그대로 본다). 재생 중인 것이 있으면 아무 효과가 없다.
   SpeechAction decide(
     FeedbackPriority incoming,
     DateTime now, {
     P0Rank rank = P0Rank.deviation,
     String? message,
     bool supersedes = false,
+    bool afterP0 = false,
   }) {
     final active = _active;
 
@@ -196,7 +212,8 @@ class AudioPolicy {
     }
 
     final last = _lastSpeechEnd;
-    if (last != null && now.difference(last) < minGap) {
+    final skipGap = afterP0 && incoming == FeedbackPriority.p1;
+    if (!skipGap && last != null && now.difference(last) < minGap) {
       // T108 Q2: 1회성 사실 안내(P1)는 버리지 않고 간격이 끝날 때까지 기다린다.
       if (incoming == FeedbackPriority.p1) {
         lastReason = 'gap_p1';
@@ -209,8 +226,18 @@ class AudioPolicy {
       lastReason = 'budget';
       return SpeechAction.drop;
     }
-    lastReason = 'ok';
+    lastReason = skipGap ? 'after_p0' : 'ok';
     return SpeechAction.speakNow;
+  }
+
+  /// T131: 끼워 넣은 진입 안내가 재생 중이라 이 P0를 끊지 말고 기다리게 하는가.
+  /// 차도(danger)는 기다리지 않는다. [insertMaxHold]가 지나면 기다리지 않는다.
+  bool holdsP0ForInsert(P0Rank rank, DateTime now) {
+    final at = _insertStartedAt;
+    return at != null &&
+        _active == FeedbackPriority.p1 &&
+        rank != P0Rank.danger &&
+        now.difference(at) < insertMaxHold;
   }
 
   /// TTL이 지났는지. 대기 슬롯에서 꺼낼 때와 요청 시점 모두에서 쓴다.
@@ -219,11 +246,13 @@ class AudioPolicy {
     return now.difference(requestedAt) > limit;
   }
 
+  /// T131: [insertedAt]은 P0 뒤에 끼워 넣은 진입 안내일 때 그 시작 시각.
   void markStarted(FeedbackPriority priority,
-      {P0Rank rank = P0Rank.deviation, String? message}) {
+      {P0Rank rank = P0Rank.deviation, String? message, DateTime? insertedAt}) {
     _active = priority;
     _activeRank = priority == FeedbackPriority.p0 ? rank : null;
     _activeMessage = message;
+    _insertStartedAt = insertedAt;
   }
 
   /// 발화가 끝났을 때 호출. P0는 예산에 누적하지 않는다(§4).
@@ -238,6 +267,7 @@ class AudioPolicy {
       _active = null;
       _activeRank = null;
       _activeMessage = null;
+      _insertStartedAt = null;
     }
     if (current) _lastSpeechEnd = end;
     if (current && priority == FeedbackPriority.p0) _lastP0End = end;
@@ -317,6 +347,7 @@ class AudioPolicy {
     _activeMessage = null;
     _lastSpeechEnd = null;
     _lastP0End = null;
+    _insertStartedAt = null;
     _spans.clear();
     clearPending();
   }

@@ -1488,10 +1488,137 @@ void main() {
       expect(s.audioPolicy.activePriority, FeedbackPriority.p0);
       expect(s.audioPolicy.activeMessage, leftMild);
       // 이탈 경고가 끝나면 둘 다 조용하다(전에는 진입이 재생 중인데 정책은 조용하다고 봤다).
+      // T131: 이제는 대기하던 진입 안내를 바로 끼워 넣는다 — 정책과 실제 재생 모두 진입 안내.
       await tester.pump(const Duration(milliseconds: 1000));
-      expect(fake.speaking, isNull);
-      expect(s.audioPolicy.activePriority, isNull);
-      expect(s.audioPolicy.activeMessage, isNull);
+      expect(fake.speaking, isNull, reason: '진입 안내의 stop 왕복 중');
+      expect(s.audioPolicy.activePriority, FeedbackPriority.p1);
+      expect(s.audioPolicy.activeMessage, ko.enteredCrosswalkMessage);
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(fake.speaking, ko.enteredCrosswalkMessage);
+      await tester.pump(const Duration(seconds: 5));
+      await _disposeIn(tester, s);
+    });
+
+    // T131(사용자 선택 c): 대기 중인 진입 안내를 첫 P0가 끝난 직후 끼워 넣는다.
+    testWidgets('T131: 첫 이탈 경고가 끝나면 최소 간격 없이 진입 안내를 끼워 넣는다',
+        (tester) async {
+      EventLog.instance.clearForTest();
+      final fake = install();
+      final s = FeedbackService();
+      await toApproach(s);
+      await s.alert('left', 0.9, angleDegrees: mild); // 진입(대기) + 이탈(P0)
+      await tester.pump(const Duration(milliseconds: 1250)); // P0 끝 1100 + stop 100
+      expect(fake.speaking, ko.enteredCrosswalkMessage,
+          reason: '1.5초 간격을 기다리지 않는다');
+      final says = logged('say')
+          .where((m) => m['text'] == ko.enteredCrosswalkMessage)
+          .toList();
+      expect(says.map((m) => m['why']), ['wait_p0', 'after_p0']);
+      expect(says.last['act'], 'speakNow');
+      await tester.pump(const Duration(seconds: 5));
+      expect(fake.played, [leftMild, ko.enteredCrosswalkMessage]);
+      await _disposeIn(tester, s);
+    });
+
+    testWidgets('T131: 끼운 진입 안내 재생 중의 이탈 경고는 끊지 않고 끝난 뒤 나간다',
+        (tester) async {
+      EventLog.instance.clearForTest();
+      final fake = install();
+      final s = FeedbackService();
+      await toApproach(s);
+      await s.alert('left', 0.9, angleDegrees: mild);
+      await tester.pump(const Duration(milliseconds: 1300)); // 진입 안내 재생 중
+      await s.alert('right', 0.9, angleDegrees: mild);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(fake.speaking, ko.enteredCrosswalkMessage, reason: '끊지 않는다');
+      expect(logged('say.defer').single, containsPair('why', 'insert'));
+      expect(logged('say.defer').single['text'], rightMild);
+      // 진입 안내 끝(1200 + 1000) -> stop 100 -> 이탈 경고.
+      await tester.pump(const Duration(milliseconds: 1000));
+      expect(fake.speaking, rightMild);
+      expect(fake.played, [leftMild, ko.enteredCrosswalkMessage, rightMild]);
+      expect(fake.ignored, isEmpty);
+      expect(logged('say.end')
+          .where((m) => m['text'] == ko.enteredCrosswalkMessage)
+          .single['res'], 'done');
+      await tester.pump(const Duration(seconds: 5));
+      await _disposeIn(tester, s);
+    });
+
+    testWidgets('T131: 기다리는 사이 상태가 바뀌면 그 경고는 말하지 않는다(why=state)',
+        (tester) async {
+      EventLog.instance.clearForTest();
+      final fake = install();
+      final s = FeedbackService();
+      await toApproach(s);
+      await s.alert('left', 0.9, angleDegrees: mild);
+      await tester.pump(const Duration(milliseconds: 1300));
+      await s.alert('right', 0.9, angleDegrees: mild); // 기다림
+      await s.alert('front', 0.9); // 회복 — 보류(700ms) 중
+      await tester.pump(const Duration(milliseconds: 1100)); // 진입 안내 끝
+      expect(fake.played, isNot(contains(rightMild)));
+      final cancel =
+          logged('say.cancel').where((m) => m['text'] == rightMild).single;
+      expect(cancel['why'], 'state');
+      await tester.pump(const Duration(seconds: 5));
+      await _disposeIn(tester, s);
+    });
+
+    testWidgets('T131: 기다리는 경고는 최신 1개만 — 앞의 것은 superseded',
+        (tester) async {
+      EventLog.instance.clearForTest();
+      final fake = install();
+      final s = FeedbackService();
+      await toApproach(s);
+      await s.alert('left', 0.9, angleDegrees: mild);
+      await tester.pump(const Duration(milliseconds: 1300));
+      await s.alert('right', 0.9, angleDegrees: mild);
+      await s.alert('left', 0.9, angleDegrees: mild);
+      expect(
+          logged('say.cancel')
+              .where((m) => m['text'] == rightMild)
+              .single['why'],
+          'superseded');
+      await tester.pump(const Duration(milliseconds: 1100));
+      expect(fake.speaking, leftMild);
+      expect(fake.played.where((t) => t == rightMild), isEmpty);
+      await tester.pump(const Duration(seconds: 5));
+      await _disposeIn(tester, s);
+    });
+
+    testWidgets('T131: 처음 요청부터 3초가 지났으면 끼워 넣지 않는다(max_wait)',
+        (tester) async {
+      EventLog.instance.clearForTest();
+      final fake = install();
+      final s = FeedbackService();
+      s.audioPolicy.putPending(FeedbackPriority.p1, ko.enteredCrosswalkMessage,
+          DateTime.now().subtract(const Duration(milliseconds: 3500)),
+          maxWait: AudioPolicy.entryMaxPendingWait);
+      await s.alert('left', 0.9, angleDegrees: mild);
+      await tester.pump(const Duration(milliseconds: 1300));
+      expect(fake.played, [leftMild]);
+      expect(
+          logged('say.ttl')
+              .where((m) => m['text'] == ko.enteredCrosswalkMessage)
+              .single['why'],
+          'max_wait');
+      await tester.pump(const Duration(seconds: 5));
+      await _disposeIn(tester, s);
+    });
+
+    testWidgets('T131: 진입 안내가 아닌 대기 P1은 끼워 넣지 않는다(1.5초 간격 그대로)',
+        (tester) async {
+      EventLog.instance.clearForTest();
+      final fake = install();
+      final s = FeedbackService();
+      s.audioPolicy.putPending(
+          FeedbackPriority.p1, ko.crossedCrosswalkMessage, DateTime.now());
+      await s.alert('left', 0.9, angleDegrees: mild);
+      await tester.pump(const Duration(milliseconds: 1300));
+      expect(fake.speaking, isNull, reason: 'P0 끝 1100 뒤 간격 대기');
+      // (간격 1.5초는 실제 시계로 재므로 가짜 시간으로는 꺼내는 순간까지 볼 수 없다.)
+      expect(s.audioPolicy.pendingMessage, ko.crossedCrosswalkMessage);
+      expect(logged('say').where((m) => m['why'] == 'after_p0'), isEmpty);
       await tester.pump(const Duration(seconds: 5));
       await _disposeIn(tester, s);
     });
