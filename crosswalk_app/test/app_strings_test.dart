@@ -76,7 +76,7 @@ void main() {
       expect(strings.settingsDevLogLabel, '기록 남기기');
       expect(strings.settingsDevLogShare, '기록 보내기');
       expect(strings.settingsDevLogShareEmpty, '보낼 기록이 없습니다');
-      expect(strings.enteredCrosswalkMessage, '횡단보도에 진입했습니다.');
+      expect(strings.enteredCrosswalkMessage, '횡단보도 진입.');
       expect(strings.crossedCrosswalkMessage, '횡단보도를 건넜습니다.');
     });
 
@@ -103,7 +103,7 @@ void main() {
       expect(strings.settingsDevLogShare, 'Send log');
       expect(
         strings.enteredCrosswalkMessage,
-        'You have entered the crosswalk.',
+        'Entering crosswalk.',
       );
       expect(
         strings.crossedCrosswalkMessage,
