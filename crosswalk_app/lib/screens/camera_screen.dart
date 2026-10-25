@@ -9,6 +9,7 @@ import 'package:camera/camera.dart';
 import 'package:camera_platform_interface/camera_platform_interface.dart'
     show CameraPlatform;
 import 'package:permission_handler/permission_handler.dart';
+import 'package:sensors_plus/sensors_plus.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../services/classifier.dart';
@@ -84,6 +85,10 @@ class _CameraScreenState extends State<CameraScreen>
   // direct `CameraScreen()` construction); only an owned instance is
   // disposed by this screen (see dispose() below).
   late final FeedbackService _feedback;
+
+  // T133: 서 있음 판단용 가속도 구독(`StillnessDetector`). 약 15Hz(uiInterval) —
+  // Android에서 200Hz 미만은 권한이 필요 없다.
+  StreamSubscription<AccelerometerEvent>? _accelSub;
   late final bool _ownsFeedback;
 
   // Detected at startup from the system locale (T34), and changeable
@@ -237,6 +242,23 @@ class _CameraScreenState extends State<CameraScreen>
       duration: const Duration(milliseconds: 1600),
     );
     _initCamera();
+    _startStillness();
+  }
+
+  /// T133: 가속도 표본을 [FeedbackService.addAccelerometer]로 넘긴다. 센서가 없거나
+  /// 실패하면 서 있음 판단 없이(= 종전 동작) 계속한다.
+  void _startStillness() {
+    _accelSub = accelerometerEventStream(
+            samplingPeriod: SensorInterval.uiInterval)
+        .listen(
+      (e) => _feedback.addAccelerometer(e.x, e.y, e.z, DateTime.now()),
+      onError: (Object e) {
+        EventLog.instance.log('still', {'on': false, 'why': 'error'});
+        _accelSub?.cancel();
+        _accelSub = null;
+      },
+      cancelOnError: true,
+    );
   }
 
   Future<void> _initCamera() async {
@@ -1325,6 +1347,7 @@ class _CameraScreenState extends State<CameraScreen>
   @override
   void dispose() {
     _noCallTicker?.cancel();
+    _accelSub?.cancel();
     if (_scoreEnabled) EventLog.instance.tap = null;
     WidgetsBinding.instance.removeObserver(this);
     WakelockPlus.disable();
