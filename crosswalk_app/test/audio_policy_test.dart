@@ -350,6 +350,22 @@ void main() {
       expect(p.lastReason, 'gap_p1');
     });
 
+    test('T132 ①: atP0Cut이면 재생 중인 P0를 끊고 바로 말한다 (why=p0_cut)', () {
+      final p = AudioPolicy();
+      p.markStarted(FeedbackPriority.p0);
+      expect(p.decide(FeedbackPriority.p1, t0, atP0Cut: true),
+          SpeechAction.speakNow);
+      expect(p.lastReason, 'p0_cut');
+      // 무음 예산은 본다.
+      final q = AudioPolicy();
+      q.markStarted(FeedbackPriority.p3);
+      q.markFinished(FeedbackPriority.p3, ms(-25000), ms(-100));
+      q.markStarted(FeedbackPriority.p0);
+      expect(q.decide(FeedbackPriority.p1, t0, atP0Cut: true),
+          SpeechAction.drop);
+      expect(q.lastReason, 'budget');
+    });
+
     test('afterP0여도 재생 중인 P0가 있으면 기다린다', () {
       final p = AudioPolicy();
       p.markStarted(FeedbackPriority.p0);
@@ -567,6 +583,64 @@ void main() {
       v.decidePattern('left', t0, 400);
       final later = t0.add(const Duration(milliseconds: 3100));
       expect(v.decidePattern('left', later, 400), isNotNull);
+    });
+  });
+
+  // T132 ④: 이탈 단계별 같은 방향 반복 간격(보통 3초·즉시 1.5초·가장자리 1초).
+  group('VibrationPolicy — 단계별 반복 간격 (T132)', () {
+    DateTime ms(int v) => t0.add(Duration(milliseconds: v));
+
+    test('간격 표: 보통 3초, 즉시 1.5초, 가장자리 1초', () {
+      expect(VibrationPolicy.repeatIntervalFor(0), const Duration(seconds: 3));
+      expect(VibrationPolicy.repeatIntervalFor(1),
+          const Duration(milliseconds: 1500));
+      expect(VibrationPolicy.repeatIntervalFor(2), const Duration(seconds: 1));
+    });
+
+    test('즉시(1)는 1.5초마다, 가장자리(2)는 1초마다 다시 낸다', () {
+      final v = VibrationPolicy();
+      v.decidePattern('left', t0, 400, level: 1);
+      expect(v.decidePattern('left', ms(1400), 400, level: 1), isNull);
+      expect(v.decidePattern('left', ms(1500), 400, level: 1), isNotNull);
+      final e = VibrationPolicy();
+      e.decidePattern('right', t0, 400, level: 2);
+      expect(e.decidePattern('right', ms(900), 400, level: 2), isNull);
+      expect(e.decidePattern('right', ms(1000), 400, level: 2), isNotNull);
+    });
+
+    test('단계가 오르면 새 간격으로 바로 맞춘다 — 보통→가장자리, 1초 지났으면 바로', () {
+      final v = VibrationPolicy();
+      v.decidePattern('left', t0, 400);
+      expect(v.decidePattern('left', ms(800), 400, level: 2), isNull,
+          reason: '마지막 진동부터 1초 전');
+      expect(v.decidePattern('left', ms(1000), 400, level: 2), isNotNull);
+    });
+
+    test('단계가 내려가면 바로 그 단계 간격으로 느려진다 — 가장자리→보통', () {
+      final v = VibrationPolicy();
+      v.decidePattern('right', t0, 400, level: 2);
+      expect(v.decidePattern('right', ms(1000), 400, level: 2), isNotNull);
+      // 1000ms에 마지막 진동. 보통으로 내려가면 3초를 기다린다.
+      expect(v.decidePattern('right', ms(2000), 400, level: 0), isNull);
+      expect(v.decidePattern('right', ms(3900), 400, level: 0), isNull);
+      expect(v.decidePattern('right', ms(4000), 400, level: 0), isNotNull);
+    });
+
+    test('방향 패턴은 단계와 무관하게 그대로(왼쪽 짧게 2번, 오른쪽 길게 1번)', () {
+      expect(VibrationPolicy().decidePattern('left', t0, 400, level: 2),
+          [0, 100, 100, 100]);
+      expect(VibrationPolicy().decidePattern('right', t0, 400, level: 1),
+          [0, 400]);
+    });
+
+    test('기록용: 마지막 호출의 단계와 적용 간격', () {
+      final v = VibrationPolicy();
+      v.decidePattern('left', t0, 400, level: 1);
+      expect(v.lastLevel, 1);
+      expect(v.lastInterval, const Duration(milliseconds: 1500));
+      v.decidePattern('left', ms(100), 400);
+      expect(v.lastLevel, 0);
+      expect(v.lastInterval, VibrationPolicy.repeatInterval);
     });
   });
 

@@ -69,12 +69,12 @@
 | `state` | 화면 상태가 바뀜 (무판정·오류 포함, 1초 안) | `from`, `to`, `edge`, `conf` | `_logStateIfChanged` |
 | `alert` | 이탈 안내 판단 한 번 | `cls`, `conf`, `ang`, `edge`, `msg`/`phase`/`recover`/`edgeTurned`(이번에 고른 문장, 없으면 null), `vib`(진동 여부) | `feedback_service.dart` `alert` |
 | `say` | 음성 요청 | `text`, `p`(0~3 = P0~P3), `act`(speakNow/queue/drop), `why`(§4), `rate`(T124: 빠른 상승 문장일 때만 — 요청한 속도) | `feedback_service.dart` `_speak` |
-| `say.end` | 음성 재생이 끝남 | `text`, `p`, `res`(done/timeout/error/superseded), `dur`(ms), `rate`·`rateMs`(T124: 이 발화 전에 속도를 바꿨을 때만 — 바꾼 속도와 `setSpeechRate`에 걸린 ms. 빠른 상승 문장 전의 변경과 다음 발화 전의 복귀가 모두 남는다. `dur`에 포함됨) — 다른 안내가 끊으면 짧게 끝난다. T121: superseded = stop을 기다리는 사이 더 새 발화가 시작돼 speak를 보내지 않음(재생 없음) | `_speak` |
+| `say.end` | 음성 재생이 끝남 | `text`, `p`, `res`(done/cut/timeout/error/superseded), `dur`(ms), `rate`·`rateMs`(T124: 이 발화 전에 속도를 바꿨을 때만 — 바꾼 속도와 `setSpeechRate`에 걸린 ms. 빠른 상승 문장 전의 변경과 다음 발화 전의 복귀가 모두 남는다. `dur`에 포함됨) — 다른 안내가 끊으면 짧게 끝난다. T121: superseded = stop을 기다리는 사이 더 새 발화가 시작돼 speak를 보내지 않음(재생 없음). T132: cut = 재생 중 더 새 발화가 시작돼(stop) 끊김(전에는 done) | `_speak` |
 | `say.ttl` | 대기하던 안내가 TTL을 넘겨 버려짐 (T108: 보류한 회복 안내가 2.7초를 넘겨도 / 새 P1을 넣기 전 만료된 대기 항목을 치울 때도) | `text`, `p`, `why`(T126, 대기 슬롯 항목만: `ttl` = TTL 지남 — P0 뒤에서 기다렸으면 마지막 P0 종료부터 / `max_wait` = 처음 요청부터 8초 상한, T130: 진입 안내는 3초) | `_drainPending`, `alert`, `_speak` |
-| `flip.hold` | T130: 끝(위치) 판정과 각도 판정이 1초 안에 반대 방향으로 뒤집으려 해서 직전 상태를 유지함 (`EdgeAngleFlipGuard`) — 막은 판정마다 한 줄 | `from`(직전 경고 방향), `to`(막은 방향), `src`(막은 판정의 출처: edge = 끝 규칙 / angle = 각도), `ms`(직전 방향에 마지막으로 있던 때부터), `keep`(유지한 상태) | `CameraScreen` 분류·각도·위치 갱신 |
-| `say.defer` | 회복 안내를 보류함 (T108 Q1 — front 0.7초 유지 확인 전) / 횡단보도 없음 상태의 멈춤 블록을 1.3초 보류함 (T118) / T131: 끼워 넣은 진입 안내 재생 중이라 이탈·회복 P0를 기다리게 함 (`why`=insert) | `text`, `why`(T131 insert일 때만) | `alert`, `surfaceAlert`, `_speak` |
+| `flip.hold` | T130: 끝(위치) 판정과 각도 판정이 1초 안에 반대 방향으로 뒤집으려 해서 직전 상태를 유지함 (`EdgeAngleFlipGuard`) — 막은 판정마다 한 줄. **T132: 기본으로 꺼져 있어(`EdgeAngleFlipGuard.enabledByDefault` = false) 나오지 않는다** | `from`(직전 경고 방향), `to`(막은 방향), `src`(막은 판정의 출처: edge = 끝 규칙 / angle = 각도), `ms`(직전 방향에 마지막으로 있던 때부터), `keep`(유지한 상태) | `CameraScreen` 분류·각도·위치 갱신 |
+| `say.defer` | 회복 안내를 보류함 (T108 Q1 — front 0.7초 유지 확인 전) / 횡단보도 없음 상태의 멈춤 블록을 1.3초 보류함 (T118) / T131: 끼워 넣은 진입 안내 재생 중이라 이탈·회복 P0를 기다리게 함 (`why`=insert). T132: 바로 재생된 진입 안내 재생 중에도 같다 | `text`, `why`(T131 insert일 때만) | `alert`, `surfaceAlert`, `_speak` |
 | `say.cancel` | 보류·대기 안내를 말하지 않고 취소 | `text`, `why`(flicker = front가 아니게 됨 / superseded = 앞에 횡단보도가 멈춤 블록을 대체 / same_dir = 같은 방향 이탈 경고 6초 묶음으로 생략(T120 — 종전 3초 쿨다운이었다면 말했을 때만, 같은 문장은 3초에 1번 기록) / state = 멈춤 블록 보류가 끝나 말하려 할 때 분류 상태가 none(또는 빈 값)이 아니게 바뀜(T118, `feedback_service.dart` `_holdDotBlock`), 또는 대기 중인 진입 안내가 분류 상태 crossed / none / approach로 취소됨(T130, `cancelPendingEntryOnState`), 또는 T131: 끼운 진입 안내 뒤로 기다리게 한 P0를 내보내려 할 때 분류 상태가 그 P0를 요청할 때와 달라짐(`_releaseInsertHeld`). T131 superseded = 기다리게 한 P0를 더 새 P0가 바꿈) | `alert`, `decideMessage` |
-| `vib` | 진동 요청 | `kind`(left/right/recover/road/line_on), `ok`, `mode`(pattern/single), `pat`(ms 배열: 대기·켬·끔…) 또는 `why`(no_vibrator) | `feedback_service.dart` `alert`, `surfaceAlert` |
+| `vib` | 진동 요청 | `kind`(left/right/recover/road/line_on), `ok`, `mode`(pattern/single), `pat`(ms 배열: 대기·켬·끔…) 또는 `why`(no_vibrator). T132: kind가 left/right면 `lvl`(이탈 단계 0 보통·1 즉시·2 가장자리)과 `gap`(적용한 같은 방향 반복 간격 ms: 3000·1500·1000) | `feedback_service.dart` `alert`, `surfaceAlert` |
 
 `vib`는 앱이 진동을 **요청한** 기록이다. 모터가 실제로 떨렸는지, 사용자가 느꼈는지는 체크리스트로만 안다.
 
@@ -95,6 +95,7 @@
 | `gap_p1` | 최소 간격 안의 P1 (T108 Q2) | 대기 |
 | `slot_full` | 대기 슬롯을 먼저 온 P1이 차지 (T108) | 버림 |
 | `after_p0` | 대기하던 진입 안내를 P0가 끝난 직후 최소 간격 없이 끼워 넣음 (T131) | 즉시 |
+| `p0_cut` | 대기하던 진입 안내를, 재생 중인 P0가 다른 P0에 끊기는 순간 끼워 넣음 — 끊으려던 P0는 `say.defer` why=insert로 기다림 (T132 ①) | 즉시 (재생 중인 P0를 끊음) |
 
 ## 5. 쓰는 법
 
