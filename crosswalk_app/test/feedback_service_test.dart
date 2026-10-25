@@ -1650,6 +1650,76 @@ void main() {
       await _disposeIn(tester, s);
     });
 
+    // T132 ①(A): P0가 P0에 끊기는 순간 대기 중인 진입 안내를 끼운다.
+    testWidgets('T132: P0가 P0를 끊는 순간 진입 안내를 먼저 말하고 끊으려던 P0는 기다린다',
+        (tester) async {
+      EventLog.instance.clearForTest();
+      final fake = install();
+      final s = FeedbackService();
+      await toApproach(s);
+      await s.alert('left', 0.9, angleDegrees: mild); // 진입(대기) + 이탈(P0)
+      await tester.pump(const Duration(milliseconds: 500)); // 이탈 경고 재생 중
+      await s.alert('left', 0.9, angleDegrees: 30); // 단계 상승 — 빠른 상승 문장
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(fake.speaking, ko.enteredCrosswalkMessage);
+      final says = logged('say')
+          .where((m) => m['text'] == ko.enteredCrosswalkMessage)
+          .toList();
+      expect(says.map((m) => m['why']), ['wait_p0', 'p0_cut']);
+      expect(logged('say.end').firstWhere((m) => m['text'] == leftMild)['res'],
+          'cut');
+      final held = logged('say.defer').single;
+      expect(held['why'], 'insert');
+      expect(held['text'], ko.leftSevereRapidMessage);
+      // 진입 안내 끝(600 + 100 + 1000) -> stop 100 -> 기다린 P0.
+      await tester.pump(const Duration(milliseconds: 1100));
+      expect(fake.speaking, ko.leftSevereRapidMessage);
+      expect(fake.played,
+          [leftMild, ko.enteredCrosswalkMessage, ko.leftSevereRapidMessage]);
+      expect(
+          logged('say.end')
+              .where((m) => m['text'] == ko.enteredCrosswalkMessage)
+              .single['res'],
+          'done');
+      await tester.pump(const Duration(seconds: 5));
+      await _disposeIn(tester, s);
+    });
+
+    testWidgets('T132: 차도 경고가 P0를 끊을 때는 끼우지 않는다', (tester) async {
+      EventLog.instance.clearForTest();
+      final fake = install();
+      final s = FeedbackService();
+      await toApproach(s);
+      await s.alert('left', 0.9, angleDegrees: mild);
+      await tester.pump(const Duration(milliseconds: 500));
+      await s.surfaceAlert([SurfaceEvent.road]);
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(fake.speaking, ko.surfaceRoadMessage);
+      expect(logged('say').where((m) => m['why'] == 'p0_cut'), isEmpty);
+      expect(s.audioPolicy.pendingMessage, ko.enteredCrosswalkMessage);
+      await tester.pump(const Duration(seconds: 5));
+      await _disposeIn(tester, s);
+    });
+
+    testWidgets('T132: 처음 요청부터 3초가 지났으면 끊는 순간에도 끼우지 않는다',
+        (tester) async {
+      EventLog.instance.clearForTest();
+      final fake = install();
+      final s = FeedbackService();
+      await s.alert('left', 0.9, angleDegrees: mild);
+      await tester.pump(const Duration(milliseconds: 500));
+      s.audioPolicy.putPending(FeedbackPriority.p1, ko.enteredCrosswalkMessage,
+          DateTime.now().subtract(const Duration(milliseconds: 3500)),
+          maxWait: AudioPolicy.entryMaxPendingWait);
+      await s.alert('right', 0.9, angleDegrees: -mild); // 방향 바뀜 — 끊음
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(fake.speaking, rightMild);
+      expect(logged('say').where((m) => m['why'] == 'p0_cut'), isEmpty);
+      expect(logged('say.defer'), isEmpty);
+      await tester.pump(const Duration(seconds: 5));
+      await _disposeIn(tester, s);
+    });
+
     // T132 ②: 바로 재생된(why=ok) 진입 안내도 끼운 진입 안내와 같은 보호.
     testWidgets('T132: 바로 재생된 진입 안내 재생 중의 이탈 경고는 끊지 않고 끝난 뒤 나간다',
         (tester) async {

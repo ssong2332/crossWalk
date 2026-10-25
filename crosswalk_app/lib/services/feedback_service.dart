@@ -700,6 +700,7 @@ class FeedbackService {
     DateTime? requestedAt,
     double? rate,
     bool afterP0 = false,
+    bool atP0Cut = false,
   }) async {
     final now = DateTime.now();
     // T131: 끼워 넣은 진입 안내 재생 중이면 이탈·회복 P0는 끊지 않고 기다린다.
@@ -708,10 +709,20 @@ class FeedbackService {
       _holdP0ForInsert(message, rank, rate, now);
       return;
     }
+    // T132 ①: 이 P0가 재생 중인 P0를 끊으려는데 진입 안내가 대기 중이면, 그 순간
+    // 진입 안내를 먼저 말하고 이 P0는 기다리게 한다.
+    if (priority == FeedbackPriority.p0 &&
+        _insertEntryAtP0Cut(message, rank, rate, now)) {
+      return;
+    }
     // T108: 대기 슬롯에서 다시 꺼낸 요청은 처음 요청 시각을 그대로 쓴다(TTL 기준).
     final firstAt = requestedAt ?? now;
     var action = audioPolicy.decide(priority, now,
-        rank: rank, message: message, supersedes: supersedes, afterP0: afterP0);
+        rank: rank,
+        message: message,
+        supersedes: supersedes,
+        afterP0: afterP0,
+        atP0Cut: atP0Cut);
     var why = audioPolicy.lastReason;
     if (action == SpeechAction.queue) {
       // 만료된 대기 항목이 슬롯을 막지 않게 먼저 치운다(버린 것은 기록).
@@ -834,6 +845,42 @@ class FeedbackService {
         }
       }
     }
+  }
+
+  /// T132 ①(사용자 선택 A, 2026-10-25): 재생 중인 P0를 다른 P0가 끊는 순간에
+  /// 진입 안내가 대기 중이고 처음 요청부터 3초(`entryMaxPendingWait`) 안이면, 진입
+  /// 안내를 그 순간 말하고(`say` why=p0_cut, 앞 P0는 `say.end` res=cut) 끊으려던 P0는
+  /// T131 규칙으로 기다리게 한다(`say.defer` why=insert). 차도(danger)와, P0 규칙상
+  /// 끊지 않는 P0(busy_p0·same_p0)는 해당하지 않는다. 끼웠으면 true.
+  ///
+  /// 10/25 저녁 기록: 진입 안내 만료 6건 중 5건은 첫 P0가 1.5~2.35초에 다른 P0
+  /// (강조 문장 4·반대 방향 1)에 끊겨, 다음 P0가 끝났을 때 이미 3초가 지났다.
+  bool _insertEntryAtP0Cut(
+      String message, P0Rank rank, double? rate, DateTime now) {
+    if (rank == P0Rank.danger ||
+        audioPolicy.activePriority != FeedbackPriority.p0) {
+      return false;
+    }
+    final entry = AppStrings.of(_language).enteredCrosswalkMessage;
+    final at = audioPolicy.pendingAt;
+    if (audioPolicy.pendingMessage != entry || at == null) return false;
+    if (audioPolicy.decide(FeedbackPriority.p0, now,
+            rank: rank, message: message) !=
+        SpeechAction.speakNow) {
+      return false;
+    }
+    if (audioPolicy.pendingExpiry(now) != null) return false;
+    audioPolicy.clearPending();
+    // _speak는 첫 await 전까지 바로 실행된다 — 여기서 돌아오면 진입 안내가 이미
+    // 재생 중(insertStartedAt 있음)이라 아래에서 이 P0를 기다리게 할 수 있다.
+    unawaited(_speak(entry,
+        priority: FeedbackPriority.p1, requestedAt: at, atP0Cut: true));
+    if (audioPolicy.activeMessage != entry) {
+      // 예산 등으로 진입 안내를 말하지 않았다 — 이 P0는 평소대로.
+      return false;
+    }
+    _holdP0ForInsert(message, rank, rate, now);
+    return true;
   }
 
   /// T131: 끼워 넣은 진입 안내 재생 중에 온 P0를 기다리게 한다. 슬롯은 1개 —

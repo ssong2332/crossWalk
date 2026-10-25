@@ -350,6 +350,22 @@ void main() {
       expect(p.lastReason, 'gap_p1');
     });
 
+    test('T132 ①: atP0Cut이면 재생 중인 P0를 끊고 바로 말한다 (why=p0_cut)', () {
+      final p = AudioPolicy();
+      p.markStarted(FeedbackPriority.p0);
+      expect(p.decide(FeedbackPriority.p1, t0, atP0Cut: true),
+          SpeechAction.speakNow);
+      expect(p.lastReason, 'p0_cut');
+      // 무음 예산은 본다.
+      final q = AudioPolicy();
+      q.markStarted(FeedbackPriority.p3);
+      q.markFinished(FeedbackPriority.p3, ms(-25000), ms(-100));
+      q.markStarted(FeedbackPriority.p0);
+      expect(q.decide(FeedbackPriority.p1, t0, atP0Cut: true),
+          SpeechAction.drop);
+      expect(q.lastReason, 'budget');
+    });
+
     test('afterP0여도 재생 중인 P0가 있으면 기다린다', () {
       final p = AudioPolicy();
       p.markStarted(FeedbackPriority.p0);

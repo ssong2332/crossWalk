@@ -149,6 +149,7 @@ class AudioPolicy {
   /// T108: `same_p0`(같은 이탈 문구가 재생 중) / `wait_p1`(P1 재생 중이라 대기) /
   /// `supersede_p1`(멈춤 블록을 앞에 횡단보도가 대체) / `gap_p1`(최소 간격이라 대기).
   /// T131: `after_p0`(P0가 끝난 직후 최소 간격 없이 끼워 넣음).
+  /// T132 ①: `p0_cut`(P0가 P0에 끊기는 순간 진입 안내를 끼워 넣음).
   String lastReason = '';
 
   /// docs/AudioPolicy.md §2 판정표. 부수효과가 없으므로 테스트에서 직접 호출해
@@ -159,6 +160,8 @@ class AudioPolicy {
   /// 반복을 가리는 데, [supersedes]는 재생 중인 같은 P1을 대체할 때(Q3) 쓴다.
   /// T131: [afterP0]는 P0가 끝난 직후 끼워 넣는 진입 안내 — 최소 간격을 보지
   /// 않는다(무음 예산은 그대로 본다). 재생 중인 것이 있으면 아무 효과가 없다.
+  /// T132 ①: [atP0Cut]은 재생 중인 P0가 다른 P0에 끊기는 순간 끼워 넣는 진입
+  /// 안내 — 재생 중인 P0를 끊고 바로 말한다(무음 예산은 본다, `p0_cut`).
   SpeechAction decide(
     FeedbackPriority incoming,
     DateTime now, {
@@ -166,10 +169,21 @@ class AudioPolicy {
     String? message,
     bool supersedes = false,
     bool afterP0 = false,
+    bool atP0Cut = false,
   }) {
     final active = _active;
 
     if (active != null) {
+      if (atP0Cut &&
+          incoming == FeedbackPriority.p1 &&
+          active == FeedbackPriority.p0) {
+        if (spokenInWindow(now) >= budgetLimit) {
+          lastReason = 'budget';
+          return SpeechAction.drop;
+        }
+        lastReason = 'p0_cut';
+        return SpeechAction.speakNow;
+      }
       // T108: P0끼리는 세부 순위로 정한다.
       if (incoming == FeedbackPriority.p0 && active == FeedbackPriority.p0) {
         final activeRank = _activeRank ?? P0Rank.deviation;
