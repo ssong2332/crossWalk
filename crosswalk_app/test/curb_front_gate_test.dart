@@ -52,6 +52,59 @@ void main() {
     }
   });
 
+  test('0행: 초광각 0.6배·가로 장착이면 연석이어도 그대로, 쉰 이유를 낸다(노면 확인 2b행과 같음)', () {
+    final cases = {
+      (true, false): 'wide',
+      (false, true): 'landscape',
+      (true, true): 'wide,landscape',
+    };
+    cases.forEach((key, why) {
+      final (wide, land) = key;
+      final g = CurbFrontGate();
+      final last = feed(g, [curb, curb]);
+      final r = g.apply('front',
+          current: 'approach',
+          enabled: true,
+          now: at(last),
+          ultraWide: wide,
+          landscape: land);
+      expect(r.label, 'front', reason: why);
+      expect(r.dropped, isFalse, reason: why);
+      expect(r.skipWhy, why);
+    });
+  });
+
+  test('0행: 1~3행이 이미 그대로면 쉰 기록을 내지 않는다', () {
+    final g = CurbFrontGate();
+    final last = feed(g, [curb, curb]);
+    expect(
+        g
+            .apply('front',
+                current: 'approach', enabled: false, now: at(last), ultraWide: true)
+            .skipWhy,
+        isNull);
+    expect(
+        g
+            .apply('none',
+                current: 'approach', enabled: true, now: at(last), ultraWide: true)
+            .skipWhy,
+        isNull);
+    expect(
+        g
+            .apply('front',
+                current: 'hold', enabled: true, now: at(last), landscape: true)
+            .skipWhy,
+        isNull);
+  });
+
+  test('0행이 아니면(세로·1배) 쉰 이유는 null', () {
+    final g = CurbFrontGate();
+    final last = feed(g, [curb, curb]);
+    final r = g.apply('front', current: 'approach', enabled: true, now: at(last));
+    expect(r.skipWhy, isNull);
+    expect(r.dropped, isTrue);
+  });
+
   test('4행: 최근 2개가 모두 연석(횡단보도 < 0.5, 인도+블록 >= 0.1)이면 approach', () {
     for (final current in ['approach', 'none', 'crossed']) {
       final g = CurbFrontGate();

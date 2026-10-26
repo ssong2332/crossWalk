@@ -64,14 +64,21 @@ class CrosswalkSurfaceGate {
 
   void reset() => _samples.clear();
 
+  /// 2b행(T126): 노면 모델 학습 조건 밖이라 쉬어야 하면 그 이유
+  /// (`wide` / `landscape` / `wide,landscape`), 아니면 null. T138 연석 확인도 쓴다.
+  static String? skipReason({required bool ultraWide, required bool landscape}) {
+    if (!ultraWide && !landscape) return null;
+    return [if (ultraWide) 'wide', if (landscape) 'landscape'].join(',');
+  }
+
   CrosswalkGateResult apply(String label,
       {required bool enabled,
       required DateTime now,
       bool ultraWide = false,
       bool landscape = false}) {
     if (!enabled || label != 'approach') return CrosswalkGateResult(label);
-    if (ultraWide || landscape) {
-      final why = [if (ultraWide) 'wide', if (landscape) 'landscape'].join(',');
+    final why = skipReason(ultraWide: ultraWide, landscape: landscape);
+    if (why != null) {
       return CrosswalkGateResult(label, verdict: 'skip', why: why);
     }
     final recent = [
