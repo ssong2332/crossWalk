@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:onnxruntime/onnxruntime.dart';
 
 import 'angle_estimator.dart';
+import 'curb_front_gate.dart';
 import 'surface_guide.dart';
 
 /// T104: 노면 분할 모델(점자블록 선형/점형·인도·차도·횡단보도) 러너.
@@ -25,6 +26,10 @@ class SurfaceEstimator {
   OrtSession? _session;
 
   bool get isReady => _session != null;
+
+  /// T138: 마지막으로 성공한 [estimate]의 발밑(맨 아래 1/6 줄) 비율. 실패하면 null.
+  FootSurface? get lastFoot => _lastFoot;
+  FootSurface? _lastFoot;
 
   /// OrtEnv는 분류기·각도·위치 모델이 이미 init했다고 가정한다(카메라 화면 초기화 이후 호출).
   Future<void> init() async {
@@ -72,8 +77,11 @@ class SurfaceEstimator {
     final out = outputs.first as OrtValueTensor;
     final value = out.value as List;
     out.release();
+    _lastFoot = null;
     if (value.isEmpty) return null;
-    return SurfaceFeatures.fromLogits(value.first as List);
+    final logits = value.first as List;
+    _lastFoot = FootSurface.fromLogits(logits);
+    return SurfaceFeatures.fromLogits(logits);
   }
 
   void dispose() {
