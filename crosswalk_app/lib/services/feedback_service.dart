@@ -44,7 +44,17 @@ class FeedbackService {
       'on': stillness.isStill,
       if (mot != null) 'mot': double.parse(mot.toStringAsFixed(3)),
     });
+    // T136(사용자 승인 A안): 좌우 진동이 같아 서 있는 동안 방향을 알 수 없다.
+    // 걸음을 뗄 때 이탈이 이어지고 있으면 다음 판정에서 방향 경고를 한 번 말한다.
+    final raw = _lastRawClass;
+    _stillOffPending =
+        !stillness.isStill && (raw == 'left' || raw == 'right');
   }
+
+  /// T136: 서 있음이 풀린 순간 이탈(left/right) 중이었다 — 다음 [decideMessage]
+  /// 한 번에만 쓰고 비운다. 그 판정이 같은 방향이면 T120 6초 묶음에 막히지 않고
+  /// 말한다(`say.force` why=still_off).
+  bool _stillOffPending = false;
 
   /// 화면 표시용 — 지금 보고 중인 이탈 강도.
   bool get isSevere => severityLatch.isSevere;
@@ -350,6 +360,8 @@ class FeedbackService {
   String? decideMessage(
       String detectedClass, double? angleDegrees, DateTime now,
       {bool atEdge = false}) {
+    final stillOff = _stillOffPending;
+    _stillOffPending = false;
     if (detectedClass != 'left' && detectedClass != 'right') {
       severityLatch.reset();
       _lastSeverityClass = null;
@@ -418,9 +430,15 @@ class FeedbackService {
     // T120(사용자 확정 2026-10-20): 같은 방향이면 마지막으로 말한 단계와 비교한다.
     // 6초 안에 같거나 내려가면 묶는다(진동은 그대로). 올라가면 바로 말한다.
     // 방향이 바뀌면(_lastAlertClass가 다름) 종전대로 바로 말한다.
-    if (_lastAlertTime != null &&
+    // T136(사용자 승인 A안): 서 있음이 풀린 직후의 첫 판정이 같은 방향이면
+    // 묶음·서 있음 생략 없이 한 번 말한다 — 서 있는 동안엔 진동만 받아 방향을 모른다.
+    final sameDirRepeat = _lastAlertTime != null &&
         _lastAlertClass == detectedClass &&
-        level <= _lastAlertLevel! &&
+        level <= _lastAlertLevel!;
+    if (stillOff && sameDirRepeat) {
+      EventLog.instance
+          .log('say.force', {'text': message, 'why': 'still_off'});
+    } else if (sameDirRepeat &&
         now.difference(_lastAlertTime!) < sameDirectionBundle) {
       if (_bundleLogText != message ||
           now.difference(_bundleLogAt!).inSeconds >= _cooldownSeconds) {
@@ -435,10 +453,7 @@ class FeedbackService {
     // T133(사용자 승인 안 A, 2026-10-25): 서 있으면 같은 방향 반복(6초 재경고,
     // 단계가 같거나 내려감)은 말하지 않는다 — 진동은 그대로(T132 ④ 박자).
     // 첫 경고·방향 바뀜·단계 올라감·회복 뒤 새 이탈은 위 조건에 걸리지 않아 말한다.
-    if (_lastAlertTime != null &&
-        _lastAlertClass == detectedClass &&
-        level <= _lastAlertLevel! &&
-        stillness.isStillAt(now)) {
+    if (!stillOff && sameDirRepeat && stillness.isStillAt(now)) {
       if (_bundleLogText != message ||
           now.difference(_bundleLogAt!).inSeconds >= _cooldownSeconds) {
         _bundleLogAt = now;
@@ -1150,6 +1165,7 @@ class FeedbackService {
     // 진동 — T61: 좌/우 패턴을 분리했다. 이전에는 두 방향이 같은 진동이라
     // 방향 정보가 음성에만 존재했고, 도로 소음에 음성이 묻히면 방향이 통째로
     // 사라졌다. `front`로 복귀할 때는 짧은 확인 진동 1회가 나간다.
+    // T136(사용자 승인): 좌우를 다시 같은 패턴(짧게 1번)으로 — 방향은 음성으로만.
     // 음성이 쿨다운에 걸린 프레임에서도 진동 판단은 별도로 수행한다.
     // T132 ④: 같은 방향 반복 간격은 이번 프레임의 이탈 단계로 정한다.
     final pattern = vibrationPolicy.decidePattern(
@@ -1177,6 +1193,9 @@ class FeedbackService {
     final level = directional ? vibrationPolicy.lastLevel : null;
     final gapMs =
         directional ? vibrationPolicy.lastInterval.inMilliseconds : null;
+    // T136: 방향 진동은 단일 진동으로 내려가도 짧게(가장 짧은 간격 400ms보다 짧게).
+    final fallbackMs =
+        directional ? VibrationPolicy.directionPulseMs : _vibrationDurationMs;
     if (await Vibration.hasVibrator() ?? false) {
       // 패턴 진동을 지원하지 않는 기기에서는 단일 진동으로 내려간다.
       // 방향은 음성으로만 전달되지만, 아무 알림도 없는 것보다는 낫다.
@@ -1184,25 +1203,25 @@ class FeedbackService {
       if (supportsPattern) {
         Vibration.vibrate(pattern: pattern);
       } else {
-        Vibration.vibrate(duration: _vibrationDurationMs);
+        Vibration.vibrate(duration: fallbackMs);
       }
       EventLog.instance.log(
           'vib',
           vibrationLogData(kind, pattern,
               hasVibrator: true,
               supportsPattern: supportsPattern,
-              fallbackMs: _vibrationDurationMs,
+              fallbackMs: fallbackMs,
               level: level,
               gapMs: gapMs));
       final total = pattern.fold<int>(0, (a, b) => a + b);
-      activateVibrationIndicator(total > 0 ? total : _vibrationDurationMs);
+      activateVibrationIndicator(total > 0 ? total : fallbackMs);
     } else {
       EventLog.instance.log(
           'vib',
           vibrationLogData(kind, pattern,
               hasVibrator: false,
               supportsPattern: false,
-              fallbackMs: _vibrationDurationMs,
+              fallbackMs: fallbackMs,
               level: level,
               gapMs: gapMs));
     }
@@ -1291,6 +1310,7 @@ class FeedbackService {
   }
 
   /// T104: 차도 진동 — 짧게 3번(‧‧‧). 기존 좌(‧‧)·우(—)·복귀(짧게 1번)와 겹치지 않는다.
+  /// T136: 좌우가 같은 짧게 1번(150ms)이 된 뒤에도 차도는 그대로(바꾸지 않음).
   @visibleForTesting
   static List<int> surfaceRoadPattern(int shortMs) =>
       <int>[0, shortMs, shortMs, shortMs, shortMs, shortMs];

@@ -373,23 +373,33 @@ class AudioPolicy {
 ///
 /// 좌/우가 같은 패턴이던 것을 분리한다. 도로 소음에 음성이 묻혀도 방향이 전달되도록,
 /// 그리고 같은 방향이 지속될 때 음성 대신 진동만으로 알리기 위해서다.
+/// T136(사용자 승인, 2026-10-26): 좌우를 다시 같은 패턴(짧게 1번)으로 — 방향은 음성으로만,
+/// 진동은 이탈 정도(반복 간격)를 전한다.
 class VibrationPolicy {
   /// 같은 방향이 계속될 때 방향 패턴을 다시 내는 간격(이탈 단계 보통 = 0).
   ///
-  /// 3초는 `feedback_service.dart`의 `_cooldownSeconds`와 같은 값이다.
-  /// 초판의 간격 점증(1->2->4->8초)은 제거했다: 진동이 8초 간격이면
-  /// 음성만 나가고 진동은 없는 구간이 생긴다.
-  static const repeatInterval = Duration(seconds: 3);
+  /// T136(사용자 승인, 2026-10-26 실기기): 3초 → 1초. 초판의 간격 점증
+  /// (1->2->4->8초)은 제거했다: 진동이 8초 간격이면 음성만 나가고 진동은 없는
+  /// 구간이 생긴다.
+  static const repeatInterval = Duration(seconds: 1);
 
   /// T132 ④(사용자 선택 A, 2026-10-25): 이탈 단계(`FeedbackService.deviationLevel`)별
-  /// 같은 방향 반복 간격 — 보통 3초, 즉시(심함) 1.5초, 가장자리 1초. 매 프레임
-  /// 지금 단계의 간격으로 마지막 진동부터 잰다: 단계가 오르면 그 간격이 이미
-  /// 지났을 때 바로 내고, 내려가면 바로 느려진다. 음성 6초 묶음(T120)과는 별개다.
+  /// 같은 방향 반복 간격. 매 프레임 지금 단계의 간격으로 마지막 진동부터 잰다:
+  /// 단계가 오르면 그 간격이 이미 지났을 때 바로 내고, 내려가면 바로 느려진다.
+  /// 음성 6초 묶음(T120)과는 별개다.
+  ///
+  /// T136(사용자 승인, 2026-10-26 실기기 "빨라지는 건 느껴지지만 더 빨라야"):
+  /// 보통 3초→1초, 즉시 1.5초→0.6초, 가장자리 1초→0.4초.
   static const repeatIntervalsByLevel = <Duration>[
     repeatInterval,
-    Duration(milliseconds: 1500),
-    Duration(seconds: 1),
+    Duration(milliseconds: 600),
+    Duration(milliseconds: 400),
   ];
+
+  /// T136: 방향 진동 한 번의 길이 — 좌우 같게 짧게 1번. 가장 짧은 반복 간격
+  /// (가장자리 400ms)보다 반드시 짧아야 진동이 이어 붙지 않는다. 방향은 음성으로만
+  /// 전달한다(하드웨어 기기로 가면 좌우 모터 2개로 나눌 계획).
+  static const directionPulseMs = 150;
 
   /// T132 ④: [level]의 반복 간격. 범위 밖이면 가까운 끝 값.
   static Duration repeatIntervalFor(int level) =>
@@ -407,14 +417,13 @@ class VibrationPolicy {
 
   /// `Vibration.vibrate(pattern:)`에 넣을 패턴을 돌려준다. null이면 진동하지 않는다.
   ///
-  /// [longMs]는 사용자가 설정에서 조정하는 진동 길이다. 짧은 진동은 그 1/4이며
-  /// 하한 80ms — 설정을 최소로 낮춰도 두 번의 진동이 한 번처럼 뭉치지 않게 한다.
+  /// [longMs]는 사용자가 설정에서 조정하는 진동 길이다. T136부터 방향 진동은
+  /// [directionPulseMs]로 고정이라 이 값을 쓰지 않는다(호출부 호환으로 남김).
   ///
   /// T132 ④: [level]은 이번 프레임의 이탈 단계(0 보통·1 즉시·2 가장자리) —
-  /// 같은 방향 반복 간격을 정한다([repeatIntervalFor]). 방향 패턴은 그대로다.
+  /// 같은 방향 반복 간격을 정한다([repeatIntervalFor]).
   List<int>? decidePattern(String detectedClass, DateTime now, int longMs,
       {int level = 0}) {
-    final shortMs = (longMs ~/ 4).clamp(80, longMs);
     _lastLevel = level;
 
     if (detectedClass == 'left' || detectedClass == 'right') {
@@ -422,7 +431,7 @@ class VibrationPolicy {
         // 방향이 바뀌었다(또는 첫 경고). 쿨다운을 무시하고 즉시 알린다.
         _lastClass = detectedClass;
         _lastVibratedAt = now;
-        return _directionPattern(detectedClass, shortMs, longMs);
+        return directionPattern;
       }
       // 같은 방향 지속 — 지금 단계의 간격마다 다시 낸다(T132 ④).
       final last = _lastVibratedAt;
@@ -430,7 +439,7 @@ class VibrationPolicy {
         return null;
       }
       _lastVibratedAt = now;
-      return _directionPattern(detectedClass, shortMs, longMs);
+      return directionPattern;
     }
 
     if (detectedClass == 'front') {
@@ -447,12 +456,9 @@ class VibrationPolicy {
     return null;
   }
 
-  List<int> _directionPattern(String cls, int shortMs, int longMs) {
-    // 왼쪽 = 짧게 두 번(..), 오른쪽 = 길게 한 번(—)
-    return cls == 'left'
-        ? <int>[0, shortMs, shortMs, shortMs]
-        : <int>[0, longMs];
-  }
+  /// T136(사용자 승인): 좌우 같은 패턴 — 짧게 1번([directionPulseMs]).
+  /// 종전(T61)은 왼쪽 짧게 2번·오른쪽 길게 1번이었다.
+  static const directionPattern = <int>[0, directionPulseMs];
 
   @visibleForTesting
   void reset() {
