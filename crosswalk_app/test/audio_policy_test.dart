@@ -539,29 +539,26 @@ void main() {
     });
   });
 
-  group('VibrationPolicy — 좌우 패턴 분리 (§5)', () {
-    test('왼쪽은 짧게 두 번, 오른쪽은 길게 한 번', () {
+  // T136(사용자 승인): 좌우 같은 패턴 — 짧게 1번(150ms). 방향은 음성으로만.
+  group('VibrationPolicy — 좌우 같은 패턴 (T136)', () {
+    test('왼쪽·오른쪽 모두 짧게 1번(150ms)', () {
       final left = VibrationPolicy().decidePattern('left', t0, 400);
       final right = VibrationPolicy().decidePattern('right', t0, 400);
-
-      expect(left, isNotNull);
-      expect(right, isNotNull);
-      // [대기, 진동, 대기, 진동] = 두 번 울린다
-      expect(left!.length, 4);
-      // [대기, 진동] = 한 번 울린다
-      expect(right!.length, 2);
-      expect(right[1], 400);
+      expect(left, [0, 150]);
+      expect(right, [0, 150]);
+      expect(left, equals(right));
     });
 
-    test('두 패턴은 서로 다르다 — 이것이 분리의 목적이다', () {
-      final left = VibrationPolicy().decidePattern('left', t0, 400);
-      final right = VibrationPolicy().decidePattern('right', t0, 400);
-      expect(left, isNot(equals(right)));
+    test('설정 진동 길이와 무관하게 150ms', () {
+      expect(VibrationPolicy().decidePattern('left', t0, 100), [0, 150]);
+      expect(VibrationPolicy().decidePattern('right', t0, 1000), [0, 150]);
     });
 
-    test('짧은 진동은 하한 80ms를 지킨다 — 설정을 최소로 낮춰도 두 번이 뭉치지 않게', () {
-      final left = VibrationPolicy().decidePattern('left', t0, 100);
-      expect(left![1], greaterThanOrEqualTo(80));
+    test('진동 길이는 가장 짧은 반복 간격보다 짧다 — 이어 붙지 않게', () {
+      for (var level = 0; level <= 2; level++) {
+        expect(VibrationPolicy.directionPulseMs,
+            lessThan(VibrationPolicy.repeatIntervalFor(level).inMilliseconds));
+      }
     });
 
     test('방향이 바뀌면 쿨다운을 무시하고 즉시 낸다', () {
@@ -571,73 +568,90 @@ void main() {
       expect(v.decidePattern('right', immediately, 400), isNotNull);
     });
 
-    test('같은 방향이 3초 안에 반복되면 진동하지 않는다', () {
+    test('같은 방향이 1초 안에 반복되면 진동하지 않는다(보통)', () {
       final v = VibrationPolicy();
       v.decidePattern('left', t0, 400);
-      final soon = t0.add(const Duration(milliseconds: 2500));
+      final soon = t0.add(const Duration(milliseconds: 900));
       expect(v.decidePattern('left', soon, 400), isNull);
     });
 
-    test('같은 방향이 3초 이상 지속되면 다시 낸다 — 음성 재발화와 같은 박자', () {
+    test('같은 방향이 1초 이상 지속되면 다시 낸다(보통)', () {
       final v = VibrationPolicy();
       v.decidePattern('left', t0, 400);
-      final later = t0.add(const Duration(milliseconds: 3100));
+      final later = t0.add(const Duration(milliseconds: 1000));
       expect(v.decidePattern('left', later, 400), isNotNull);
     });
   });
 
-  // T132 ④: 이탈 단계별 같은 방향 반복 간격(보통 3초·즉시 1.5초·가장자리 1초).
-  group('VibrationPolicy — 단계별 반복 간격 (T132)', () {
+  // T132 ④ + T136: 이탈 단계별 같은 방향 반복 간격(보통 1초·즉시 0.6초·가장자리 0.4초).
+  group('VibrationPolicy — 단계별 반복 간격 (T132·T136)', () {
     DateTime ms(int v) => t0.add(Duration(milliseconds: v));
 
-    test('간격 표: 보통 3초, 즉시 1.5초, 가장자리 1초', () {
-      expect(VibrationPolicy.repeatIntervalFor(0), const Duration(seconds: 3));
+    test('간격 표: 보통 1초, 즉시 0.6초, 가장자리 0.4초', () {
+      expect(VibrationPolicy.repeatIntervalFor(0),
+          const Duration(milliseconds: 1000));
       expect(VibrationPolicy.repeatIntervalFor(1),
-          const Duration(milliseconds: 1500));
-      expect(VibrationPolicy.repeatIntervalFor(2), const Duration(seconds: 1));
+          const Duration(milliseconds: 600));
+      expect(VibrationPolicy.repeatIntervalFor(2),
+          const Duration(milliseconds: 400));
     });
 
-    test('즉시(1)는 1.5초마다, 가장자리(2)는 1초마다 다시 낸다', () {
+    test('보통(0)은 1초, 즉시(1)는 0.6초, 가장자리(2)는 0.4초마다 다시 낸다', () {
+      final n = VibrationPolicy();
+      n.decidePattern('left', t0, 400);
+      expect(n.decidePattern('left', ms(999), 400), isNull);
+      expect(n.decidePattern('left', ms(1000), 400), isNotNull);
       final v = VibrationPolicy();
       v.decidePattern('left', t0, 400, level: 1);
-      expect(v.decidePattern('left', ms(1400), 400, level: 1), isNull);
-      expect(v.decidePattern('left', ms(1500), 400, level: 1), isNotNull);
+      expect(v.decidePattern('left', ms(599), 400, level: 1), isNull);
+      expect(v.decidePattern('left', ms(600), 400, level: 1), isNotNull);
       final e = VibrationPolicy();
       e.decidePattern('right', t0, 400, level: 2);
-      expect(e.decidePattern('right', ms(900), 400, level: 2), isNull);
-      expect(e.decidePattern('right', ms(1000), 400, level: 2), isNotNull);
+      expect(e.decidePattern('right', ms(399), 400, level: 2), isNull);
+      expect(e.decidePattern('right', ms(400), 400, level: 2), isNotNull);
     });
 
-    test('단계가 오르면 새 간격으로 바로 맞춘다 — 보통→가장자리, 1초 지났으면 바로', () {
+    test('단계가 오르면 새 간격으로 바로 맞춘다 — 보통→가장자리, 0.4초 지났으면 바로', () {
       final v = VibrationPolicy();
       v.decidePattern('left', t0, 400);
-      expect(v.decidePattern('left', ms(800), 400, level: 2), isNull,
-          reason: '마지막 진동부터 1초 전');
-      expect(v.decidePattern('left', ms(1000), 400, level: 2), isNotNull);
+      expect(v.decidePattern('left', ms(300), 400, level: 2), isNull,
+          reason: '마지막 진동부터 0.4초 전');
+      expect(v.decidePattern('left', ms(400), 400, level: 2), isNotNull);
     });
 
     test('단계가 내려가면 바로 그 단계 간격으로 느려진다 — 가장자리→보통', () {
       final v = VibrationPolicy();
       v.decidePattern('right', t0, 400, level: 2);
-      expect(v.decidePattern('right', ms(1000), 400, level: 2), isNotNull);
-      // 1000ms에 마지막 진동. 보통으로 내려가면 3초를 기다린다.
-      expect(v.decidePattern('right', ms(2000), 400, level: 0), isNull);
-      expect(v.decidePattern('right', ms(3900), 400, level: 0), isNull);
-      expect(v.decidePattern('right', ms(4000), 400, level: 0), isNotNull);
+      expect(v.decidePattern('right', ms(400), 400, level: 2), isNotNull);
+      // 400ms에 마지막 진동. 보통으로 내려가면 1초를 기다린다.
+      expect(v.decidePattern('right', ms(800), 400, level: 0), isNull,
+          reason: '가장자리였다면 냈을 시각');
+      expect(v.decidePattern('right', ms(1399), 400, level: 0), isNull);
+      expect(v.decidePattern('right', ms(1400), 400, level: 0), isNotNull);
     });
 
-    test('방향 패턴은 단계와 무관하게 그대로(왼쪽 짧게 2번, 오른쪽 길게 1번)', () {
+    test('단계가 내려가면 바로 느려진다 — 가장자리→즉시', () {
+      final v = VibrationPolicy();
+      v.decidePattern('left', t0, 400, level: 2);
+      expect(v.decidePattern('left', ms(400), 400, level: 1), isNull);
+      expect(v.decidePattern('left', ms(599), 400, level: 1), isNull);
+      expect(v.decidePattern('left', ms(600), 400, level: 1), isNotNull);
+    });
+
+    test('패턴은 단계와 무관하게 같다(좌우 모두 짧게 1번)', () {
       expect(VibrationPolicy().decidePattern('left', t0, 400, level: 2),
-          [0, 100, 100, 100]);
+          [0, 150]);
       expect(VibrationPolicy().decidePattern('right', t0, 400, level: 1),
-          [0, 400]);
+          [0, 150]);
+      expect(VibrationPolicy().decidePattern('left', t0, 400, level: 0),
+          [0, 150]);
     });
 
     test('기록용: 마지막 호출의 단계와 적용 간격', () {
       final v = VibrationPolicy();
       v.decidePattern('left', t0, 400, level: 1);
       expect(v.lastLevel, 1);
-      expect(v.lastInterval, const Duration(milliseconds: 1500));
+      expect(v.lastInterval, const Duration(milliseconds: 600));
       v.decidePattern('left', ms(100), 400);
       expect(v.lastLevel, 0);
       expect(v.lastInterval, VibrationPolicy.repeatInterval);
@@ -652,7 +666,8 @@ void main() {
       final p = v.decidePattern('front', back, 400);
       expect(p, isNotNull);
       expect(p!.length, 2);
-      expect(p[1], lessThan(400), reason: '확인 진동은 방향 진동보다 짧아야 한다');
+      expect(p[1], lessThan(VibrationPolicy.directionPulseMs),
+          reason: '확인 진동은 방향 진동보다 짧아야 한다');
     });
 
     test('이탈 없이 front가 계속되면 진동하지 않는다', () {

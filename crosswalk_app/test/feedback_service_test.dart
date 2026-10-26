@@ -913,17 +913,17 @@ void main() {
       final s = FeedbackService();
       await s.alert('right', 0.9, angleDegrees: -20, atEdge: true);
       expect(s.vibrationPolicy.lastLevel, 2);
-      // 같은 방향, 단계가 내려감(가장자리 → 보통): 음성은 묶여도 진동 간격은 바로 3초.
+      // 같은 방향, 단계가 내려감(가장자리 → 보통): 음성은 묶여도 진동 간격은 바로 1초(T136).
       await s.alert('right', 0.9, angleDegrees: -mild);
       expect(s.vibrationPolicy.lastLevel, 0);
-      expect(s.vibrationPolicy.lastInterval, const Duration(seconds: 3));
+      expect(s.vibrationPolicy.lastInterval, const Duration(seconds: 1));
       final vib = EventLog.instance.earlyLines
           .map((l) => jsonDecode(l) as Map<String, dynamic>)
           .where((m) => m['ev'] == 'vib')
           .toList();
       expect(vib.first['kind'], 'right');
       expect(vib.first['lvl'], 2);
-      expect(vib.first['gap'], 1000);
+      expect(vib.first['gap'], 400);
       await s.dispose();
     });
 
@@ -1288,6 +1288,94 @@ void main() {
     });
   });
 
+  // T136(사용자 승인 A안): 좌우 진동이 같아 서 있는 동안 방향을 모른다 —
+  // 서 있음이 풀리는 순간 이탈이 이어지면 방향 경고를 한 번 말한다.
+  group('걸음을 뗄 때 방향 한 번 (T136)', () {
+    List<Map<String, dynamic>> lines(String ev) => EventLog.instance.earlyLines
+        .map((l) => jsonDecode(l) as Map<String, dynamic>)
+        .where((m) => m['ev'] == ev)
+        .toList();
+    List<Object?> alertMsgs() => lines('alert').map((m) => m['msg']).toList();
+
+    // alert()는 DateTime.now()로 판정하므로 가속도 표본도 지금 시각 기준으로 넣는다.
+    void stand(FeedbackService s, DateTime base, int fromMs, int toMs) {
+      for (var ms = fromMs; ms <= toMs; ms += 66) {
+        s.addAccelerometer(0, 0, 9.81, base.add(Duration(milliseconds: ms)));
+      }
+    }
+
+    void walk(FeedbackService s, DateTime base, int fromMs, int toMs) {
+      for (var ms = fromMs; ms <= toMs; ms += 66) {
+        s.addAccelerometer(0, 0, ms % 132 == 0 ? 12.0 : 7.6,
+            base.add(Duration(milliseconds: ms)));
+      }
+    }
+
+    test('이탈 중 서 있다 걸음을 떼면 6초 묶음 안이어도 한 번 말한다(why=still_off)',
+        () async {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      final base = DateTime.now();
+      stand(s, base, -3000, 0);
+      expect(s.stillness.isStill, isTrue);
+      await s.alert('left', 0.9, angleDegrees: mild); // 첫 경고 — 말함
+      await s.alert('left', 0.9, angleDegrees: mild); // 6초 안 — 묶임
+      walk(s, base, 66, 1000); // 서 있음이 풀림
+      expect(s.stillness.isStill, isFalse);
+      await s.alert('left', 0.9, angleDegrees: mild); // 걸음 뗌 — 한 번 말함
+      await s.alert('left', 0.9, angleDegrees: mild); // 다시 묶임
+      expect(alertMsgs(), [leftMild, null, leftMild, null]);
+      final force = lines('say.force');
+      expect(force, hasLength(1));
+      expect(force.single['why'], 'still_off');
+      expect(force.single['text'], leftMild);
+      await s.dispose();
+    });
+
+    test('서 있음이 풀렸을 때 이탈 중이 아니었으면(front) 말하지 않는다', () async {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      final base = DateTime.now();
+      stand(s, base, -3000, 0);
+      await s.alert('left', 0.9, angleDegrees: mild); // 말함
+      await s.alert('front', 0.9); // 짧은 front — 회복 아님, 묶음 유지
+      walk(s, base, 66, 1000);
+      await s.alert('left', 0.9, angleDegrees: mild);
+      expect(alertMsgs(), [leftMild, null, null]);
+      expect(lines('say.force'), isEmpty);
+      await s.dispose();
+    });
+
+    test('서 있음이 풀린 뒤 첫 판정이 front면 표시를 비운다 — 다음 이탈은 묶음 그대로',
+        () async {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      final base = DateTime.now();
+      stand(s, base, -3000, 0);
+      await s.alert('left', 0.9, angleDegrees: mild);
+      walk(s, base, 66, 1000);
+      await s.alert('front', 0.9);
+      await s.alert('left', 0.9, angleDegrees: mild);
+      expect(alertMsgs(), [leftMild, null, null]);
+      expect(lines('say.force'), isEmpty);
+      await s.dispose();
+    });
+
+    test('서 있음이 걸리는 순간(still on)에는 말하지 않는다', () async {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      final base = DateTime.now();
+      walk(s, base, -3000, -2000);
+      await s.alert('left', 0.9, angleDegrees: mild);
+      stand(s, base, -1934, 2000); // 서 있음으로 바뀜
+      expect(s.stillness.isStill, isTrue);
+      await s.alert('left', 0.9, angleDegrees: mild);
+      expect(alertMsgs(), [leftMild, null]);
+      expect(lines('say.force'), isEmpty);
+      await s.dispose();
+    });
+  });
+
   // T118 보완(리뷰 3-a): 일찍 해제 뒤 '건넜습니다' 창 =
   // hold 시작 + 10초와 해제 + 5초 중 늦은 쪽.
   group('일찍 해제 뒤 건넘 안내 창 (T118 보완)', () {
@@ -1465,7 +1553,7 @@ void main() {
       expect(fired, [0, 6120, 12240], reason: '판정 간격 0.17초 — 6초가 지난 첫 판정');
     });
 
-    test('진동은 그대로: 묶여 음성이 없는 프레임에도 3초 박자 방향 진동', () {
+    test('진동은 그대로: 묶여 음성이 없는 프레임에도 방향 진동(T136 보통 1초 박자)', () {
       final s = FeedbackService();
       expect(s.decideMessage('left', mild, t0), isNotNull);
       expect(s.vibrationPolicy.decidePattern('left', t0, 500), isNotNull);
