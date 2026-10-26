@@ -945,6 +945,64 @@ void main() {
       expect(vib, hasLength(1));
       expect(vib.single['kind'], 'line_on');
     });
+
+    // T137(결정 2-b): 점자블록 좌우·벗어남은 말하지 않고 기록만.
+    group('T137 점자블록 좌우·벗어남 음성 끄기', () {
+      final ko = AppStrings.of(AppLanguage.ko);
+      List<Map<String, dynamic>> lines(String ev) => EventLog.instance.earlyLines
+          .map((l) => jsonDecode(l) as Map<String, dynamic>)
+          .where((m) => m['ev'] == ev)
+          .toList();
+      Iterable<Object?> spokenOrQueued() => EventLog.instance.earlyLines
+          .map((l) => jsonDecode(l) as Map<String, dynamic>)
+          .where((m) => (m['ev'] as String).startsWith('say'))
+          .map((m) => m['text']);
+
+      test('상수로 꺼져 있고, 좌우·벗어남만 끈다', () {
+        expect(SurfaceGuide.linearSideSpeechEnabled, isFalse);
+        expect(SurfaceGuide.isMuted(SurfaceEvent.linearLeft), isTrue);
+        expect(SurfaceGuide.isMuted(SurfaceEvent.linearRight), isTrue);
+        expect(SurfaceGuide.isMuted(SurfaceEvent.linearLost), isTrue);
+        expect(SurfaceGuide.isMuted(SurfaceEvent.dotBlock), isFalse);
+        expect(SurfaceGuide.isMuted(SurfaceEvent.linearOn), isFalse);
+        expect(SurfaceGuide.isMuted(SurfaceEvent.road), isFalse);
+      });
+
+      test('좌우·벗어남은 말하지 않고 surf.mute만 남긴다', () async {
+        EventLog.instance.clearForTest();
+        final s = FeedbackService();
+        await s.surfaceAlert([SurfaceEvent.linearLeft]);
+        await s.surfaceAlert([SurfaceEvent.linearRight]);
+        await s.surfaceAlert([SurfaceEvent.linearLost]);
+        final said = spokenOrQueued().toList();
+        expect(said, isNot(contains(ko.surfaceLinearLeftMessage)));
+        expect(said, isNot(contains(ko.surfaceLinearRightMessage)));
+        expect(said, isNot(contains(ko.surfaceLinearLostMessage)));
+        expect(lines('surf.mute').map((m) => m['names']), [
+          ['linearLeft'],
+          ['linearRight'],
+          ['linearLost'],
+        ]);
+        expect(lines('vib'), isEmpty, reason: '좌우·벗어남은 원래 진동 없음');
+      });
+
+      // 멈춤 블록은 1.3초 보류 타이머(T118)가 있어 testWidgets로 시간을 돌린다.
+      testWidgets('멈춤 블록은 그대로 말하고, 선형 있음은 그대로 진동', (tester) async {
+        EventLog.instance.clearForTest();
+        final s = FeedbackService();
+        await s.surfaceAlert([SurfaceEvent.linearLost, SurfaceEvent.dotBlock]);
+        await tester.pump(const Duration(seconds: 2));
+        expect(
+            lines('say')
+                .where((m) => m['text'] == ko.surfaceDotBlockMessage),
+            hasLength(1));
+        expect(lines('surf.mute').single['names'], ['linearLost']);
+        EventLog.instance.clearForTest();
+        await FeedbackService().surfaceAlert([SurfaceEvent.linearOn]);
+        expect(lines('surf.mute'), isEmpty);
+        expect(lines('vib').single['kind'], 'line_on');
+      });
+    });
   });
 
   // T40: OnboardingScreen's general-purpose read-aloud, reusing _speak().
@@ -1285,6 +1343,52 @@ void main() {
       expect(still.first['mot'], lessThan(StillnessDetector.stillThreshold));
       expect(still.last['mot'],
           greaterThanOrEqualTo(StillnessDetector.moveThreshold));
+    });
+
+    // T137(결정 5): 흔들림 값을 1초에 한 줄.
+    List<Map<String, dynamic>> motLines() => EventLog.instance.earlyLines
+        .map((l) => jsonDecode(l) as Map<String, dynamic>)
+        .where((m) => m['ev'] == 'mot')
+        .toList();
+
+    test('T137: 기록이 켜져 있으면 mot를 1초 간격으로 남긴다(값, still)', () {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      for (var ms = 0; ms <= 3960; ms += 66) {
+        s.addAccelerometer(0, 0, 9.81, at(ms));
+      }
+      final mot = motLines();
+      // 창이 찬 첫 표본(5번째, 264ms)부터 1초마다: 264, 1320, 2376, 3432.
+      expect(mot, hasLength(4));
+      for (final m in mot) {
+        expect(m['mot'], lessThan(StillnessDetector.stillThreshold));
+        expect(m['still'], isA<bool>());
+      }
+      expect(mot.first['still'], isFalse);
+      expect(mot.last['still'], isTrue, reason: '2초 넘게 가만히 섬');
+      // 기준값·판정은 그대로: still on 기록은 종전대로 1번.
+      expect(
+          EventLog.instance.earlyLines
+              .map((l) => jsonDecode(l) as Map<String, dynamic>)
+              .where((m) => m['ev'] == 'still')
+              .map((m) => m['on']),
+          [true]);
+    });
+
+    test('T137: 기록 남기기가 꺼져 있으면 mot가 없다', () {
+      EventLog.instance.clearForTest();
+      final tapped = <String>[];
+      EventLog.instance.tap = (ev, data, at) => tapped.add(ev);
+      EventLog.instance.setEnabled(false);
+      final s = FeedbackService();
+      for (var ms = 0; ms <= 3960; ms += 66) {
+        s.addAccelerometer(0, 0, 9.81, at(ms));
+      }
+      EventLog.instance.tap = null;
+      expect(motLines(), isEmpty);
+      expect(tapped, isNot(contains('mot')));
+      expect(s.stillness.isStill, isTrue, reason: '판정은 기록과 무관');
+      EventLog.instance.clearForTest();
     });
   });
 

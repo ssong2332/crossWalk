@@ -83,12 +83,13 @@ void main() {
       // 왼쪽 끝: 오른쪽으로 가라(+). 각도가 -기준 이하면 이미 오른쪽으로 튼 것.
       // T103: 기준이 15 -> 12로 바뀌며 이 판정도 함께 12를 쓴다.
       expect(DirectionResolver.edgeSteerAngle(-2, -t), 0);
-      expect(DirectionResolver.edgeSteerAngle(-2, -30), 0);
+      // T137: 상한 25° 안쪽 값(이전 -30은 이제 상한 초과).
+      expect(DirectionResolver.edgeSteerAngle(-2, -20), 0);
       expect(DirectionResolver.edgeSteerAngle(-2, -(t - 0.1)), s);
       expect(DirectionResolver.edgeSteerAngle(-2, 30), s); // 바깥쪽이면 여전히 유도
       // 오른쪽 끝: 대칭.
       expect(DirectionResolver.edgeSteerAngle(2, t), 0);
-      expect(DirectionResolver.edgeSteerAngle(2, 30), 0);
+      expect(DirectionResolver.edgeSteerAngle(2, 20), 0);
       expect(DirectionResolver.edgeSteerAngle(2, t - 0.1), -s);
       expect(DirectionResolver.edgeSteerAngle(2, -30), -s);
     });
@@ -113,9 +114,10 @@ void main() {
 
     test('T100: 끝에서 이미 중앙 쪽으로 틀었으면 front(유지) — 실기기 #3', () {
       for (final label in ['front', 'left', 'right']) {
-        expect(DirectionResolver.resolve(label, -30, position: -1.3), 'front',
+        // T137: 상한 25° 안쪽 값(이전 ±30은 이제 상한 초과).
+        expect(DirectionResolver.resolve(label, -20, position: -1.3), 'front',
             reason: label);
-        expect(DirectionResolver.resolve(label, 30, position: 1.3), 'front',
+        expect(DirectionResolver.resolve(label, 20, position: 1.3), 'front',
             reason: label);
       }
     });
@@ -134,6 +136,50 @@ void main() {
         expect(DirectionResolver.resolve(label, 40, position: -2), label);
         expect(DirectionResolver.resolve(label, null, position: 2), label);
       }
+    });
+  });
+
+  // T137: 끝 규칙 '이미 틀었음'에 상한 25° (10/26 밤 ⑥(a), 사용자 승인 1-a).
+  group('DirectionResolver T137 끝 규칙 각도 상한', () {
+    const m = DirectionResolver.edgeTurnedMaxDegrees;
+    const s = DirectionResolver.edgeSteerDegrees;
+
+    test('상한은 25°', () {
+      expect(m, 25.0);
+    });
+
+    test('중앙 쪽으로 25° 이하면 그대로(front), 넘으면 끝 규칙 미적용(null)', () {
+      // 왼쪽 끝: 중앙 쪽 = 음수.
+      expect(DirectionResolver.edgeSteerAngle(-1.5, -m), 0);
+      expect(DirectionResolver.edgeSteerAngle(-1.5, -(m + 0.1)), isNull);
+      expect(DirectionResolver.edgeSteerAngle(-1.5, -42), isNull);
+      // 오른쪽 끝: 대칭.
+      expect(DirectionResolver.edgeSteerAngle(1.5, m), 0);
+      expect(DirectionResolver.edgeSteerAngle(1.5, m + 0.1), isNull);
+      expect(DirectionResolver.edgeSteerAngle(1.5, 42), isNull);
+      // 바깥쪽으로 크게 틀었으면 상한과 무관하게 중앙 쪽으로 유도(종전대로).
+      expect(DirectionResolver.edgeSteerAngle(-1.5, 42), s);
+      expect(DirectionResolver.edgeSteerAngle(1.5, -42), -s);
+    });
+
+    test('resolve: 25° 이하면 그대로, 25° 초과면 이탈 유지', () {
+      for (final label in ['front', 'left', 'right']) {
+        // 왼쪽 끝, 오른쪽으로 크게 틂 -> 각도 표: 왼쪽으로 가라(right).
+        expect(DirectionResolver.resolve(label, -25, position: -1.2), 'front',
+            reason: label);
+        expect(DirectionResolver.resolve(label, -32, position: -1.2), 'right',
+            reason: label);
+        // 오른쪽 끝, 왼쪽으로 크게 틂 -> 각도 표: 오른쪽으로 가라(left).
+        expect(DirectionResolver.resolve(label, 25, position: 1.2), 'front',
+            reason: label);
+        expect(DirectionResolver.resolve(label, 32, position: 1.2), 'left',
+            reason: label);
+      }
+    });
+
+    test('25° 초과는 끝 안내가 아니다(isEdge false — 각도 이탈 안내)', () {
+      expect(DirectionResolver.isEdge('right', -1.2, -32), isFalse);
+      expect(DirectionResolver.isEdge('front', -1.2, -25), isTrue);
     });
   });
 

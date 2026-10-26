@@ -36,9 +36,18 @@ class FeedbackService {
   @visibleForTesting
   final StillnessDetector stillness = StillnessDetector();
 
+  /// T137(사용자 승인 결정 5): 흔들림 값(`mot`)을 남기는 간격. `still`은 바뀌는
+  /// 순간에만 남아 0.35~0.6 사이 분포를 볼 수 없었다(`train/field_1026/report.md`).
+  static const motionLogInterval = Duration(seconds: 1);
+  DateTime? _lastMotionLogAt;
+
   /// T133: 가속도 표본 하나(m/s², 중력 포함). 서 있음이 바뀌면 `still`을 남긴다.
+  /// T137: 기록 남기기가 켜져 있으면 [motionLogInterval]마다 `mot` 한 줄(값, 서 있음).
+  /// 판정·기준값은 바꾸지 않는다.
   void addAccelerometer(double x, double y, double z, DateTime now) {
-    if (!stillness.add(x, y, z, now)) return;
+    final changed = stillness.add(x, y, z, now);
+    _logMotion(now);
+    if (!changed) return;
     final mot = stillness.motion;
     EventLog.instance.log('still', {
       'on': stillness.isStill,
@@ -49,6 +58,19 @@ class FeedbackService {
     final raw = _lastRawClass;
     _stillOffPending =
         !stillness.isStill && (raw == 'left' || raw == 'right');
+  }
+
+  void _logMotion(DateTime now) {
+    if (!EventLog.instance.enabled) return;
+    final mot = stillness.motion;
+    if (mot == null) return;
+    final last = _lastMotionLogAt;
+    if (last != null && now.difference(last) < motionLogInterval) return;
+    _lastMotionLogAt = now;
+    EventLog.instance.log('mot', {
+      'mot': double.parse(mot.toStringAsFixed(3)),
+      'still': stillness.isStill,
+    });
   }
 
   /// T136: 서 있음이 풀린 순간 이탈(left/right) 중이었다 — 다음 [decideMessage]
@@ -1230,12 +1252,18 @@ class FeedbackService {
   /// T104: 노면 안내(`SurfaceGuide` 이벤트)를 말하고 진동한다.
   /// 등급·진동은 `docs/AudioPolicy.md` 노면 안내 표(사용자 확정 2026-09-30):
   ///   차도 P0 + 짧게 3번 / 멈춤 블록 P1 / 선형 방향·벗어남 P2 / 블록 위 = 진동만(짧게 1번).
+  /// T137: 선형 방향·벗어남은 [SurfaceGuide.isMuted]면 말하지 않고 `surf.mute`만 남긴다.
   Future<void> surfaceAlert(List<SurfaceEvent> events) async {
     if (events.isEmpty) return;
     final strings = AppStrings.of(_language);
     final shortMs = (_vibrationDurationMs ~/ 4).clamp(80, _vibrationDurationMs);
     List<int>? pattern;
+    final muted = [for (final e in events) if (SurfaceGuide.isMuted(e)) e.name];
+    if (muted.isNotEmpty) {
+      EventLog.instance.log('surf.mute', {'names': muted});
+    }
     for (final e in events) {
+      if (SurfaceGuide.isMuted(e)) continue;
       switch (e) {
         case SurfaceEvent.road:
           unawaited(_speak(strings.surfaceRoadMessage,

@@ -83,6 +83,17 @@
 ///   부호(줄무늬에 다시 나란해지려면 왼쪽)를 내므로, **끝 + 각도가 중앙 쪽으로
 ///   ±15 이상이면 "이미 틀었다"로 보고 직진(유지)** 을 낸다(사용자 선택 a안).
 ///   화살표·강도 각도는 0으로 두어 "직진"과 모순되지 않게 한다.
+///
+///   T137(2026-10-27, 사용자 승인 결정 1-a): "이미 틀었음"에 **상한 25°**.
+///   10/26 밤 실기기(`train/field_1026/report.md` ⑥(a), 21:41:41~52·21:48:45):
+///   왼쪽 끝에서 32~42° 틀어진 채 서 있어도 '그대로 가세요'가 12장 나왔다.
+///   중앙 쪽으로 튼 각도가 [edgeTurnedMaxDegrees]를 넘으면 끝 규칙을 적용하지
+///   않고(null) 아래 각도 표의 이탈 판정을 그대로 쓴다(지나치게 틀어 반대쪽 이탈).
+///     | 위치 p    | 각도 a                 | 최종                         |
+///     | p <= -1.0 | -25 <= a <= -12        | front (이미 틀었음)          |
+///     | p <= -1.0 | a < -25                | 각도 표 → right (왼쪽으로)   |
+///     | p >= +1.0 | +12 <= a <= +25        | front (이미 틀었음)          |
+///     | p >= +1.0 | a > +25                | 각도 표 → left (오른쪽으로)  |
 class DirectionResolver {
   DirectionResolver._();
 
@@ -100,18 +111,32 @@ class DirectionResolver {
   /// T98: 끝일 때 화살표·강도 판정에 쓰는 각도 크기. 부호는 중앙 쪽.
   static const double edgeSteerDegrees = 20.0;
 
+  /// T137: 끝 규칙 "이미 중앙 쪽으로 틀었음"(T100 a안)을 적용하는 각도 **상한**.
+  /// 이보다 크게 틀었으면 끝 규칙을 쓰지 않고 각도 표의 이탈 판정을 유지한다.
+  /// 근거: 10/26 밤 '그대로 가세요' + 32~42° 틀어짐 12장
+  /// (`train/field_1026/report.md` ⑥(a)). 25는 보고서 선택지 (a)의 값(사용자 승인).
+  static const double edgeTurnedMaxDegrees = 25.0;
+
   /// T98/T100: 위치가 끝이면 화살표·강도에 쓸 각도, 아니면 null.
   ///   왼쪽 끝 → +20, 오른쪽 끝 → -20.
   ///   단 각도 모델이 이미 중앙 쪽으로 ±[deviationAngleDegrees] 이상이면
   ///   (사용자가 이미 틀었음) 0 — 직진 유지.
+  ///   T137: 중앙 쪽으로 [edgeTurnedMaxDegrees]를 넘게 틀었으면 null — 끝
+  ///   규칙을 쓰지 않고 각도 표로 넘긴다.
   static double? edgeSteerAngle(double? position, double? angleDegrees) {
     if (position == null) return null;
     if (position <= -edgePosition) {
+      if (angleDegrees != null && angleDegrees < -edgeTurnedMaxDegrees) {
+        return null;
+      }
       final turned =
           angleDegrees != null && angleDegrees <= -deviationAngleDegrees;
       return turned ? 0.0 : edgeSteerDegrees;
     }
     if (position >= edgePosition) {
+      if (angleDegrees != null && angleDegrees > edgeTurnedMaxDegrees) {
+        return null;
+      }
       final turned =
           angleDegrees != null && angleDegrees >= deviationAngleDegrees;
       return turned ? 0.0 : -edgeSteerDegrees;

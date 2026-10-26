@@ -172,6 +172,21 @@ class SurfaceGuide {
   static const roadRepeat = Duration(seconds: 3);
   static const lostAfter = Duration(seconds: 2);
 
+  /// T137(사용자 승인 결정 2-b, 2026-10-27): '점자블록 왼쪽/오른쪽/벗어났습니다'
+  /// (linearLeft/linearRight/linearLost)는 **말하지 않는다**. 판정은 그대로 내고
+  /// 기록(`surf.ev`, `surf.mute`)에만 남긴다. 10/26 밤 실기기에서 판정 가능한
+  /// 8건 중 1건만 맞았다(`train/field_1026/report.md` ⑧ — 선형 블록을 1초쯤 놓쳤다가
+  /// 다시 잡는 순간 옆 칸만 보는 것이 원인). 멈춤 블록(17/17)·선형 있음(11/11)·
+  /// 차도는 그대로다. 코드는 지우지 않고 상수로 끈다 — 다시 켤 때 이 값만 바꾼다.
+  static const linearSideSpeechEnabled = false;
+
+  /// T137: [e]를 말하지 않고 기록만 남길 것인가([linearSideSpeechEnabled]).
+  static bool isMuted(SurfaceEvent e) =>
+      !linearSideSpeechEnabled &&
+      (e == SurfaceEvent.linearRight ||
+          e == SurfaceEvent.linearLeft ||
+          e == SurfaceEvent.linearLost);
+
   /// 노면 안내가 말할 수 있는 분류기 상태(판정표 §2 모드).
   static bool isActiveState(String state) => state == 'none' || state == 'crossed';
 
