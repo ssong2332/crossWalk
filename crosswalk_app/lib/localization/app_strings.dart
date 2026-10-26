@@ -225,6 +225,14 @@ class AppStrings {
   final String settingsFrameShare;
   final String settingsFrameShareEmpty;
   final String settingsFrameShareFailed;
+  // T135: 골라 보내기 화면(기록 파일·프레임 묶음).
+  final String sharePickLogTitle;
+  final String sharePickFramesTitle;
+  final String sharePickSend;
+  final String sharePickSent;
+  final String sharePickCurrent;
+  final String sharePickBuild;
+  final String sharePickFrameUnit;
 
   // T40: OnboardingScreen — integrates T19 (chest-mount posture guidance)
   // + T36 (first-launch legal safety disclaimer) into one first-run
@@ -380,6 +388,13 @@ class AppStrings {
     required this.settingsFrameShare,
     required this.settingsFrameShareEmpty,
     required this.settingsFrameShareFailed,
+    required this.sharePickLogTitle,
+    required this.sharePickFramesTitle,
+    required this.sharePickSend,
+    required this.sharePickSent,
+    required this.sharePickCurrent,
+    required this.sharePickBuild,
+    required this.sharePickFrameUnit,
     required this.onboardingEyebrow,
     required this.onboardingTitle,
     required this.onboardingPostureHeading,
@@ -517,9 +532,16 @@ class AppStrings {
     settingsFrameSaveLabel: '프레임 저장',
     settingsFrameSaveNote: '모델이 보는 카메라 사진을 1초에 1장 이 폰에만 저장합니다'
         '(최대 500MB, 넘으면 오래된 것부터 지움). 직접 보낼 때만 밖으로 나갑니다.',
-    settingsFrameShare: '프레임 보내기 (최근 묶음)',
+    settingsFrameShare: '프레임 보내기',
     settingsFrameShareEmpty: '보낼 프레임이 없습니다',
     settingsFrameShareFailed: '프레임을 보내지 못했습니다',
+    sharePickLogTitle: '보낼 기록 고르기',
+    sharePickFramesTitle: '보낼 프레임 묶음 고르기',
+    sharePickSend: '보내기',
+    sharePickSent: '보냄',
+    sharePickCurrent: '기록 중',
+    sharePickBuild: '빌드',
+    sharePickFrameUnit: '장',
     onboardingEyebrow: '시작하기 전에',
     onboardingTitle: '안전 이용 안내',
     onboardingPostureHeading: '가슴거치 착용 방법',
@@ -684,9 +706,16 @@ class AppStrings {
     settingsFrameSaveNote: 'Saves one camera image per second, as the models see it, '
         'on this phone only (max 500 MB, oldest deleted first). '
         'Leaves the phone only when you send it.',
-    settingsFrameShare: 'Send frames (latest set)',
+    settingsFrameShare: 'Send frames',
     settingsFrameShareEmpty: 'No frames to send',
     settingsFrameShareFailed: 'Could not send the frames',
+    sharePickLogTitle: 'Choose logs to send',
+    sharePickFramesTitle: 'Choose frame sets to send',
+    sharePickSend: 'Send',
+    sharePickSent: 'Sent',
+    sharePickCurrent: 'Recording',
+    sharePickBuild: 'Build',
+    sharePickFrameUnit: ' frames',
     onboardingEyebrow: 'Before you start',
     onboardingTitle: 'Safety Guide',
     onboardingPostureHeading: 'How to Wear the Chest Mount',
