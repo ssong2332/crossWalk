@@ -26,10 +26,12 @@ import '../services/position_estimator.dart';
 import '../services/ground_projection.dart';
 import '../services/stripe_direction_estimator.dart';
 import '../services/score_timeline.dart';
+import '../services/share_picker.dart';
 import '../widgets/haptic_score.dart';
 import '../widgets/slab_guidance.dart';
 import '../localization/app_strings.dart';
 import 'settings_screen.dart';
+import 'share_picker_screen.dart';
 
 /// T117: 디버그 박스의 줌 범위 줄. 최소 줌이 1 미만이면 앱이 줌으로 폰
 /// 초광각 렌즈에 닿을 수 있다는 뜻이다(확인용 — 앱 동작은 바꾸지 않는다).
@@ -840,23 +842,47 @@ class _CameraScreenState extends State<CameraScreen>
     if (mounted) setState(() => _frameSaveEnabled = enabled);
   }
 
-  /// 저장 프레임을 공유 창으로 넘긴다(가장 최근 저장 묶음). 기록 보내기와 같은 방식.
-  Future<String?> _shareFrames() async {
-    final files = await _frameSaver.latestSessionFiles();
-    if (files.isEmpty) return _strings.settingsFrameShareEmpty;
-    try {
-      final result = await SharePlus.instance.share(ShareParams(
-        files: [for (final f in files) XFile(f.path, mimeType: 'image/jpeg')],
-        subject: 'crosswalk frames $buildShaShort',
-      ));
-      EventLog.instance.log(
-          'frame.share', {'files': files.length, 'status': result.status.name});
-      return null;
-    } catch (e) {
-      EventLog.instance.log('frame.share', {'files': files.length, 'err': '$e'});
-      return _strings.settingsFrameShareFailed;
-    }
+  // T135: 공유 창 결과가 success였던 기록 파일·프레임 묶음(앱 폴더에 기억).
+  final SentRegistry _sentRegistry = SentRegistry();
+
+  /// T135: 골라 보내기 화면을 띄우고 고른 줄만 돌려받는다(뒤로 가면 null).
+  Future<Set<String>?> _pickToShare(String title, List<ShareItem> items,
+      {bool frames = false}) async {
+    if (!mounted) return null;
+    return Navigator.of(context).push<Set<String>>(MaterialPageRoute(
+      builder: (_) => SharePickerScreen(
+          strings: _strings, title: title, items: items, frames: frames),
+    ));
   }
+
+  /// 저장 프레임을 공유 창으로 넘긴다. T135: 묶음(세션 폴더) 단위로 고른다.
+  Future<String?> _shareFrames() => pickAndShare(
+        load: () async => frameItems(
+            await _frameSaver.sessionFiles(), await _sentRegistry.load(),
+            relative: _sentRegistry.relative),
+        pick: (items) =>
+            _pickToShare(_strings.sharePickFramesTitle, items, frames: true),
+        share: (files) async {
+          try {
+            final result = await SharePlus.instance.share(ShareParams(
+              files: [
+                for (final f in files) XFile(f.path, mimeType: 'image/jpeg')
+              ],
+              subject: 'crosswalk frames $buildShaShort',
+            ));
+            EventLog.instance.log('frame.share',
+                {'files': files.length, 'status': result.status.name});
+            return result.status;
+          } catch (e) {
+            EventLog.instance
+                .log('frame.share', {'files': files.length, 'err': '$e'});
+            rethrow;
+          }
+        },
+        registry: _sentRegistry,
+        emptyMessage: _strings.settingsFrameShareEmpty,
+        failedMessage: _strings.settingsFrameShareFailed,
+      );
 
   // T105: 주의 구역 안내(실험, 별도 스위치 — 사용자 확정 Q4). 같은 분할 결과를 쓴다.
   // 판정표는 `docs/CautionGuidance.md`, 로직은 `CautionGuide`.
@@ -1378,23 +1404,36 @@ class _CameraScreenState extends State<CameraScreen>
       !_hasError && (_controller == null || !_controller!.value.isInitialized);
 
   /// T106: 기록 파일을 안드로이드 공유 창으로 넘긴다(Q2). 성공이면 null,
-  /// 아니면 설정 화면이 띄울 안내 문구.
-  Future<String?> _shareEventLog() async {
-    final files = await EventLog.instance.filesForExport();
-    if (files.isEmpty) return _strings.settingsDevLogShareEmpty;
-    try {
-      final result = await SharePlus.instance.share(ShareParams(
-        files: [for (final f in files) XFile(f.path, mimeType: 'text/plain')],
-        subject: 'crosswalk log $buildShaShort',
-      ));
-      EventLog.instance.log(
-          'log.share', {'files': files.length, 'status': result.status.name});
-      return null;
-    } catch (e) {
-      EventLog.instance.log('log.share', {'files': files.length, 'err': '$e'});
-      return _strings.settingsDevLogShareFailed;
-    }
-  }
+  /// 아니면 설정 화면이 띄울 안내 문구. T135: 파일을 골라서 보낸다.
+  Future<String?> _shareEventLog() => pickAndShare(
+        load: () async => logItems(await EventLog.instance.filesForExport(),
+            await _sentRegistry.load(),
+            relative: _sentRegistry.relative,
+            current: EventLog.instance.currentFile),
+        pick: (items) => _pickToShare(_strings.sharePickLogTitle, items),
+        // 고르는 사이 모인 기록까지 지금 파일에 쓴다.
+        beforeShare: () => EventLog.instance.filesForExport(),
+        share: (files) async {
+          try {
+            final result = await SharePlus.instance.share(ShareParams(
+              files: [
+                for (final f in files) XFile(f.path, mimeType: 'text/plain')
+              ],
+              subject: 'crosswalk log $buildShaShort',
+            ));
+            EventLog.instance.log('log.share',
+                {'files': files.length, 'status': result.status.name});
+            return result.status;
+          } catch (e) {
+            EventLog.instance
+                .log('log.share', {'files': files.length, 'err': '$e'});
+            rethrow;
+          }
+        },
+        registry: _sentRegistry,
+        emptyMessage: _strings.settingsDevLogShareEmpty,
+        failedMessage: _strings.settingsDevLogShareFailed,
+      );
 
   // T38: 음성/진동 활성 상태를 나타내는 아이콘 pill. 활성 시 강조색(#3aa0ff)
   // 배경 + 흰 아이콘, 비활성 시 흐린 테두리만 있는 투명 배경으로 구분.

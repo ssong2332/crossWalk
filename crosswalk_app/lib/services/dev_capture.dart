@@ -388,6 +388,25 @@ class FrameSaver {
     return const <File>[];
   }
 
+  /// T135 공유 고르기용: 묶음 폴더 경로 → 그 안의 프레임(오래된 것부터).
+  /// 프레임이 없는 폴더도 빈 목록으로 넣는다.
+  Future<Map<String, List<File>>> sessionFiles() async {
+    final base = await _baseDir();
+    final root = Directory('${base.path}${Platform.pathSeparator}frames');
+    if (!await root.exists()) return const <String, List<File>>{};
+    final out = <String, List<File>>{};
+    await for (final e in root.list()) {
+      if (e is! Directory) continue;
+      final files = <File>[];
+      await for (final f in e.list()) {
+        if (f is File && f.path.endsWith('.jpg')) files.add(f);
+      }
+      files.sort((a, b) => a.path.compareTo(b.path));
+      out[e.path] = files;
+    }
+    return out;
+  }
+
   /// 오래된 것부터 [sizes]를 몇 개 지워야 합계가 [maxTotalBytes] 이하가 되나.
   @visibleForTesting
   static int countToDelete(List<int> sizes, int maxTotalBytes) {

@@ -619,7 +619,7 @@ void main() {
       expect(mount, CameraMount.landscapeTopLeft);
       expect(frameSave, isTrue);
 
-      await tester.tap(find.text('프레임 보내기 (최근 묶음)'));
+      await tester.tap(find.text('프레임 보내기'));
       await tester.pumpAndSettle();
       expect(shares, 1);
       expect(find.text('보낼 프레임이 없습니다'), findsOneWidget);
