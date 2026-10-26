@@ -14,14 +14,20 @@
 ///   | 1 | 설정 꺼짐                                               | 그대로    | 없음 |
 ///   | 2 | 분류 라벨이 front/left/right가 아님                      | 그대로    | 없음 |
 ///   | 3 | 직전 최종 상태가 front/left/right/hold(이미 건너는 중)    | 그대로    | 없음 |
+///   | 0 | 초광각 0.6배 켬 또는 가로 장착(노면 확인 2b행과 같은 판단) | 그대로    | `cwgate` act=front_skip |
 ///   | 4 | 최근 노면 판정 [window]개가 [maxAge] 안에 있고 모두 발밑 횡단보도 < [maxCrosswalk] 그리고 인도+블록 >= [minGround] | approach | `cwgate` act=front_drop |
 ///   | 5 | 그 밖                                                   | 그대로    | 없음 |
 /// 3행 때문에 hold(T103)·발밑 인도 조기 해제(T118)와 겹치지 않는다 — 진입 순간에만
 /// 동작한다. 4행의 인도+블록 조건은 가려진·검은 화면(배경만 보임)에서 내리지 않으려는
 /// 보수안이다. 기준값(0.5, 0.1, 2개, 2.5초, 1/6)은 추정이다.
+///
+/// 0행(승인 2026-10-27): 노면 모델은 세로·1배 사진으로만 학습했다(T126) — 노면 확인과
+/// 같은 조건(`CrosswalkSurfaceGate.skipReason`)에서 쉰다. 결과는 어느 행이든 같으므로
+/// 1~3행 뒤에 확인해, 실제로 평가할 프레임에서만 쉰 기록(`why` = 이유)을 남긴다.
 library;
 
 import 'crossing_hold.dart';
+import 'crosswalk_surface_gate.dart';
 import 'direction_resolver.dart';
 import 'surface_guide.dart';
 
@@ -75,13 +81,17 @@ class FootSurface {
 }
 
 class CurbFrontResult {
-  const CurbFrontResult(this.label, {this.dropped = false, this.samples = const []});
+  const CurbFrontResult(this.label,
+      {this.dropped = false, this.samples = const [], this.skipWhy});
 
   /// 이어서 노면 확인·방향 판정으로 보낼 라벨.
   final String label;
 
   /// 4행으로 approach로 낮췄는가.
   final bool dropped;
+
+  /// 0행으로 쉬었으면 그 이유(`wide` / `landscape` / `wide,landscape`), 아니면 null.
+  final String? skipWhy;
 
   /// 4행에서 쓴 발밑 값(오래된 것부터). 그 밖에는 비어 있다.
   final List<FootSurface> samples;
@@ -113,13 +123,20 @@ class CurbFrontGate {
 
   /// 분류 라벨 [label]과 직전 최종 상태 [current]로 판정표를 적용한다.
   CurbFrontResult apply(String label,
-      {required String current, required bool enabled, required DateTime now}) {
+      {required String current,
+      required bool enabled,
+      required DateTime now,
+      bool ultraWide = false,
+      bool landscape = false}) {
     if (!enabled) return CurbFrontResult(label);
     if (!DirectionResolver.isOnCrosswalk(label)) return CurbFrontResult(label);
     if (DirectionResolver.isOnCrosswalk(current) ||
         current == CrossingHold.holdLabel) {
       return CurbFrontResult(label);
     }
+    final why = CrosswalkSurfaceGate.skipReason(
+        ultraWide: ultraWide, landscape: landscape);
+    if (why != null) return CurbFrontResult(label, skipWhy: why);
     final recent = [
       for (final (t, f) in _samples)
         if (now.difference(t) <= maxAge) f

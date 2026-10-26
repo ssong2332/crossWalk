@@ -582,10 +582,21 @@ class _CameraScreenState extends State<CameraScreen>
       // T138: 같은 설정이 켜져 있으면, 아직 건너지 않았는데(직전 상태가 위·hold가
       // 아님) 위가 나와도 발밑에 횡단보도가 적고 인도·점자블록이 보이면 approach로
       // 낮춘다(CurbFrontGate 표). 낮춘 approach는 아래 노면 확인을 그대로 거친다.
+      // 0.6배·가로면 노면 확인처럼 쉰다(front_skip).
       final curb = _curbFrontGate.apply(result.label,
           current: _guidanceLabel,
           enabled: _crosswalkGateEnabled,
-          now: DateTime.now());
+          now: DateTime.now(),
+          ultraWide: _ultraWideEnabled,
+          landscape: _mount != CameraMount.portrait);
+      if (curb.skipWhy != null) {
+        EventLog.instance.log('cwgate', {
+          'act': 'front_skip',
+          'why': curb.skipWhy,
+          'from': result.label,
+          'prev': _guidanceLabel,
+        });
+      }
       if (curb.dropped) {
         EventLog.instance.log('cwgate', {
           'act': 'front_drop',
