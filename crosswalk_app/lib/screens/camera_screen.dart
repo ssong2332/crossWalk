@@ -15,6 +15,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../services/classifier.dart';
 import '../services/crossing_hold.dart';
 import '../services/crosswalk_surface_gate.dart';
+import '../services/curb_front_gate.dart';
 import '../services/dev_capture.dart';
 import '../services/event_log.dart';
 import '../services/surface_estimator.dart';
@@ -578,11 +579,27 @@ class _CameraScreenState extends State<CameraScreen>
       });
     }
     if (result != null) {
+      // T138: 같은 설정이 켜져 있으면, 아직 건너지 않았는데(직전 상태가 위·hold가
+      // 아님) 위가 나와도 발밑에 횡단보도가 적고 인도·점자블록이 보이면 approach로
+      // 낮춘다(CurbFrontGate 표). 낮춘 approach는 아래 노면 확인을 그대로 거친다.
+      final curb = _curbFrontGate.apply(result.label,
+          current: _guidanceLabel,
+          enabled: _crosswalkGateEnabled,
+          now: DateTime.now());
+      if (curb.dropped) {
+        EventLog.instance.log('cwgate', {
+          'act': 'front_drop',
+          'from': result.label,
+          'prev': _guidanceLabel,
+          'fg': [for (final f in curb.samples) f.ground],
+          'fc': [for (final f in curb.samples) f.crosswalk],
+        });
+      }
       // T125: 노면 횡단보도 확인(개발, 기본 꺼짐) — approach인데 최근 노면 판정에
       // 횡단보도가 거의 없으면 none으로 낮춘다(CrosswalkSurfaceGate 표). 위(front·
-      // left·right) 판정은 건드리지 않는다. T126: 0.6배·가로면 노면 모델이 학습
-      // 조건 밖이라 쉰다(skip).
-      final gate = _crosswalkGate.apply(result.label,
+      // left·right) 판정은 건드리지 않는다(T138 연석 확인이 낮춘 approach는 평가한다).
+      // T126: 0.6배·가로면 노면 모델이 학습 조건 밖이라 쉰다(skip).
+      final gate = _crosswalkGate.apply(curb.label,
           enabled: _crosswalkGateEnabled,
           now: DateTime.now(),
           ultraWide: _ultraWideEnabled,
@@ -893,6 +910,7 @@ class _CameraScreenState extends State<CameraScreen>
   // 켜졌을 때만 돎)의 화면 전체 횡단보도 비율을 받아 approach를 거른다. 이 설정
   // 때문에 노면 모델을 따로 켜지는 않는다 — 꺼져 있으면 기록에 `na`만 남긴다.
   final CrosswalkSurfaceGate _crosswalkGate = CrosswalkSurfaceGate();
+  final CurbFrontGate _curbFrontGate = CurbFrontGate();
   bool _crosswalkGateEnabled = false;
 
   bool get _surfaceRunning =>
@@ -915,6 +933,9 @@ class _CameraScreenState extends State<CameraScreen>
       return;
     }
     _crosswalkGate.note(f.crosswalkAll, DateTime.now());
+    // T138: 발밑(맨 아래 1/6 줄) 비율 — 연석 위 오판 확인(CurbFrontGate 표).
+    final foot = _surfaceEstimator.lastFoot;
+    if (foot != null) _curbFrontGate.note(foot, DateTime.now());
     // T118: hold 중이면 발밑(앞 구역)이 인도·점자블록인지 센다(CrossingHold 표).
     _crossingHold.noteGround(f.front.sidewalk + f.front.linear + f.front.dot);
     // T106: 세 칸의 비율 — 순서 [인도, 차도, 선형, 점형] (docs/EventLog.md).
@@ -936,6 +957,8 @@ class _CameraScreenState extends State<CameraScreen>
       'F': ratios(f.front),
       'R': ratios(f.right),
       'cw': f.crosswalkAll,
+      // T138: 발밑(맨 아래 1/6 줄, 전체 폭) [인도+선형+점형, 횡단보도] 비율.
+      if (foot != null) 'foot': [foot.ground, foot.crosswalk],
       'st': _fieldState,
       'dur': surfClock.elapsedMilliseconds,
     });
