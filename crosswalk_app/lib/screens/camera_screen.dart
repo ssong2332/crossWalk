@@ -659,6 +659,9 @@ class _CameraScreenState extends State<CameraScreen>
         _feedback.alert(label, result.confidence,
             angleDegrees: flip.held ? _arrowStripeAngle : _effectiveAngle,
             atEdge: atEdge);
+      } else {
+        // T142: hold는 alert를 부르지 않는다 — 같은 방향 반복 진동을 바로 멈춘다.
+        _feedback.stopDirectionVibration('hold');
       }
       if (mounted) {
         setState(() {
@@ -1394,7 +1397,11 @@ class _CameraScreenState extends State<CameraScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     EventLog.instance.log('app.life', {'state': state.name});
     // T106: 화면에서 내려가면 곧 프로세스가 끝날 수 있다 — 모인 기록을 바로 쓴다.
-    if (state != AppLifecycleState.resumed) EventLog.instance.flushSync();
+    if (state != AppLifecycleState.resumed) {
+      EventLog.instance.flushSync();
+      // T142: 화면 꺼짐·일시정지 — 같은 방향 반복 진동을 바로 멈춘다.
+      _feedback.stopDirectionVibration('pause');
+    }
     if (state == AppLifecycleState.inactive) {
       if (_controller != null && _controller!.value.isInitialized) {
         _controller!.dispose();
@@ -1425,6 +1432,9 @@ class _CameraScreenState extends State<CameraScreen>
     // does not recreate this screen.
     if (_ownsFeedback) {
       _feedback.dispose();
+    } else {
+      // T142: 공유 인스턴스는 살아 있으므로 반복 진동만 멈춘다.
+      _feedback.stopDirectionVibration('dispose');
     }
     super.dispose();
   }

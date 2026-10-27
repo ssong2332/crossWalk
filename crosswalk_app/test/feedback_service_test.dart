@@ -23,6 +23,44 @@ import 'package:crosswalk_app/services/feedback_service.dart';
 import 'package:crosswalk_app/services/stillness_detector.dart';
 import 'package:crosswalk_app/services/surface_guide.dart';
 
+/// T142: 가짜 시계·타이머. [advanceTo]는 예정 시각 순서대로 타이머를 부른다.
+class _FakeSched {
+  _FakeSched(this.now);
+  DateTime now;
+  final _items = <_FakeTimer>[];
+
+  Timer create(Duration d, void Function() cb) {
+    final t = _FakeTimer(now.add(d), cb);
+    _items.add(t);
+    return t;
+  }
+
+  void advanceTo(DateTime t) {
+    while (true) {
+      final due = _items.where((i) => i.isActive && !i.at.isAfter(t)).toList()
+        ..sort((a, b) => a.at.compareTo(b.at));
+      if (due.isEmpty) break;
+      final it = due.first;
+      it.isActive = false;
+      now = it.at;
+      it.cb();
+    }
+    now = t;
+  }
+}
+
+class _FakeTimer implements Timer {
+  _FakeTimer(this.at, this.cb);
+  final DateTime at;
+  final void Function() cb;
+  @override
+  bool isActive = true;
+  @override
+  void cancel() => isActive = false;
+  @override
+  int get tick => 0;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -1390,6 +1428,174 @@ void main() {
       expect(tapped, isNot(contains('mot')));
       expect(s.stillness.isStill, isTrue, reason: '판정은 기록과 무관');
       EventLog.instance.clearForTest();
+    });
+  });
+
+  // T142: 같은 방향 반복 진동을 경고 호출 주기(약 272ms)와 분리 — 타이머가
+  // 마지막 진동 + 단계 간격(600/350/250ms)에 맞춰 울린다.
+  group('반복 진동 타이머 (T142)', () {
+    final t0 = DateTime(2026, 10, 27, 12, 0, 0);
+    const severe = 30.0;
+
+    late _FakeSched sched;
+    late FeedbackService s;
+    // 진동이 난 시각(ms, t0 기준)과 방향.
+    late List<(int, String)> vibs;
+    DateTime? lastSeen;
+
+    void record() {
+      final at = s.vibrationPolicy.lastVibratedAt;
+      if (at != null && at != lastSeen) {
+        lastSeen = at;
+        vibs.add((at.difference(t0).inMilliseconds,
+            s.vibrationPolicy.lastClass ?? '?'));
+      }
+    }
+
+    setUp(() {
+      EventLog.instance.clearForTest();
+      sched = _FakeSched(t0);
+      s = FeedbackService()
+        ..clock = (() => sched.now)
+        ..timerFactory = (d, cb) => sched.create(d, () {
+              cb();
+              record();
+            });
+      vibs = [];
+      lastSeen = null;
+    });
+
+    tearDown(() async => s.dispose());
+
+    /// [ms] 시각까지 타이머를 돌리고 그 시각에 경고를 부른다.
+    Future<void> alertAt(int ms, String cls,
+        {double? angle, bool atEdge = false}) async {
+      sched.advanceTo(t0.add(Duration(milliseconds: ms)));
+      await s.alert(cls, 0.9, angleDegrees: angle, atEdge: atEdge);
+      record();
+    }
+
+    void runTo(int ms) => sched.advanceTo(t0.add(Duration(milliseconds: ms)));
+
+    /// 경고 호출을 [step]ms마다 [fromMs]~[toMs] 동안 같은 상태로 부른다.
+    Future<void> alertsEvery(int step, int fromMs, int toMs, String cls,
+        {double? angle, bool atEdge = false}) async {
+      for (var ms = fromMs; ms <= toMs; ms += step) {
+        await alertAt(ms, cls, angle: angle, atEdge: atEdge);
+      }
+    }
+
+    List<int> times() => vibs.map((v) => v.$1).toList();
+
+    List<Map<String, dynamic>> stops() => EventLog.instance.earlyLines
+        .map((l) => jsonDecode(l) as Map<String, dynamic>)
+        .where((m) => m['ev'] == 'vib.stop')
+        .toList();
+
+    test('경고 호출이 272ms마다여도 보통 단계는 정확히 600ms마다 울린다', () async {
+      await alertsEvery(272, 0, 2448, 'left', angle: mild);
+      expect(times(), [0, 600, 1200, 1800, 2400]);
+    });
+
+    test('즉시(1)는 350ms, 가장자리(2)는 250ms마다', () async {
+      await alertsEvery(272, 0, 1088, 'right', angle: -severe);
+      expect(times(), [0, 350, 700, 1050]);
+      s.stopDirectionVibration('test');
+      vibs.clear();
+      await s.alert('front', 0.9); // 이탈 상태를 비운다
+      vibs.clear();
+      await alertsEvery(272, 2000, 2816, 'left', angle: 20, atEdge: true);
+      expect(times(), [2000, 2250, 2500, 2750]);
+    });
+
+    test('방향이 바뀌면 바로 새 방향으로 울리고, 앞 방향 타이머는 다시 울리지 않는다',
+        () async {
+      await alertAt(0, 'left', angle: mild);
+      await alertAt(400, 'right', angle: -mild);
+      runTo(3000);
+      expect(vibs.first, (0, 'left'));
+      expect(vibs.skip(1).every((v) => v.$2 == 'right'), isTrue,
+          reason: '바뀐 뒤 왼쪽 진동이 나가면 안 된다');
+      expect(times().take(3), [0, 400, 1000]);
+    });
+
+    for (final to in ['front', 'crossed', 'none', 'approach']) {
+      test('$to로 바뀌면 바로 멈춘다(vib.stop why=state)', () async {
+        await alertsEvery(272, 0, 544, 'left', angle: mild);
+        await alertAt(700, to);
+        final before = vibs.where((v) => v.$2 == 'left').length;
+        runTo(5000);
+        expect(vibs.where((v) => v.$2 == 'left').length, before);
+        expect(times().where((t) => t > 700), isEmpty,
+            reason: '$to 뒤 방향 진동 없음(front 복귀 확인 진동은 700에 1번)');
+        expect(stops().single, containsPair('why', 'state'));
+        expect(stops().single['to'], to);
+      });
+    }
+
+    for (final why in ['hold', 'pause', 'dispose']) {
+      test('$why: stopDirectionVibration이면 바로 멈춘다', () async {
+        await alertsEvery(272, 0, 544, 'left', angle: mild);
+        s.stopDirectionVibration(why);
+        runTo(5000);
+        expect(times(), [0], reason: '600ms 예정 진동도 나가지 않는다');
+        expect(stops().single, containsPair('why', why));
+      });
+    }
+
+    test('dispose()도 타이머를 멈춘다', () async {
+      final d = FeedbackService()
+        ..clock = (() => sched.now)
+        ..timerFactory = sched.create;
+      await d.alert('left', 0.9, angleDegrees: mild);
+      expect(d.directionTimer.active, isTrue);
+      await d.dispose();
+      expect(d.directionTimer.active, isFalse);
+    });
+
+    test('멈춘 뒤 같은 방향 경고가 다시 오면 다시 돈다', () async {
+      await alertAt(0, 'left', angle: mild);
+      s.stopDirectionVibration('hold');
+      await alertsEvery(272, 1000, 2088, 'left', angle: mild);
+      expect(times(), [0, 1000, 1600]);
+    });
+
+    test('단계가 오르면 바로 다시 맞춘다 — 보통→가장자리, 이미 250ms 지났으면 바로',
+        () async {
+      await alertAt(0, 'left', angle: mild);
+      await alertAt(272, 'left', angle: 20, atEdge: true);
+      await alertsEvery(272, 544, 1088, 'left', angle: 20, atEdge: true);
+      expect(times(), [0, 272, 522, 772, 1022]);
+    });
+
+    test('단계가 내려가면 바로 느려진다 — 가장자리→보통', () async {
+      await alertsEvery(272, 0, 544, 'left', angle: 20, atEdge: true);
+      expect(times(), [0, 250, 500]);
+      // 600ms에 보통으로 — 마지막 진동(500) + 600 = 1100까지 기다린다(750·1000 없음).
+      await alertsEvery(272, 600, 1416, 'left', angle: mild);
+      expect(times(), [0, 250, 500, 1100]);
+    });
+
+    test('경고 호출이 1초 넘게 없으면(판정 멈춤) 울리지 않고 멈춘다(why=stale)', () async {
+      await alertAt(0, 'left', angle: mild);
+      runTo(5000);
+      expect(times(), [0, 600], reason: '600은 마지막 호출 뒤 1초 안');
+      expect(stops().single, containsPair('why', 'stale'));
+    });
+
+    test('타이머로 울린 vib 줄에만 src=timer', () async {
+      await alertAt(0, 'left', angle: mild);
+      await alertAt(272, 'left', angle: mild);
+      await alertAt(544, 'left', angle: mild);
+      runTo(600);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      final vib = EventLog.instance.earlyLines
+          .map((l) => jsonDecode(l) as Map<String, dynamic>)
+          .where((m) => m['ev'] == 'vib')
+          .toList();
+      expect(vib.map((m) => m['src']), [null, 'timer']);
+      expect(vib.last['lvl'], 0);
+      expect(vib.last['gap'], 600);
     });
   });
 
