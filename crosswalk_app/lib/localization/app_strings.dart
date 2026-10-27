@@ -73,6 +73,11 @@ class AppStrings {
   final String labelLeftEdge;
   final String labelRightEdge;
 
+  // T143(사용자 승인 2026-10-27): 끝에서 이미 중앙 쪽으로 틀어 "그대로"인 상태의
+  // 화면 제목. 일반 직진과 구분한다(진동도 보통 단계 박자로 낸다).
+  final String labelLeftEdgeTurned;
+  final String labelRightEdgeTurned;
+
   // Claude Design 1d/1f: 무판정은 6번째 상태다. 전체의 약 6%로 실제로 자주
   // 발생하며, 숨기면 "모르는 것을 아는 척"이 된다.
   final String labelNoCall;
@@ -301,6 +306,8 @@ class AppStrings {
     required this.labelRightSevere,
     required this.labelLeftEdge,
     required this.labelRightEdge,
+    required this.labelLeftEdgeTurned,
+    required this.labelRightEdgeTurned,
     required this.labelNoCall,
     required this.noCallBody,
     required this.cameraEntryAnnouncement,
@@ -434,6 +441,8 @@ class AppStrings {
     labelRightSevere: '오른쪽으로 크게 벗어남',
     labelLeftEdge: '왼쪽 끝',
     labelRightEdge: '오른쪽 끝',
+    labelLeftEdgeTurned: '왼쪽 끝 · 그대로',
+    labelRightEdgeTurned: '오른쪽 끝 · 그대로',
     labelNoCall: '판정 없음',
     noCallBody: '확신이 낮습니다',
     cameraEntryAnnouncement: '횡단보도 안내. 보조 도구입니다. 안내는 음성과 진동으로 나갑니다.',
@@ -599,6 +608,8 @@ class AppStrings {
     labelRightSevere: 'Veering right sharply',
     labelLeftEdge: 'Left edge',
     labelRightEdge: 'Right edge',
+    labelLeftEdgeTurned: 'Left edge · keep going',
+    labelRightEdgeTurned: 'Right edge · keep going',
     labelNoCall: 'No call',
     noCallBody: 'Confidence is low',
     cameraEntryAnnouncement:

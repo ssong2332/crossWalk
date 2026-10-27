@@ -94,6 +94,22 @@
 ///     | p <= -1.0 | a < -25                | 각도 표 → right (왼쪽으로)   |
 ///     | p >= +1.0 | +12 <= a <= +25        | front (이미 틀었음)          |
 ///     | p >= +1.0 | a > +25                | 각도 표 → left (오른쪽으로)  |
+///
+///   T143(2026-10-27, 사용자 승인 "추천대로 진행하자"): "이미 틀었음"의 상한·하한에
+///   **떨림 방지**. 10/27 낮 실기기(`train/field_1027/report.md` 2장): 12:27:32~44에
+///   각도가 25° 근처를 오가며 '즉시 왼쪽으로'와 '그대로 가세요'가 번갈아 나왔다
+///   (25 경계 뒤집힘 기록 전체 9회 중 6회가 이 12초). 하한도 12:28:19.5→20.9에
+///   1.4초 만에 끝 유도 ↔ 이미 틀었음 왕복이 있었다(`train/t143_edge_turned_replay.py`).
+///   들어가는 기준은 그대로 두고, 이미 그 상태면 더 넓게 유지한다(T103과 같은 방식):
+///     | 직전 상태                        | 중앙 쪽 각도 m      | 최종                  |
+///     | 이미 틀었음(front + 끝)           | 9 <= m <= 25        | 이미 틀었음 유지      |
+///     | 이미 틀었음                       | m > 25              | 각도 표(이탈)         |
+///     | 이미 틀었음                       | m < 9               | 끝 유도(중앙 쪽으로)  |
+///     | 상한 넘어 이탈(왼쪽 끝 right,     | m > 21              | 각도 표(이탈) 유지    |
+///     |   오른쪽 끝 left)                 | 12 <= m <= 21       | 이미 틀었음           |
+///     | 그 외(끝 유도·일반 직진 등)       | 12 <= m <= 25       | 이미 틀었음           |
+///   [previousAtEdge]가 직전 상태가 끝 규칙에서 나왔는지를 알린다(front + 끝 =
+///   이미 틀었음). 21은 사용자 승인 값, 9는 T103 유지 기준과 같은 값(실기기 뒤 조정).
 class DirectionResolver {
   DirectionResolver._();
 
@@ -117,30 +133,54 @@ class DirectionResolver {
   /// (`train/field_1026/report.md` ⑥(a)). 25는 보고서 선택지 (a)의 값(사용자 승인).
   static const double edgeTurnedMaxDegrees = 25.0;
 
+  /// T143: 상한을 넘어 이탈로 나간 뒤 "이미 틀었음"으로 **다시 들어오는** 기준.
+  /// 이 값 이하로 내려와야 들어온다(나갈 때는 [edgeTurnedMaxDegrees] 초과).
+  static const double edgeTurnedReenterDegrees = 21.0;
+
+  /// T143: "이미 틀었음"을 **유지**하는 하한. 들어갈 때는 [deviationAngleDegrees]
+  /// (12), 이미 그 상태면 이 값 이상인 동안 유지한다(T103 [recoverAngleDegrees]와 같은 9).
+  static const double edgeTurnedKeepDegrees = 9.0;
+
   /// T98/T100: 위치가 끝이면 화살표·강도에 쓸 각도, 아니면 null.
   ///   왼쪽 끝 → +20, 오른쪽 끝 → -20.
   ///   단 각도 모델이 이미 중앙 쪽으로 ±[deviationAngleDegrees] 이상이면
   ///   (사용자가 이미 틀었음) 0 — 직진 유지.
   ///   T137: 중앙 쪽으로 [edgeTurnedMaxDegrees]를 넘게 틀었으면 null — 끝
   ///   규칙을 쓰지 않고 각도 표로 넘긴다.
-  static double? edgeSteerAngle(double? position, double? angleDegrees) {
+  ///   T143: [previous]·[previousAtEdge](직전 최종 상태와 그것이 끝 규칙에서
+  ///   나왔는지)로 상한 25/21, 하한 12/9 떨림 방지를 건다(클래스 주석 표).
+  static double? edgeSteerAngle(double? position, double? angleDegrees,
+      {String? previous, bool previousAtEdge = false}) {
     if (position == null) return null;
+    final double centerward;
+    final String overCapLabel;
     if (position <= -edgePosition) {
-      if (angleDegrees != null && angleDegrees < -edgeTurnedMaxDegrees) {
-        return null;
-      }
-      final turned =
-          angleDegrees != null && angleDegrees <= -deviationAngleDegrees;
-      return turned ? 0.0 : edgeSteerDegrees;
+      centerward = -1.0;
+      overCapLabel = 'right';
+    } else if (position >= edgePosition) {
+      centerward = 1.0;
+      overCapLabel = 'left';
+    } else {
+      return null;
     }
-    if (position >= edgePosition) {
-      if (angleDegrees != null && angleDegrees > edgeTurnedMaxDegrees) {
-        return null;
-      }
-      final turned =
-          angleDegrees != null && angleDegrees >= deviationAngleDegrees;
-      return turned ? 0.0 : -edgeSteerDegrees;
-    }
+    // 중앙 쪽으로 튼 크기(+). 왼쪽 끝이면 음수 각도가 중앙 쪽.
+    final m = angleDegrees == null ? null : centerward * angleDegrees;
+    final wasTurned = previous == 'front' && previousAtEdge;
+    final cap = previous == overCapLabel
+        ? edgeTurnedReenterDegrees
+        : edgeTurnedMaxDegrees;
+    if (m != null && m > cap) return null;
+    final low = wasTurned ? edgeTurnedKeepDegrees : deviationAngleDegrees;
+    final turned = m != null && m >= low;
+    return turned ? 0.0 : -centerward * edgeSteerDegrees;
+  }
+
+  /// T143: 끝 규칙이 중앙 쪽으로 보내는 상태(왼쪽 끝 → left "오른쪽으로",
+  /// 오른쪽 끝 → right "왼쪽으로"). 끝이 아니면 null. "이미 틀었음"의 진동 방향에 쓴다.
+  static String? edgeSteerClass(double? position) {
+    if (position == null) return null;
+    if (position <= -edgePosition) return 'left';
+    if (position >= edgePosition) return 'right';
     return null;
   }
 
@@ -148,10 +188,14 @@ class DirectionResolver {
   ///   left/right + 끝 → 끝 안내("…가세요. 가장자리입니다" / "왼쪽 끝"),
   ///   front + 끝 → 이미 중앙 쪽으로 틀었음("그대로 가세요").
   ///   none/approach면 옛 위치값이 남아 있어도 false.
+  /// T143: [previous]·[previousAtEdge]는 [resolve]에 넘긴 것과 같아야 한다.
   static bool isEdge(
-          String resolvedLabel, double? position, double? angleDegrees) =>
+          String resolvedLabel, double? position, double? angleDegrees,
+          {String? previous, bool previousAtEdge = false}) =>
       isOnCrosswalk(resolvedLabel) &&
-      edgeSteerAngle(position, angleDegrees) != null;
+      edgeSteerAngle(position, angleDegrees,
+              previous: previous, previousAtEdge: previousAtEdge) !=
+          null;
 
   /// 분류기가 "횡단보도 위"라고 본 상태인가.
   static bool isOnCrosswalk(String label) =>
@@ -160,10 +204,12 @@ class DirectionResolver {
   /// 분류기 [label]과 각도 모델의 [angleDegrees], 위치 모델의 [position]을
   /// 합쳐 최종 상태를 낸다. 위치 규칙(T98)이 각도 규칙(T87)보다 앞선다.
   /// [previous]는 직전 최종 상태 — 떨림 방지(T103)에 쓴다.
+  /// T143: [previousAtEdge]는 직전 상태가 끝 규칙에서 나왔는가(끝 떨림 방지).
   static String resolve(String label, double? angleDegrees,
-      {double? position, String? previous}) {
+      {double? position, String? previous, bool previousAtEdge = false}) {
     if (!isOnCrosswalk(label)) return label;
-    final steer = edgeSteerAngle(position, angleDegrees);
+    final steer = edgeSteerAngle(position, angleDegrees,
+        previous: previous, previousAtEdge: previousAtEdge);
     if (steer != null) {
       if (steer == 0) return 'front';
       return steer > 0 ? 'left' : 'right';

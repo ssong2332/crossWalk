@@ -661,6 +661,19 @@ class FeedbackService {
     return AppStrings.of(_language).edgeTurnedMessage;
   }
 
+  /// T143(사용자 승인 2026-10-27): "이미 틀었음"(끝 + 중앙 쪽으로 틀어 front)일 때
+  /// 진동에 쓸 방향. 아니면 null(진동은 [detectedClass] 그대로).
+  ///
+  /// 방향 = 끝 규칙이 보내는 **중앙 쪽**(왼쪽 끝 → left "오른쪽으로"). 근거:
+  /// T98 목표(끝이면 중앙 쪽으로)와 T100(사용자가 중앙 쪽으로 틀고 있음 → "그대로
+  /// 가세요")가 같은 방향을 말한다. 반대(줄무늬 방향)는 "그대로"와 모순되고, 그 방향은
+  /// 25° 초과(T137 각도 표 이탈)일 때만 쓴다. T136부터 좌우 진동 모양이 같아 지금 체감
+  /// 차이는 없고, 좌우 모터 2개 기기에서 뜻이 생긴다.
+  @visibleForTesting
+  static String? edgeTurnedVibrationClass(
+          String detectedClass, bool atEdge, String? edgeSteerClass) =>
+      detectedClass == 'front' && atEdge ? edgeSteerClass : null;
+
   void _holdRecovery(String message, DateTime now, {required bool edge}) {
     _heldRecovery = message;
     _heldRecoveryAt = now;
@@ -1114,8 +1127,12 @@ class FeedbackService {
   // silently suppress vibration too. `unawaited` (dart:async) starts
   // speech without the vibration branch waiting on its completion; the
   // two feedback channels now run independently.
+  //
+  // T143: [edgeSteerClass]는 끝 규칙이 중앙 쪽으로 보내는 방향
+  // (`DirectionResolver.edgeSteerClass`). "이미 틀었음"(front + 끝)이면 이 방향으로
+  // 보통 단계(lvl0) 박자 진동을 낸다([edgeTurnedVibrationClass]).
   Future<void> alert(String detectedClass, double confidence,
-      {double? angleDegrees, bool atEdge = false}) async {
+      {double? angleDegrees, bool atEdge = false, String? edgeSteerClass}) async {
     final now = clock();
 
     // T63: 발화 여부와 무관하게 진짜 직전 클래스를 먼저 뽑아 둔다 —
@@ -1220,9 +1237,13 @@ class FeedbackService {
     // T136(사용자 승인): 좌우를 다시 같은 패턴(짧게 1번)으로 — 방향은 음성으로만.
     // 음성이 쿨다운에 걸린 프레임에서도 진동 판단은 별도로 수행한다.
     // T132 ④: 같은 방향 반복 간격은 이번 프레임의 이탈 단계로 정한다.
+    // T143: "이미 틀었음"은 무음 직진이 아니라 끝 유도 방향의 보통 단계 박자.
+    final edgeTurnedVib =
+        edgeTurnedVibrationClass(detectedClass, atEdge, edgeSteerClass);
+    final vibClass = edgeTurnedVib ?? detectedClass;
     final pattern = vibrationPolicy.decidePattern(
-        detectedClass, now, _vibrationDurationMs,
-        level: _frameDeviationLevel ?? 0);
+        vibClass, now, _vibrationDurationMs,
+        level: edgeTurnedVib != null ? 0 : (_frameDeviationLevel ?? 0));
 
     // T106: 경고 입력과 이번에 낸 것(음성 문장 여부·진동 여부). 말이 안 나간
     // 이유(쿨다운)도 이 줄과 'say' 줄을 함께 보면 알 수 있다.
@@ -1236,16 +1257,18 @@ class FeedbackService {
       'recover': recoveryMessage,
       'edgeTurned': edgeTurnedMessage,
       'vib': pattern != null,
+      if (edgeTurnedVib != null) 'vibAs': edgeTurnedVib,
     });
 
     // T142: 같은 방향 반복은 타이머가 울린다 — 이탈이면 마지막 진동 + 지금 단계
     // 간격으로 다시 맞추고, 아니면 바로 멈춘다(틀린 방향 진동 방지).
-    if (detectedClass == 'left' || detectedClass == 'right') {
+    // T143: "이미 틀었음"도 중앙 쪽 방향(vibClass)·보통 단계로 타이머가 울린다.
+    if (vibClass == 'left' || vibClass == 'right') {
       directionTimer.noteUpdate(now);
       final last = vibrationPolicy.lastVibratedAt;
       if (last != null) {
         directionTimer.schedule(
-            detectedClass, vibrationPolicy.lastLevel, last, now);
+            vibClass, vibrationPolicy.lastLevel, last, now);
       }
     } else {
       stopDirectionVibration('state', to: detectedClass);
@@ -1253,7 +1276,7 @@ class FeedbackService {
 
     if (pattern == null) return;
 
-    final kind = detectedClass == 'front' ? 'recover' : detectedClass;
+    final kind = vibClass == 'front' ? 'recover' : vibClass;
     // T139: 이탈에서 직진으로 돌아온 순간 짧은 '딩'을 더한다(확인 진동은 그대로).
     if (kind == 'recover') unawaited(playRecoverChime());
     await _vibrate(kind, pattern);
