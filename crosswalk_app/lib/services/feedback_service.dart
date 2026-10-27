@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:vibration/vibration.dart';
 import '../localization/app_strings.dart';
@@ -1210,6 +1211,8 @@ class FeedbackService {
     if (pattern == null) return;
 
     final kind = detectedClass == 'front' ? 'recover' : detectedClass;
+    // T139: 이탈에서 직진으로 돌아온 순간 짧은 '딩'을 더한다(확인 진동은 그대로).
+    if (kind == 'recover') unawaited(playRecoverChime());
     // T132 ④: 방향 진동이면 단계와 적용한 반복 간격(ms)을 함께 남긴다.
     final directional = kind == 'left' || kind == 'right';
     final level = directional ? vibrationPolicy.lastLevel : null;
@@ -1246,6 +1249,48 @@ class FeedbackService {
               fallbackMs: fallbackMs,
               level: level,
               gapMs: gapMs));
+    }
+  }
+
+  /// T139(사용자 승인, 2026-10-27 실기기 "방향 진동과 복귀 확인 진동이 구분이 잘 안 간다"):
+  /// 복귀 확인음을 낸다. 기본은 안드로이드 ToneGenerator(`MainActivity.kt`, 사용자 선택
+  /// "폰 기본 신호음") — 새 패키지·음원 없음. 테스트는 이 값을 바꿔 끼운다.
+  @visibleForTesting
+  Future<void> Function()? chimePlayer = _playPlatformChime;
+
+  static const _chimeChannel =
+      MethodChannel('io.github.ssong2332.walkguide/chime');
+
+  static Future<void> _playPlatformChime() =>
+      _chimeChannel.invokeMethod<void>('play');
+
+  /// T139: 이탈(left/right)에서 직진(front)으로 돌아온 순간의 '딩'. TTS가 말하는
+  /// 중이면 건너뛴다(`chime` skip=tts) — 음성과 겹치면 둘 다 안 들린다.
+  @visibleForTesting
+  Future<void> playRecoverChime() async {
+    if (isSpeaking.value) {
+      EventLog.instance.log('chime', {'why': 'recover', 'skip': 'tts'});
+      return;
+    }
+    final player = chimePlayer;
+    if (player == null) {
+      EventLog.instance
+          .log('chime', {'why': 'recover', 'ok': false, 'fail': 'no_player'});
+      return;
+    }
+    // 채널 실패·ToneGenerator 생성 실패는 소리 없이 넘어가고 사유만 남긴다.
+    try {
+      await player();
+      EventLog.instance.log('chime', {'why': 'recover', 'ok': true});
+    } on PlatformException catch (e) {
+      EventLog.instance
+          .log('chime', {'why': 'recover', 'ok': false, 'fail': e.code});
+    } on MissingPluginException {
+      EventLog.instance
+          .log('chime', {'why': 'recover', 'ok': false, 'fail': 'no_channel'});
+    } catch (e) {
+      EventLog.instance
+          .log('chime', {'why': 'recover', 'ok': false, 'fail': '$e'});
     }
   }
 
