@@ -414,6 +414,9 @@ class VibrationPolicy {
 
   String? get lastClass => _lastClass;
 
+  /// T142: 마지막으로 진동을 낸 시각 — 반복 타이머(`DirectionRepeatTimer`)가 다음 시각을 잰다.
+  DateTime? get lastVibratedAt => _lastVibratedAt;
+
   /// T132 ④: 마지막 [decidePattern] 호출의 이탈 단계와 그 반복 간격(기록용).
   int get lastLevel => _lastLevel;
   Duration get lastInterval => repeatIntervalFor(_lastLevel);
