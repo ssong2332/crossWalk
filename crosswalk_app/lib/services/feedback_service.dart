@@ -6,6 +6,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:vibration/vibration.dart';
 import '../localization/app_strings.dart';
 import 'audio_policy.dart';
+import 'direction_repeat_timer.dart';
 import 'event_log.dart';
 import 'severity_latch.dart';
 import 'stillness_detector.dart';
@@ -25,6 +26,17 @@ class FeedbackService {
   final AudioPolicy audioPolicy = AudioPolicy();
   @visibleForTesting
   final VibrationPolicy vibrationPolicy = VibrationPolicy();
+
+  /// T142: 같은 방향 이탈 진동을 경고 호출 주기와 따로 울리는 타이머.
+  @visibleForTesting
+  late final DirectionRepeatTimer directionTimer =
+      DirectionRepeatTimer(onDue: _onDirectionDue, timerFactory: timerFactory);
+
+  /// T142: 테스트가 시계·타이머를 바꿔 끼운다. [directionTimer]를 처음 쓰기 전에 정한다.
+  @visibleForTesting
+  DateTime Function() clock = DateTime.now;
+  @visibleForTesting
+  Timer Function(Duration, void Function())? timerFactory;
 
   /// T82: 이탈 강도가 프레임마다 뒤집혀 음성·진동이 반복되는 것을 막는다.
   /// 화면(`camera_screen.dart`의 `_severe`)도 같은 값을 읽어, 문구·색과
@@ -1072,10 +1084,13 @@ class FeedbackService {
     required int fallbackMs,
     int? level,
     int? gapMs,
+    String? src,
   }) {
     final extra = {
       if (level != null) 'lvl': level,
       if (gapMs != null) 'gap': gapMs,
+      // T142: 반복 타이머로 울린 것만 'timer'(경고 호출로 울린 것은 종전 형식 그대로).
+      if (src != null) 'src': src,
     };
     if (!hasVibrator) {
       return {'kind': kind, 'ok': false, 'why': 'no_vibrator', ...extra};
@@ -1118,7 +1133,7 @@ class FeedbackService {
   // 보통 단계(lvl0) 박자 진동을 낸다([edgeTurnedVibrationClass]).
   Future<void> alert(String detectedClass, double confidence,
       {double? angleDegrees, bool atEdge = false, String? edgeSteerClass}) async {
-    final now = DateTime.now();
+    final now = clock();
 
     // T63: 발화 여부와 무관하게 진짜 직전 클래스를 먼저 뽑아 둔다 —
     // 아래에서 _lastRawClass를 덮어쓰기 전에 읽어야 전이를 감지할 수 있다.
@@ -1244,11 +1259,60 @@ class FeedbackService {
       'vib': pattern != null,
       if (edgeTurnedVib != null) 'vibAs': edgeTurnedVib,
     });
+
+    // T142: 같은 방향 반복은 타이머가 울린다 — 이탈이면 마지막 진동 + 지금 단계
+    // 간격으로 다시 맞추고, 아니면 바로 멈춘다(틀린 방향 진동 방지).
+    // T143: "이미 틀었음"도 중앙 쪽 방향(vibClass)·보통 단계로 타이머가 울린다.
+    if (vibClass == 'left' || vibClass == 'right') {
+      directionTimer.noteUpdate(now);
+      final last = vibrationPolicy.lastVibratedAt;
+      if (last != null) {
+        directionTimer.schedule(
+            vibClass, vibrationPolicy.lastLevel, last, now);
+      }
+    } else {
+      stopDirectionVibration('state', to: detectedClass);
+    }
+
     if (pattern == null) return;
 
     final kind = vibClass == 'front' ? 'recover' : vibClass;
     // T139: 이탈에서 직진으로 돌아온 순간 짧은 '딩'을 더한다(확인 진동은 그대로).
     if (kind == 'recover') unawaited(playRecoverChime());
+    await _vibrate(kind, pattern);
+  }
+
+  /// T142: 반복 타이머가 예정 시각에 부른다. 판정이 멈췄으면(경고 호출이
+  /// [DirectionRepeatTimer.staleAfter]보다 오래 없음) 울리지 않고 멈춘다.
+  void _onDirectionDue() {
+    final cls = directionTimer.cls;
+    if (cls == null) return;
+    final now = clock();
+    if (directionTimer.stale(now)) {
+      directionTimer.stop();
+      EventLog.instance.log('vib.stop', {'why': 'stale', 'cls': cls});
+      return;
+    }
+    final level = directionTimer.level;
+    final pattern = vibrationPolicy.decidePattern(
+        cls, now, _vibrationDurationMs,
+        level: level);
+    final last = vibrationPolicy.lastVibratedAt;
+    if (last != null) directionTimer.schedule(cls, level, last, now);
+    if (pattern != null) unawaited(_vibrate(cls, pattern, src: 'timer'));
+  }
+
+  /// T142: 같은 방향 반복 진동을 바로 멈춘다 — 상태가 이탈이 아니게 됨(`state`),
+  /// hold(`hold`), 앱 일시정지·화면 꺼짐(`pause`), 화면 종료(`dispose`).
+  /// 돌고 있던 타이머를 멈췄을 때만 `vib.stop`을 남긴다.
+  void stopDirectionVibration(String why, {String? to}) {
+    if (!directionTimer.stop()) return;
+    EventLog.instance
+        .log('vib.stop', {'why': why, if (to != null) 'to': to});
+  }
+
+  /// 진동을 내고 `vib` 줄을 남긴다. [src]는 T142 타이머로 울린 것만 'timer'.
+  Future<void> _vibrate(String kind, List<int> pattern, {String? src}) async {
     // T132 ④: 방향 진동이면 단계와 적용한 반복 간격(ms)을 함께 남긴다.
     final directional = kind == 'left' || kind == 'right';
     final level = directional ? vibrationPolicy.lastLevel : null;
@@ -1273,7 +1337,8 @@ class FeedbackService {
               supportsPattern: supportsPattern,
               fallbackMs: fallbackMs,
               level: level,
-              gapMs: gapMs));
+              gapMs: gapMs,
+              src: src));
       final total = pattern.fold<int>(0, (a, b) => a + b);
       activateVibrationIndicator(total > 0 ? total : fallbackMs);
     } else {
@@ -1284,7 +1349,8 @@ class FeedbackService {
               supportsPattern: false,
               fallbackMs: fallbackMs,
               level: level,
-              gapMs: gapMs));
+              gapMs: gapMs,
+              src: src));
     }
   }
 
@@ -1439,6 +1505,7 @@ class FeedbackService {
   }
 
   Future<void> dispose() async {
+    directionTimer.stop();
     await _tts.stop();
     _vibrationTimer?.cancel();
     _drainTimer?.cancel();
