@@ -44,6 +44,29 @@ String zoomProbeText(double? zoomMin, double? zoomMax, int backCameras) {
   return '줌 $range · 후면 $backCameras';
 }
 
+/// T143(사용자 승인 2026-10-27): 끝에서 이미 중앙 쪽으로 틀어 "그대로"인 상태
+/// (front + 끝)의 화면 제목. 아니면 null(제목은 종전대로).
+///   | 상태  | 끝    | 위치 p     | 제목                |
+///   | front | true  | p <= -1    | '왼쪽 끝 · 그대로'   |
+///   | front | true  | p >= +1    | '오른쪽 끝 · 그대로' |
+///   | 그 외 | —     | —          | null                |
+/// 화살표는 곧은 모양(끝 각도 0) 그대로, 색은 일반 이탈 색([isEdgeTurnedDisplay]).
+@visibleForTesting
+String? edgeTurnedHeadline(
+    String fieldState, bool atEdge, double? position, AppStrings strings) {
+  if (!isEdgeTurnedDisplay(fieldState, atEdge)) return null;
+  return switch (DirectionResolver.edgeSteerClass(position)) {
+    'left' => strings.labelLeftEdgeTurned,
+    'right' => strings.labelRightEdgeTurned,
+    _ => null,
+  };
+}
+
+/// T143: 화면이 "이미 틀었음"(front + 끝)을 일반 직진과 구분해 보여 줄 상태인가.
+@visibleForTesting
+bool isEdgeTurnedDisplay(String fieldState, bool atEdge) =>
+    fieldState == 'front' && atEdge;
+
 class CameraScreen extends StatefulWidget {
   // T40: language is now detected once in OnboardingScreen (which runs
   // before this screen) and passed forward via [initialLanguage], so the
@@ -1771,7 +1794,11 @@ class _CameraScreenState extends State<CameraScreen>
       case 'left':
       case 'right':
         return _severe ? _colorSevere : _colorAmber;
+      // T143: 끝에서 이미 틀었음은 일반 이탈 색(진동도 보통 단계 박자).
       case 'front':
+        return isEdgeTurnedDisplay(_fieldState, _atEdge)
+            ? _colorAmber
+            : _colorSteel;
       case 'approach':
         return _colorSteel;
       case 'nocall':
@@ -1801,6 +1828,12 @@ class _CameraScreenState extends State<CameraScreen>
       case 'right':
         if (_atEdge) return _strings.labelRightEdge;
         return _severe ? _strings.labelRightSevere : _strings.labelRight;
+      // T143: 끝에서 이미 틀었음은 일반 직진과 다른 제목.
+      case 'front':
+        return edgeTurnedHeadline(
+                _fieldState, _atEdge, _smoothedPosition, _strings) ??
+            _labelText[_fieldState] ??
+            _statusLabel;
       default:
         return _labelText[_fieldState] ?? _statusLabel;
     }
