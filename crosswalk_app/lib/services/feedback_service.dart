@@ -172,11 +172,18 @@ class FeedbackService {
   /// T118 보완: hold 시작부터의 창 — `CrossingHold.holdDuration`과 같은 10초.
   static const holdStartCrossedWindow = Duration(seconds: 10);
 
+  /// T140: 오래 건넌 뒤 발밑 인도로 풀렸다 — 다음 none/approach에서 "건넜습니다".
+  bool _crossedOnGroundRelease = false;
+
   /// T118: `CrossingHold`가 발밑이 인도라서 hold를 푼 직후 부른다.
   /// [holdStartedAt]은 그 hold가 시작된 시각(`CrossingHold.releasedHoldStartedAt`).
-  void noteHoldReleasedByGround(DateTime now, {DateTime? holdStartedAt}) {
+  /// T140: [crossed]면(`CrossingHold.releasedAfterLongCrossing`) 같은 프레임의
+  /// alert(none/approach)에서 "건넜습니다"를 낸다.
+  void noteHoldReleasedByGround(DateTime now,
+      {DateTime? holdStartedAt, bool crossed = false}) {
     _holdReleasedByGroundAt = now;
     _releasedHoldStartedAt = holdStartedAt;
+    _crossedOnGroundRelease = crossed;
   }
 
   /// T118 보완: 일찍 푼 뒤 crossed를 "건넜습니다"로 볼 마지막 시각 —
@@ -542,7 +549,13 @@ class FeedbackService {
         detectedClass == 'crossed' &&
         !now.isAfter(
             groundReleaseCrossedUntil(releasedAt, _releasedHoldStartedAt));
-    if (detectedClass == 'crossed' ||
+    // T140: 오래 건넌 뒤 발밑 인도로 풀렸으면 해제 프레임(none/approach)에서 바로
+    // 건넘 안내 — 이미 말했으니 뒤따르는 crossed 창(T118)은 비운다(중복 금지).
+    final groundCrossed = _crossedOnGroundRelease &&
+        (detectedClass == 'none' || detectedClass == 'approach');
+    _crossedOnGroundRelease = false;
+    if (groundCrossed ||
+        detectedClass == 'crossed' ||
         detectedClass == 'front' ||
         detectedClass == 'left' ||
         detectedClass == 'right') {
@@ -553,7 +566,8 @@ class FeedbackService {
                 previousClass == 'left' ||
                 previousClass == 'right') &&
             detectedClass == 'crossed') ||
-        afterGroundRelease;
+        afterGroundRelease ||
+        groundCrossed;
     // T93(2026-09-15, 사용자 요청): approach로 **들어올 때** "앞에 횡단보도가
     // 있습니다"를 1회 안내한다. T51에서 approach를 침묵시켰던 것을 뒤집는다
     // (이탈 경고 decideMessage는 여전히 approach에서 침묵 — 방향 경고가 아니라

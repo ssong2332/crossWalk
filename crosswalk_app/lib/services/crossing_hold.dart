@@ -37,6 +37,17 @@ import 'direction_resolver.dart';
 /// 노면 판정은 노면·주의 구역 스위치 중 하나가 켜져 있어야 돈다 — 꺼져 있으면
 /// 이 규칙도 쉬고 10초 규칙만 남는다. 이렇게 풀린 직후의 crossed는
 /// `FeedbackService.noteHoldReleasedByGround`가 "건넜습니다"를 지킨다.
+///
+/// T140(2026-10-27, 사용자 승인 "전부 추천대로 진행하자"): **오래 건넌 뒤 발밑
+/// 인도로 풀리면 "건넜습니다".** 10/27 낮 기록(121630)에서 분류기가 맞은편 끝에서
+/// crossed를 거의 내지 않아(끝 10곳 crossed 평균 최대 0.01~0.53, 기준 0.55)
+/// 실제 끝 10곳이 모두 hold → 발밑 인도 해제 → none으로 조용히 끝났다.
+///   | 발밑 인도로 해제될 때 위 지속([releasedOnDuration]) | 결과                 |
+///   | >= [groundReleaseCrossedMinOn]                       | "건넜습니다" 요청    |
+///   | 그 밖(또는 모름)                                     | 지금처럼 침묵        |
+/// 위 지속 = 최종 상태가 위가 아닌 곳(hold 제외)에서 위로 들어온 시각부터 해제
+/// 시각까지. 그 사이 위 ↔ hold 오감은 이어진 것으로 본다. 10초 만료 해제는 바꾸지
+/// 않는다. 6초는 추정값 — 기록 적용 결과는 `docs/Tasks.md` T140.
 class CrossingHold {
   static const Duration holdDuration = Duration(seconds: 10);
 
@@ -45,6 +56,9 @@ class CrossingHold {
 
   /// T118: 연속 횟수. 노면 판정은 약 0.5초마다 한 번이다(처리 프레임 10개 중 1개).
   static const int groundReleaseFrames = 2;
+
+  /// T140: 발밑 인도 해제 때 "건넜습니다"를 낼 최소 위 지속(추정값).
+  static const Duration groundReleaseCrossedMinOn = Duration(seconds: 6);
 
   /// hold 상태를 나타내는 라벨. 분류기 라벨과 겹치지 않는다.
   static const String holdLabel = 'hold';
@@ -62,6 +76,18 @@ class CrossingHold {
   DateTime? get releasedHoldStartedAt => _releasedHoldStartedAt;
   DateTime? _releasedHoldStartedAt;
 
+  /// T140: 최종 상태가 위로 들어온 시각(위 ↔ hold 동안 유지). 위·hold가 아니면 null.
+  DateTime? _onSince;
+
+  /// T140: [releasedByGround]일 때 위 지속(위로 들어온 뒤 해제까지). 그 밖에는 null.
+  Duration? get releasedOnDuration => _releasedOnDuration;
+  Duration? _releasedOnDuration;
+
+  /// T140: [releasedByGround]이고 [releasedOnDuration] >= [groundReleaseCrossedMinOn].
+  bool get releasedAfterLongCrossing =>
+      _releasedOnDuration != null &&
+      _releasedOnDuration! >= groundReleaseCrossedMinOn;
+
   /// T118: hold 중 노면 판정 한 번. [sidewalkAndBlocks]는 노면 앞 구역의
   /// 인도+선형+점형 비율. hold가 아니면 셈을 비운다.
   void noteGround(double sidewalkAndBlocks) {
@@ -77,6 +103,7 @@ class CrossingHold {
   String apply(String current, String detected, DateTime now) {
     _releasedByGround = false;
     _releasedHoldStartedAt = null;
+    _releasedOnDuration = null;
     final gap = detected == 'none' || detected == 'approach';
     final wasOn = DirectionResolver.isOnCrosswalk(current) ||
         (current == holdLabel && _since != null);
@@ -85,12 +112,26 @@ class CrossingHold {
       if (_groundStreak >= groundReleaseFrames) {
         _releasedByGround = true;
         _releasedHoldStartedAt = _since;
+        if (_onSince != null) _releasedOnDuration = now.difference(_onSince!);
       } else if (now.difference(_since!) < holdDuration) {
         return holdLabel;
       }
     }
     _since = null;
     _groundStreak = 0;
+    _trackOn(current, detected, now);
     return detected;
+  }
+
+  /// T140: 이번 결과 [result]로 위 지속 시작 시각을 갱신한다(hold 반환 경로는 유지).
+  void _trackOn(String current, String result, DateTime now) {
+    if (!DirectionResolver.isOnCrosswalk(result)) {
+      _onSince = null;
+    } else if (!DirectionResolver.isOnCrosswalk(current) &&
+        current != holdLabel) {
+      _onSince = now;
+    } else {
+      _onSince ??= now;
+    }
   }
 }
