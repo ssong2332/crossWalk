@@ -642,11 +642,19 @@ class _CameraScreenState extends State<CameraScreen>
       final label =
           _crossingHold.apply(_guidanceLabel, resolved, DateTime.now());
       // T118: 발밑이 인도라서 일찍 풀었으면 기록하고, 이어지는 crossed의
-      // "건넜습니다"를 지키도록 알린다(A2).
+      // "건넜습니다"를 지키도록 알린다(A2). T140: 위가 6초 이상 이어졌으면
+      // 이 프레임에서 바로 "건넜습니다"(`said`=요청함, 실제 재생은 `say` 줄).
       if (_crossingHold.releasedByGround) {
-        EventLog.instance.log('hold.end', {'why': 'ground', 'to': label});
+        final onDur = _crossingHold.releasedOnDuration;
+        final said = _crossingHold.releasedAfterLongCrossing;
+        EventLog.instance.log('hold.end', {
+          'why': 'ground',
+          'to': label,
+          'said': said,
+          'dur': onDur == null ? null : onDur.inMilliseconds / 1000,
+        });
         _feedback.noteHoldReleasedByGround(DateTime.now(),
-            holdStartedAt: _crossingHold.releasedHoldStartedAt);
+            holdStartedAt: _crossingHold.releasedHoldStartedAt, crossed: said);
       }
       // T102: 끝 규칙에서 나온 상태면 끝 전용 음성·화면 문구를 쓴다.
       // (hold는 위가 아니므로 isEdge가 false다.) T130: 뒤집힘을 막았으면 끝 안내를
