@@ -913,17 +913,18 @@ void main() {
       final s = FeedbackService();
       await s.alert('right', 0.9, angleDegrees: -20, atEdge: true);
       expect(s.vibrationPolicy.lastLevel, 2);
-      // 같은 방향, 단계가 내려감(가장자리 → 보통): 음성은 묶여도 진동 간격은 바로 1초(T136).
+      // 같은 방향, 단계가 내려감(가장자리 → 보통): 음성은 묶여도 진동 간격은 바로 0.6초(T139).
       await s.alert('right', 0.9, angleDegrees: -mild);
       expect(s.vibrationPolicy.lastLevel, 0);
-      expect(s.vibrationPolicy.lastInterval, const Duration(seconds: 1));
+      expect(s.vibrationPolicy.lastInterval,
+          const Duration(milliseconds: 600));
       final vib = EventLog.instance.earlyLines
           .map((l) => jsonDecode(l) as Map<String, dynamic>)
           .where((m) => m['ev'] == 'vib')
           .toList();
       expect(vib.first['kind'], 'right');
       expect(vib.first['lvl'], 2);
-      expect(vib.first['gap'], 400);
+      expect(vib.first['gap'], 250);
       await s.dispose();
     });
 
@@ -1392,6 +1393,115 @@ void main() {
     });
   });
 
+  // T139: 이탈에서 직진으로 돌아온 순간 '딩'(복귀 확인 진동은 그대로).
+  group('복귀 확인음 (T139)', () {
+    List<Map<String, dynamic>> chimes() => EventLog.instance.earlyLines
+        .map((l) => jsonDecode(l) as Map<String, dynamic>)
+        .where((m) => m['ev'] == 'chime')
+        .toList();
+
+    test('이탈 → 직진이면 딩 1번(why=recover, ok=true)', () async {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      var played = 0;
+      s.chimePlayer = () async => played++;
+      await s.alert('left', 0.9, angleDegrees: mild);
+      s.isSpeaking.value = false;
+      await s.alert('front', 0.9);
+      await Future<void>.delayed(Duration.zero);
+      expect(played, 1);
+      expect(chimes().single, containsPair('ok', true));
+      expect(chimes().single['why'], 'recover');
+      // 복귀 확인 진동도 그대로 나간다.
+      expect(s.vibrationPolicy.lastClass, 'front');
+      await s.dispose();
+    });
+
+    test('TTS가 말하는 중이면 건너뛴다(skip=tts)', () async {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      var played = 0;
+      s.chimePlayer = () async => played++;
+      await s.alert('right', 0.9, angleDegrees: -mild);
+      s.isSpeaking.value = true;
+      await s.alert('front', 0.9);
+      await Future<void>.delayed(Duration.zero);
+      expect(played, 0);
+      expect(chimes().single, containsPair('skip', 'tts'));
+      expect(chimes().single['why'], 'recover');
+      s.isSpeaking.value = false;
+      await s.dispose();
+    });
+
+    test('이탈 없이 직진이 이어지면 딩 없음', () async {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      var played = 0;
+      s.chimePlayer = () async => played++;
+      await s.alert('front', 0.9);
+      await s.alert('front', 0.9);
+      await Future<void>.delayed(Duration.zero);
+      expect(played, 0);
+      expect(chimes(), isEmpty);
+      await s.dispose();
+    });
+
+    test('같은 방향 이탈이 이어지는 동안엔 딩 없음, 직진으로 돌아온 순간 1번만', () async {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      var played = 0;
+      s.chimePlayer = () async => played++;
+      await s.alert('left', 0.9, angleDegrees: mild);
+      await s.alert('left', 0.9, angleDegrees: mild);
+      s.isSpeaking.value = false;
+      await s.alert('front', 0.9);
+      await s.alert('front', 0.9);
+      await Future<void>.delayed(Duration.zero);
+      expect(played, 1);
+      await s.dispose();
+    });
+
+    test('ToneGenerator를 못 만들면(PlatformException) 멈추지 않고 fail=코드', () async {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      s.chimePlayer =
+          () async => throw PlatformException(code: 'tone_unavailable');
+      await s.playRecoverChime();
+      expect(chimes().single, containsPair('ok', false));
+      expect(chimes().single['fail'], 'tone_unavailable');
+      await s.dispose();
+    });
+
+    test('기본 재생기: 채널이 없으면(테스트 호스트) fail=no_channel', () async {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      await s.playRecoverChime();
+      expect(chimes().single, containsPair('ok', false));
+      expect(chimes().single['fail'], 'no_channel');
+      await s.dispose();
+    });
+
+    test('기본 재생기: 채널 응답이 오류면 fail=코드, 성공이면 ok=true', () async {
+      const channel = MethodChannel('io.github.ssong2332.walkguide/chime');
+      final messenger = TestDefaultBinaryMessengerBinding
+          .instance.defaultBinaryMessenger;
+      var calls = 0;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls++;
+        expect(call.method, 'play');
+        if (calls == 1) throw PlatformException(code: 'start_failed');
+        return null;
+      });
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      await s.playRecoverChime();
+      await s.playRecoverChime();
+      expect(chimes().map((m) => m['fail'] ?? m['ok']), ['start_failed', true]);
+      messenger.setMockMethodCallHandler(channel, null);
+      await s.dispose();
+    });
+  });
+
   // T136(사용자 승인 A안): 좌우 진동이 같아 서 있는 동안 방향을 모른다 —
   // 서 있음이 풀리는 순간 이탈이 이어지면 방향 경고를 한 번 말한다.
   group('걸음을 뗄 때 방향 한 번 (T136)', () {
@@ -1657,7 +1767,7 @@ void main() {
       expect(fired, [0, 6120, 12240], reason: '판정 간격 0.17초 — 6초가 지난 첫 판정');
     });
 
-    test('진동은 그대로: 묶여 음성이 없는 프레임에도 방향 진동(T136 보통 1초 박자)', () {
+    test('진동은 그대로: 묶여 음성이 없는 프레임에도 방향 진동(T139 보통 0.6초 박자)', () {
       final s = FeedbackService();
       expect(s.decideMessage('left', mild, t0), isNotNull);
       expect(s.vibrationPolicy.decidePattern('left', t0, 500), isNotNull);

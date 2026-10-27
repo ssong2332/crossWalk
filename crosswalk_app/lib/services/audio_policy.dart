@@ -378,10 +378,10 @@ class AudioPolicy {
 class VibrationPolicy {
   /// 같은 방향이 계속될 때 방향 패턴을 다시 내는 간격(이탈 단계 보통 = 0).
   ///
-  /// T136(사용자 승인, 2026-10-26 실기기): 3초 → 1초. 초판의 간격 점증
-  /// (1->2->4->8초)은 제거했다: 진동이 8초 간격이면 음성만 나가고 진동은 없는
-  /// 구간이 생긴다.
-  static const repeatInterval = Duration(seconds: 1);
+  /// T136(사용자 승인, 2026-10-26 실기기): 3초 → 1초. T139(2026-10-27): 1초 → 0.6초.
+  /// 초판의 간격 점증(1->2->4->8초)은 제거했다: 진동이 8초 간격이면 음성만 나가고
+  /// 진동은 없는 구간이 생긴다.
+  static const repeatInterval = Duration(milliseconds: 600);
 
   /// T132 ④(사용자 선택 A, 2026-10-25): 이탈 단계(`FeedbackService.deviationLevel`)별
   /// 같은 방향 반복 간격. 매 프레임 지금 단계의 간격으로 마지막 진동부터 잰다:
@@ -390,14 +390,17 @@ class VibrationPolicy {
   ///
   /// T136(사용자 승인, 2026-10-26 실기기 "빨라지는 건 느껴지지만 더 빨라야"):
   /// 보통 3초→1초, 즉시 1.5초→0.6초, 가장자리 1초→0.4초.
+  /// T139(사용자 승인, 2026-10-27 실기기 "경고성 알림이니 1.5~2배 빠르게"):
+  /// 보통 1초→0.6초, 즉시 0.6초→0.35초, 가장자리 0.4초→0.25초. 250ms 간격에서
+  /// 150ms 진동이 끊겨 느껴지는지는 실기기 확인 항목(추정).
   static const repeatIntervalsByLevel = <Duration>[
     repeatInterval,
-    Duration(milliseconds: 600),
-    Duration(milliseconds: 400),
+    Duration(milliseconds: 350),
+    Duration(milliseconds: 250),
   ];
 
   /// T136: 방향 진동 한 번의 길이 — 좌우 같게 짧게 1번. 가장 짧은 반복 간격
-  /// (가장자리 400ms)보다 반드시 짧아야 진동이 이어 붙지 않는다. 방향은 음성으로만
+  /// (가장자리 250ms, T139)보다 반드시 짧아야 진동이 이어 붙지 않는다. 방향은 음성으로만
   /// 전달한다(하드웨어 기기로 가면 좌우 모터 2개로 나눌 계획).
   static const directionPulseMs = 150;
 
