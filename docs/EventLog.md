@@ -70,7 +70,7 @@
 | `state` | 화면 상태가 바뀜 (무판정·오류 포함, 1초 안) | `from`, `to`, `edge`, `conf` | `_logStateIfChanged` |
 | `still` | T133: 가속도로 본 '서 있음'이 바뀜 (`StillnessDetector`) / 가속도 센서 오류 | `on`(true = 서 있음), `mot`(바뀐 순간의 움직임 크기 = 최근 1초 \|a\| 표준편차, m/s²) / 오류면 `on`=false, `why`=error | `FeedbackService.addAccelerometer`, `CameraScreen._startStillness` |
 | `mot` | T137: 흔들림 값 1초마다 — 기록 남기기가 켜져 있을 때만, 창(최근 1초 표본 5개 이상)이 찬 뒤부터 | `mot`(최근 1초 \|a\| 표준편차, m/s², 소수 3자리 — `still`의 `mot`과 같은 값), `still`(지금 서 있음 판정, 센서 멈춤은 보지 않음) | `FeedbackService.addAccelerometer` |
-| `alert` | 이탈 안내 판단 한 번 | `cls`, `conf`, `ang`, `edge`, `msg`/`phase`/`recover`/`edgeTurned`(이번에 고른 문장, 없으면 null), `vib`(진동 여부) | `feedback_service.dart` `alert` |
+| `alert` | 이탈 안내 판단 한 번 | `cls`, `conf`, `ang`, `edge`, `msg`/`phase`/`recover`/`edgeTurned`(이번에 고른 문장, 없으면 null), `vib`(진동 여부), `vibAs`(T143: 이미 틀었음 — front + 끝 — 일 때만, 보통 단계 박자로 진동에 쓴 중앙 쪽 방향 left/right. 이때 `vib` 줄은 그 방향 kind에 `lvl` 0) | `feedback_service.dart` `alert` |
 | `say` | 음성 요청 | `text`, `p`(0~3 = P0~P3), `act`(speakNow/queue/drop), `why`(§4), `rate`(T124: 빠른 상승 문장일 때만 — 요청한 속도) | `feedback_service.dart` `_speak` |
 | `say.end` | 음성 재생이 끝남 | `text`, `p`, `res`(done/cut/timeout/error/superseded), `dur`(ms), `rate`·`rateMs`(T124: 이 발화 전에 속도를 바꿨을 때만 — 바꾼 속도와 `setSpeechRate`에 걸린 ms. 빠른 상승 문장 전의 변경과 다음 발화 전의 복귀가 모두 남는다. `dur`에 포함됨) — 다른 안내가 끊으면 짧게 끝난다. T121: superseded = stop을 기다리는 사이 더 새 발화가 시작돼 speak를 보내지 않음(재생 없음). T132: cut = 재생 중 더 새 발화가 시작돼(stop) 끊김(전에는 done) | `_speak` |
 | `say.ttl` | 대기하던 안내가 TTL을 넘겨 버려짐 (T108: 보류한 회복 안내가 2.7초를 넘겨도 / 새 P1을 넣기 전 만료된 대기 항목을 치울 때도) | `text`, `p`, `why`(T126, 대기 슬롯 항목만: `ttl` = TTL 지남 — P0 뒤에서 기다렸으면 마지막 P0 종료부터 / `max_wait` = 처음 요청부터 8초 상한, T130: 진입 안내는 3초) | `_drainPending`, `alert`, `_speak` |

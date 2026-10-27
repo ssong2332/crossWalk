@@ -907,6 +907,55 @@ void main() {
       });
     });
 
+    // T143: '이미 틀었음'(front + 끝)은 끝 유도 방향의 보통 단계 박자로 진동한다.
+    test('T143: edgeTurnedVibrationClass — front + 끝일 때만 중앙 쪽 방향', () {
+      expect(FeedbackService.edgeTurnedVibrationClass('front', true, 'left'),
+          'left');
+      expect(FeedbackService.edgeTurnedVibrationClass('front', true, 'right'),
+          'right');
+      expect(FeedbackService.edgeTurnedVibrationClass('front', false, 'left'),
+          isNull);
+      expect(FeedbackService.edgeTurnedVibrationClass('left', true, 'left'),
+          isNull);
+      expect(
+          FeedbackService.edgeTurnedVibrationClass('front', true, null), isNull);
+    });
+
+    test('T143: 이미 틀었음 동안 lvl0 진동, 그대로 가세요는 들어갈 때 한 번', () async {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      final ko = AppStrings.of(AppLanguage.ko);
+      // 왼쪽 끝 유도(가장자리 단계) → 이미 틀었음 3번.
+      await s.alert('left', 0.9, angleDegrees: 20, atEdge: true,
+          edgeSteerClass: 'left');
+      expect(s.vibrationPolicy.lastLevel, 2);
+      for (var i = 0; i < 3; i++) {
+        await s.alert('front', 0.9, angleDegrees: 0, atEdge: true,
+            edgeSteerClass: 'left');
+      }
+      expect(s.vibrationPolicy.lastLevel, 0);
+      expect(s.vibrationPolicy.lastClass, 'left',
+          reason: '직진(회복)으로 보지 않는다 — 회복 진동·딩 없음');
+      final lines = EventLog.instance.earlyLines
+          .map((l) => jsonDecode(l) as Map<String, dynamic>)
+          .toList();
+      final alerts = lines.where((m) => m['ev'] == 'alert').toList();
+      expect(alerts.skip(1).map((m) => m['vibAs']), ['left', 'left', 'left']);
+      expect(
+          alerts.where((m) => m['edgeTurned'] == ko.edgeTurnedMessage),
+          hasLength(1));
+      expect(lines.where((m) => m['ev'] == 'vib' && m['kind'] == 'recover'),
+          isEmpty);
+      // 끝을 벗어나 일반 직진이 되면 그때 회복 진동.
+      await s.alert('front', 0.9, angleDegrees: 0);
+      expect(s.vibrationPolicy.lastClass, 'front');
+      expect(
+          EventLog.instance.earlyLines
+              .map((l) => jsonDecode(l) as Map<String, dynamic>)
+              .where((m) => m['ev'] == 'vib' && m['kind'] == 'recover'),
+          hasLength(1));
+    });
+
     test('T132: alert()는 이번 프레임 단계로 진동 간격을 정하고 기록한다', () async {
       // 테스트 호스트는 진동기가 없다(ok=false) — 단계·간격이 기록되는지만 본다.
       EventLog.instance.clearForTest();

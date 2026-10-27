@@ -183,6 +183,85 @@ void main() {
     });
   });
 
+  // T143: '이미 틀었음' 상한 25/21·하한 12/9 떨림 방지 (10/27 낮 12:27·12:28).
+  group('DirectionResolver T143 끝 떨림 방지', () {
+    String res(double a, double p, String prev, bool prevEdge) =>
+        DirectionResolver.resolve('front', a,
+            position: p, previous: prev, previousAtEdge: prevEdge);
+
+    test('상수: 다시 들어옴 21 < 상한 25, 유지 하한 9 < 진입 12', () {
+      expect(DirectionResolver.edgeTurnedMaxDegrees, 25.0);
+      expect(DirectionResolver.edgeTurnedReenterDegrees, 21.0);
+      expect(DirectionResolver.edgeTurnedKeepDegrees, 9.0);
+      expect(DirectionResolver.deviationAngleDegrees, 12.0);
+    });
+
+    test('상한: 이미 틀었음이면 25까지 유지, 넘으면 이탈', () {
+      expect(res(-25, -1.5, 'front', true), 'front');
+      expect(res(-25.1, -1.5, 'front', true), 'right');
+      expect(res(25, 1.5, 'front', true), 'front');
+      expect(res(25.1, 1.5, 'front', true), 'left');
+    });
+
+    test('상한: 넘어 이탈한 뒤에는 21 이하로 와야 다시 이미 틀었음', () {
+      // 왼쪽 끝 + right(상한 넘어 이탈).
+      expect(res(-24, -1.5, 'right', false), 'right');
+      expect(res(-21.1, -1.5, 'right', false), 'right');
+      expect(res(-21, -1.5, 'right', false), 'front');
+      // 오른쪽 끝 + left.
+      expect(res(24, 1.5, 'left', false), 'left');
+      expect(res(21, 1.5, 'left', false), 'front');
+    });
+
+    test('12:27 재현: 25 근처 오르내림에 번갈아 바뀌지 않는다', () {
+      // 왼쪽 끝, 각도 -23.8 → -26.0 → -24.7 → -26.2 → -23.0 (smooth 근사).
+      var prev = 'front';
+      var prevEdge = true;
+      final seen = <String>[];
+      for (final a in [-23.8, -26.0, -24.7, -26.2, -23.0, -20.5]) {
+        final next = res(a, -1.7, prev, prevEdge);
+        prevEdge = DirectionResolver.isEdge(next, -1.7, a,
+            previous: prev, previousAtEdge: prevEdge);
+        prev = next;
+        seen.add(next);
+      }
+      // 26.0에서 한 번 나가고, 21 이하(-20.5)가 돼서야 돌아온다(전환 2번).
+      expect(seen, ['front', 'right', 'right', 'right', 'right', 'front']);
+    });
+
+    test('하한: 끝 유도에서는 12부터 이미 틀었음, 이미 틀었음이면 9까지 유지', () {
+      // 왼쪽 끝, 직전 끝 유도(left + 끝).
+      expect(res(-11.9, -1.2, 'left', true), 'left');
+      expect(res(-12, -1.2, 'left', true), 'front');
+      // 직전 이미 틀었음.
+      expect(res(-11.3, -1.2, 'front', true), 'front', reason: '12:28:19.5');
+      expect(res(-9, -1.2, 'front', true), 'front');
+      expect(res(-8.9, -1.2, 'front', true), 'left');
+      // 오른쪽 끝 대칭.
+      expect(res(10, 1.2, 'front', true), 'front');
+      expect(res(10, 1.2, 'right', true), 'right');
+    });
+
+    test('일반 직진(끝 아님)에서 끝으로 오면 하한은 12 그대로', () {
+      expect(res(-10, -1.2, 'front', false), 'left');
+      expect(res(-12, -1.2, 'front', false), 'front');
+    });
+
+    test('직전 상태를 안 주면 T137 동작 그대로(12~25)', () {
+      expect(DirectionResolver.edgeSteerAngle(-1.5, -12), 0);
+      expect(DirectionResolver.edgeSteerAngle(-1.5, -11), 20);
+      expect(DirectionResolver.edgeSteerAngle(-1.5, -25), 0);
+      expect(DirectionResolver.edgeSteerAngle(-1.5, -26), isNull);
+    });
+
+    test('edgeSteerClass: 왼쪽 끝 left, 오른쪽 끝 right, 그 외 null', () {
+      expect(DirectionResolver.edgeSteerClass(-1.0), 'left');
+      expect(DirectionResolver.edgeSteerClass(1.3), 'right');
+      expect(DirectionResolver.edgeSteerClass(0.9), isNull);
+      expect(DirectionResolver.edgeSteerClass(null), isNull);
+    });
+  });
+
   group('DirectionResolver.isEdge (T102)', () {
     test('끝 규칙에서 나온 left/right와 이미 튼 front는 끝', () {
       expect(DirectionResolver.isEdge('left', -1.2, -3), isTrue); // 실기기 #3
