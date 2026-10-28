@@ -1269,6 +1269,7 @@ class FeedbackService {
     // 간격으로 다시 맞추고, 아니면 바로 멈춘다(틀린 방향 진동 방지).
     // T143: "이미 틀었음"도 중앙 쪽 방향(vibClass)·보통 단계로 타이머가 울린다.
     if (vibClass == 'left' || vibClass == 'right') {
+      _dropDeferredChime('redeviated');
       directionTimer.noteUpdate(now);
       final last = vibrationPolicy.lastVibratedAt;
       if (last != null) {
@@ -1371,33 +1372,85 @@ class FeedbackService {
   static Future<void> _playPlatformChime() =>
       _chimeChannel.invokeMethod<void>('play');
 
-  /// T139: 이탈(left/right)에서 직진(front)으로 돌아온 순간의 '딩'. TTS가 말하는
-  /// 중이면 건너뛴다(`chime` skip=tts) — 음성과 겹치면 둘 다 안 들린다.
+  /// T147: TTS 중 복귀 딩을 보류하는 상한. 10/28 기록에서 건너뛴 50번의 남은 음성
+  /// 시간은 중앙값 0.52초, 2초 넘는 것 3번(2.31·2.34·2.56초) — 2초면 재이탈이 아닌
+  /// 38번 중 37번을 살리고, 복귀 뒤 2초가 지난 딩은 "방금 돌아왔다"는 뜻이 흐려진다.
+  static const chimeDeferMax = Duration(seconds: 2);
+  DateTime? _chimeDeferredAt;
+  Timer? _chimeDeferTimer;
+
+  /// T139: 이탈(left/right)에서 직진(front)으로 돌아온 순간의 '딩'.
+  /// T147: TTS가 말하는 중이면 버리지 않고 보류한다(`chime` defer=tts) — 음성과 겹치면
+  /// 둘 다 안 들린다. 음성이 끝났을 때 아직 직진이면 울리고(ok after=tts dt), 그 사이
+  /// 다시 이탈하면(drop=redeviated) / 직진이 아니면(drop=state) /
+  /// [chimeDeferMax]가 지나면(drop=timeout) 버린다.
   @visibleForTesting
   Future<void> playRecoverChime() async {
     if (isSpeaking.value) {
-      EventLog.instance.log('chime', {'why': 'recover', 'skip': 'tts'});
+      if (_chimeDeferredAt != null) return; // 이미 보류 중 — 먼저 것을 유지
+      _chimeDeferredAt = clock();
+      _chimeDeferTimer = (timerFactory ?? Timer.new)(
+          chimeDeferMax, () => _dropDeferredChime('timeout'));
+      isSpeaking.addListener(_onSpeakingForChime);
+      EventLog.instance.log('chime', {'why': 'recover', 'defer': 'tts'});
       return;
     }
+    await _playChime(const {});
+  }
+
+  void _onSpeakingForChime() {
+    if (isSpeaking.value || _chimeDeferredAt == null) return;
+    if (clock().difference(_chimeDeferredAt!) > chimeDeferMax) {
+      _dropDeferredChime('timeout');
+    } else if (_lastRawClass != 'front') {
+      _dropDeferredChime('state', to: _lastRawClass);
+    } else {
+      final dt = _clearDeferredChime();
+      unawaited(_playChime({'after': 'tts', 'dt': dt}));
+    }
+  }
+
+  /// 보류를 풀고 보류한 뒤 지난 시간(ms)을 돌려준다.
+  int _clearDeferredChime() {
+    final dt = clock().difference(_chimeDeferredAt!).inMilliseconds;
+    _chimeDeferredAt = null;
+    _chimeDeferTimer?.cancel();
+    _chimeDeferTimer = null;
+    isSpeaking.removeListener(_onSpeakingForChime);
+    return dt;
+  }
+
+  void _dropDeferredChime(String why, {String? to}) {
+    if (_chimeDeferredAt == null) return;
+    final dt = _clearDeferredChime();
+    EventLog.instance.log('chime', {
+      'why': 'recover',
+      'drop': why,
+      'dt': dt,
+      if (to != null) 'to': to,
+    });
+  }
+
+  Future<void> _playChime(Map<String, Object> extra) async {
     final player = chimePlayer;
     if (player == null) {
-      EventLog.instance
-          .log('chime', {'why': 'recover', 'ok': false, 'fail': 'no_player'});
+      EventLog.instance.log('chime',
+          {'why': 'recover', ...extra, 'ok': false, 'fail': 'no_player'});
       return;
     }
     // 채널 실패·ToneGenerator 생성 실패는 소리 없이 넘어가고 사유만 남긴다.
     try {
       await player();
-      EventLog.instance.log('chime', {'why': 'recover', 'ok': true});
+      EventLog.instance.log('chime', {'why': 'recover', ...extra, 'ok': true});
     } on PlatformException catch (e) {
-      EventLog.instance
-          .log('chime', {'why': 'recover', 'ok': false, 'fail': e.code});
+      EventLog.instance.log(
+          'chime', {'why': 'recover', ...extra, 'ok': false, 'fail': e.code});
     } on MissingPluginException {
-      EventLog.instance
-          .log('chime', {'why': 'recover', 'ok': false, 'fail': 'no_channel'});
+      EventLog.instance.log('chime',
+          {'why': 'recover', ...extra, 'ok': false, 'fail': 'no_channel'});
     } catch (e) {
-      EventLog.instance
-          .log('chime', {'why': 'recover', 'ok': false, 'fail': '$e'});
+      EventLog.instance.log(
+          'chime', {'why': 'recover', ...extra, 'ok': false, 'fail': '$e'});
     }
   }
 
@@ -1516,6 +1569,7 @@ class FeedbackService {
     _drainTimer?.cancel();
     _dotBlockTimer?.cancel();
     _insertHoldTimer?.cancel();
+    if (_chimeDeferredAt != null) _clearDeferredChime();
     isSpeaking.value = false;
     isVibrating.value = false;
     isSpeaking.dispose();
