@@ -1016,10 +1016,10 @@ void main() {
       EventLog.instance.clearForTest();
       final s = FeedbackService();
       final ko = AppStrings.of(AppLanguage.ko);
-      // 왼쪽 끝 유도(가장자리 단계) → 이미 틀었음 3번.
+      // 왼쪽 끝 유도 → 이미 틀었음 3번. T146: 단계는 보정각 c로(20 → 단계 1).
       await s.alert('left', 0.9, angleDegrees: 20, atEdge: true,
           edgeSteerClass: 'left');
-      expect(s.vibrationPolicy.lastLevel, 2);
+      expect(s.vibrationPolicy.lastLevel, 1);
       for (var i = 0; i < 3; i++) {
         await s.alert('front', 0.9, angleDegrees: 0, atEdge: true,
             edgeSteerClass: 'left');
@@ -1051,9 +1051,10 @@ void main() {
       // 테스트 호스트는 진동기가 없다(ok=false) — 단계·간격이 기록되는지만 본다.
       EventLog.instance.clearForTest();
       final s = FeedbackService();
-      await s.alert('right', 0.9, angleDegrees: -20, atEdge: true);
+      // T146: 단계는 보정각 c로 — 끝 + c = −35 → 큰 이탈(2).
+      await s.alert('right', 0.9, angleDegrees: -35, atEdge: true);
       expect(s.vibrationPolicy.lastLevel, 2);
-      // 같은 방향, 단계가 내려감(가장자리 → 보통): 음성은 묶여도 진동 간격은 바로 0.6초(T139).
+      // 같은 방향, 단계가 내려감(큰 → 보통): 음성은 묶여도 진동 간격은 바로 0.6초(T139).
       await s.alert('right', 0.9, angleDegrees: -mild);
       expect(s.vibrationPolicy.lastLevel, 0);
       expect(s.vibrationPolicy.lastInterval,
@@ -1064,7 +1065,37 @@ void main() {
           .toList();
       expect(vib.first['kind'], 'right');
       expect(vib.first['lvl'], 2);
-      expect(vib.first['gap'], 250);
+      expect(vib.first['gap'], 300);
+      await s.dispose();
+    });
+
+    // T146: 끝에서 중앙 쪽으로 돌면(보정각 c가 줄면) 진동 단계가 2→1→0으로 내려간다.
+    test('T146: 끝에서 중앙 쪽으로 돌면 진동 단계 2→1→0, 간격 300→350→600', () async {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      final levels = <int>[];
+      final gaps = <int>[];
+      for (final c in <double>[35, 28, 24, 18, 15]) {
+        await s.alert('left', 0.9,
+            angleDegrees: c, atEdge: true, edgeSteerClass: 'left');
+        levels.add(s.vibrationPolicy.lastLevel);
+        gaps.add(s.vibrationPolicy.lastInterval.inMilliseconds);
+      }
+      expect(levels, [2, 2, 1, 1, 0]);
+      expect(gaps, [300, 300, 350, 350, 600]);
+      expect(s.isSevere, isFalse);
+      await s.dispose();
+    });
+
+    test('T146: 끝에서 직진(c ≈ 20)이 ±3° 흔들려도 진동 단계가 깜빡이지 않는다', () async {
+      final s = FeedbackService();
+      final levels = <int>[];
+      for (final c in <double>[21, 18.5, 19.2, 17.4, 20.9, 18, 19.6]) {
+        await s.alert('left', 0.9,
+            angleDegrees: c, atEdge: true, edgeSteerClass: 'left');
+        levels.add(s.vibrationPolicy.lastLevel);
+      }
+      expect(levels, everyElement(1));
       await s.dispose();
     });
 
@@ -1099,12 +1130,14 @@ void main() {
           .where((m) => (m['ev'] as String).startsWith('say'))
           .map((m) => m['text']);
 
-      test('상수로 꺼져 있고, 좌우·벗어남만 끈다', () {
+      test('상수로 꺼져 있고, 좌우·벗어남·멈춤 블록(T148)만 끈다', () {
         expect(SurfaceGuide.linearSideSpeechEnabled, isFalse);
         expect(SurfaceGuide.isMuted(SurfaceEvent.linearLeft), isTrue);
         expect(SurfaceGuide.isMuted(SurfaceEvent.linearRight), isTrue);
         expect(SurfaceGuide.isMuted(SurfaceEvent.linearLost), isTrue);
-        expect(SurfaceGuide.isMuted(SurfaceEvent.dotBlock), isFalse);
+        // T148: 멈춤 블록도 꺼짐(SurfaceGuide.dotBlockSpeechEnabled).
+        expect(SurfaceGuide.dotBlockSpeechEnabled, isFalse);
+        expect(SurfaceGuide.isMuted(SurfaceEvent.dotBlock), isTrue);
         expect(SurfaceGuide.isMuted(SurfaceEvent.linearOn), isFalse);
         expect(SurfaceGuide.isMuted(SurfaceEvent.road), isFalse);
       });
@@ -1127,17 +1160,16 @@ void main() {
         expect(lines('vib'), isEmpty, reason: '좌우·벗어남은 원래 진동 없음');
       });
 
-      // 멈춤 블록은 1.3초 보류 타이머(T118)가 있어 testWidgets로 시간을 돌린다.
-      testWidgets('멈춤 블록은 그대로 말하고, 선형 있음은 그대로 진동', (tester) async {
+      // T148: 멈춤 블록은 말하지 않고(보류 타이머도 없음) surf.mute에 남긴다. 진동은 원래 없다.
+      testWidgets('멈춤 블록은 말하지 않고 surf.mute만, 선형 있음은 그대로 진동', (tester) async {
         EventLog.instance.clearForTest();
         final s = FeedbackService();
+        await s.alert('none', 0.9);
         await s.surfaceAlert([SurfaceEvent.linearLost, SurfaceEvent.dotBlock]);
         await tester.pump(const Duration(seconds: 2));
-        expect(
-            lines('say')
-                .where((m) => m['text'] == ko.surfaceDotBlockMessage),
-            hasLength(1));
-        expect(lines('surf.mute').single['names'], ['linearLost']);
+        expect(spokenOrQueued(), isNot(contains(ko.surfaceDotBlockMessage)));
+        expect(lines('surf.mute').single['names'], ['linearLost', 'dotBlock']);
+        expect(lines('vib'), isEmpty, reason: '멈춤 블록은 원래 진동 없음');
         EventLog.instance.clearForTest();
         await FeedbackService().surfaceAlert([SurfaceEvent.linearOn]);
         expect(lines('surf.mute'), isEmpty);
@@ -1286,6 +1318,9 @@ void main() {
     final ko = AppStrings.of(AppLanguage.ko);
     final dotBlock = ko.surfaceDotBlockMessage;
     final approach = ko.approachAheadMessage;
+    // T148: 멈춤 블록 음성이 꺼져 있으면(SurfaceGuide.dotBlockSpeechEnabled) 보류 경로를
+    // 지나지 않는다. 다시 켜면 이 시험들이 그대로 돈다.
+    const dotSkip = !SurfaceGuide.dotBlockSpeechEnabled;
 
     List<Map<String, dynamic>> logged(String ev, String text) =>
         EventLog.instance.earlyLines
@@ -1293,7 +1328,7 @@ void main() {
             .where((m) => m['ev'] == ev && m['text'] == text)
             .toList();
 
-    testWidgets('(a) 횡단보도 없음에서 블록은 1.3초 뒤 발화', (tester) async {
+    testWidgets('(a) 횡단보도 없음에서 블록은 1.3초 뒤 발화', skip: dotSkip, (tester) async {
       EventLog.instance.clearForTest();
       final s = FeedbackService();
       await s.alert('none', 0.9);
@@ -1308,7 +1343,7 @@ void main() {
     });
 
     testWidgets("(b) 보류 중 none -> approach면 블록 취소, '앞에 횡단보도'만",
-        (tester) async {
+        skip: dotSkip, (tester) async {
       EventLog.instance.clearForTest();
       final s = FeedbackService();
       await s.alert('none', 0.9);
@@ -1321,7 +1356,7 @@ void main() {
       expect(logged('say', approach), hasLength(1));
     });
 
-    testWidgets('(c) 보류 중 front로 바뀌면 발화하지 않는다', (tester) async {
+    testWidgets('(c) 보류 중 front로 바뀌면 발화하지 않는다', skip: dotSkip, (tester) async {
       EventLog.instance.clearForTest();
       final s = FeedbackService();
       await s.alert('none', 0.9);
@@ -1334,7 +1369,7 @@ void main() {
     });
 
     testWidgets('(d) 마지막 상태가 위(front, hold 중 포함)·crossed면 즉시 발화',
-        (tester) async {
+        skip: dotSkip, (tester) async {
       // hold 동안에는 alert가 불리지 않아 마지막 상태가 front로 남는다.
       for (final last in ['front', 'crossed']) {
         EventLog.instance.clearForTest();
@@ -1347,7 +1382,7 @@ void main() {
       }
     });
 
-    testWidgets('(e) dispose는 보류 타이머를 취소한다', (tester) async {
+    testWidgets('(e) dispose는 보류 타이머를 취소한다', skip: dotSkip, (tester) async {
       EventLog.instance.clearForTest();
       final s = FeedbackService();
       await s.alert('none', 0.9);
@@ -1374,7 +1409,7 @@ void main() {
     });
 
     testWidgets('(g) 대기 칸이 찬 상태에서 같은 안내는 한 번만 대기로 기록된다',
-        (tester) async {
+        skip: dotSkip, (tester) async {
       // 최소 간격은 실제 시각으로 재므로, 이 시험은 실제 시간으로 돌린다.
       await tester.runAsync(() async {
         EventLog.instance.clearForTest();
@@ -1534,10 +1569,9 @@ void main() {
   });
 
   // T142: 같은 방향 반복 진동을 경고 호출 주기(약 272ms)와 분리 — 타이머가
-  // 마지막 진동 + 단계 간격(600/350/250ms)에 맞춰 울린다.
+  // 마지막 진동 + 단계 간격(600/350/250ms, T146부터 600/350/300ms)에 맞춰 울린다.
   group('반복 진동 타이머 (T142)', () {
     final t0 = DateTime(2026, 10, 27, 12, 0, 0);
-    const severe = 30.0;
 
     late _FakeSched sched;
     late FeedbackService s;
@@ -1599,15 +1633,15 @@ void main() {
       expect(times(), [0, 600, 1200, 1800, 2400]);
     });
 
-    test('즉시(1)는 350ms, 가장자리(2)는 250ms마다', () async {
-      await alertsEvery(272, 0, 1088, 'right', angle: -severe);
+    test('중간(1)은 350ms, 큰 이탈(2)은 300ms마다 (T146)', () async {
+      await alertsEvery(272, 0, 1088, 'right', angle: -25);
       expect(times(), [0, 350, 700, 1050]);
       s.stopDirectionVibration('test');
       vibs.clear();
       await s.alert('front', 0.9); // 이탈 상태를 비운다
       vibs.clear();
-      await alertsEvery(272, 2000, 2816, 'left', angle: 20, atEdge: true);
-      expect(times(), [2000, 2250, 2500, 2750]);
+      await alertsEvery(272, 2000, 2816, 'left', angle: 35, atEdge: true);
+      expect(times(), [2000, 2300, 2600]);
     });
 
     test('방향이 바뀌면 바로 새 방향으로 울리고, 앞 방향 타이머는 다시 울리지 않는다',
@@ -1723,20 +1757,21 @@ void main() {
       expect(times(), [0, 1000, 1600]);
     });
 
-    test('단계가 오르면 바로 다시 맞춘다 — 보통→가장자리, 이미 250ms 지났으면 바로',
+    test('단계가 오르면 바로 다시 맞춘다 — 보통→큰 이탈, 이미 300ms 지났으면 바로',
         () async {
       await alertAt(0, 'left', angle: mild);
-      await alertAt(272, 'left', angle: 20, atEdge: true);
-      await alertsEvery(272, 544, 1088, 'left', angle: 20, atEdge: true);
-      expect(times(), [0, 272, 522, 772, 1022]);
+      await alertAt(350, 'left', angle: 35, atEdge: true);
+      await alertsEvery(272, 622, 1166, 'left', angle: 35, atEdge: true);
+      expect(times(), [0, 350, 650, 950]);
     });
 
-    test('단계가 내려가면 바로 느려진다 — 가장자리→보통', () async {
-      await alertsEvery(272, 0, 544, 'left', angle: 20, atEdge: true);
-      expect(times(), [0, 250, 500]);
-      // 600ms에 보통으로 — 마지막 진동(500) + 600 = 1100까지 기다린다(750·1000 없음).
-      await alertsEvery(272, 600, 1416, 'left', angle: mild);
-      expect(times(), [0, 250, 500, 1100]);
+    test('단계가 내려가면 바로 느려진다 — 큰 이탈→보통', () async {
+      await alertsEvery(272, 0, 544, 'left', angle: 35, atEdge: true);
+      expect(times(), [0, 300]);
+      // 650ms에 보통으로(600에는 큰 이탈 박자로 한 번 더) — 마지막 진동(600) + 600 =
+      // 1200까지 기다린다(900 없음).
+      await alertsEvery(272, 650, 1466, 'left', angle: mild);
+      expect(times(), [0, 300, 600, 1200]);
     });
 
     test('경고 호출이 1초 넘게 없으면(판정 멈춤) 울리지 않고 멈춘다(why=stale)', () async {
@@ -2009,11 +2044,12 @@ void main() {
         .where((m) => m['ev'] == 'say.cancel' && m['why'] == 'same_dir')
         .toList();
 
-    test('단계: 가장자리 2 > 즉시 1 > 보통 0 (가장자리면 강도 무관)', () {
-      expect(FeedbackService.deviationLevel(severe: false, atEdge: false), 0);
-      expect(FeedbackService.deviationLevel(severe: true, atEdge: false), 1);
-      expect(FeedbackService.deviationLevel(severe: false, atEdge: true), 2);
-      expect(FeedbackService.deviationLevel(severe: true, atEdge: true), 2);
+    test('단계(T146): 보정각 |c|로 — 큰 2(30~) > 중간 1(20~30) > 보통 0', () {
+      expect(FeedbackService.deviationLevel(10), 0);
+      expect(FeedbackService.deviationLevel(20), 1);
+      expect(FeedbackService.deviationLevel(-30), 2);
+      expect(FeedbackService.deviationLevel(28, previous: 2), 2);
+      expect(FeedbackService.deviationLevel(null), 0);
       expect(FeedbackService.sameDirectionBundle, const Duration(seconds: 6));
     });
 
@@ -2028,14 +2064,15 @@ void main() {
 
     test('행1: 6초 안 내려감(가장자리 -> 보통, 가장자리 -> 즉시, 즉시 -> 보통)은 생략',
         () {
+      // T146: 단계는 보정각 c — 끝 + 35 = 큰 이탈(2), 25 = 중간(1).
       final s = FeedbackService();
-      expect(s.decideMessage('left', 20, t0, atEdge: true), leftEdge);
+      expect(s.decideMessage('left', 35, t0, atEdge: true), leftEdge);
       expect(s.decideMessage('left', mild, t0.add(ms(500))), isNull);
-      expect(s.decideMessage('left', severe, t0.add(ms(1000))), isNull);
+      expect(s.decideMessage('left', 25, t0.add(ms(1000))), isNull);
 
       final s2 = FeedbackService();
       expect(s2.decideMessage('right', -severe, t0), rightSevere);
-      // 래치가 2초 뒤 약함으로 내려가도 묶음 안이다.
+      // T146: 래치 없이 바로 약함으로 내려가도 묶음 안이다.
       expect(s2.decideMessage('right', -mild, t0.add(ms(500))), isNull);
       expect(s2.decideMessage('right', -mild, t0.add(ms(2600))), isNull);
       expect(s2.isSevere, isFalse);
@@ -2064,10 +2101,11 @@ void main() {
 
     test('행2: 같은 방향 단계 상승은 6초와 무관하게 바로 (보통 -> 즉시 -> 가장자리)',
         () {
+      // T146: 보통(10) -> 중간(25, '즉시') -> 끝 + 큰 이탈(35).
       final s = FeedbackService();
       expect(s.decideMessage('left', mild, t0), leftMild);
-      expect(s.decideMessage('left', severe, t0.add(ms(300))), leftSevere);
-      expect(s.decideMessage('left', 20, t0.add(ms(600)), atEdge: true),
+      expect(s.decideMessage('left', 25, t0.add(ms(300))), leftSevere);
+      expect(s.decideMessage('left', 35, t0.add(ms(600)), atEdge: true),
           leftEdge);
 
       final s2 = FeedbackService();
@@ -2610,10 +2648,11 @@ void main() {
     });
 
     test('즉시 -> 가장자리 상승도 재생 중이면 짧은 가장자리 문장', () {
+      // T146: 중간(25) -> 끝 + 큰 이탈(35)로 상승.
       final s = FeedbackService();
-      expect(s.decideMessage('left', severe, t0), leftSevere);
+      expect(s.decideMessage('left', 25, t0), leftSevere);
       playing(s, leftSevere);
-      expect(s.decideMessage('left', 20, t0.add(ms(500)), atEdge: true),
+      expect(s.decideMessage('left', 35, t0.add(ms(500)), atEdge: true),
           '오른쪽! 가장자리');
     });
 
