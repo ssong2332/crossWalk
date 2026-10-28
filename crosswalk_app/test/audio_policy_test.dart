@@ -583,20 +583,20 @@ void main() {
     });
   });
 
-  // T132 ④ + T136 + T139: 이탈 단계별 같은 방향 반복 간격(보통 0.6초·즉시 0.35초·가장자리 0.25초).
+  // T132 ④ + T136 + T139: 이탈 단계별 같은 방향 반복 간격(보통 0.6초·즉시 0.35초·큰 이탈 0.3초).
   group('VibrationPolicy — 단계별 반복 간격 (T132·T136·T139)', () {
     DateTime ms(int v) => t0.add(Duration(milliseconds: v));
 
-    test('간격 표: 보통 0.6초, 즉시 0.35초, 가장자리 0.25초 (T139)', () {
+    test('간격 표: 보통 0.6초, 즉시 0.35초, 큰 이탈 0.3초 (T139·T146)', () {
       expect(VibrationPolicy.repeatIntervalFor(0),
           const Duration(milliseconds: 600));
       expect(VibrationPolicy.repeatIntervalFor(1),
           const Duration(milliseconds: 350));
       expect(VibrationPolicy.repeatIntervalFor(2),
-          const Duration(milliseconds: 250));
+          const Duration(milliseconds: 300));
     });
 
-    test('보통(0)은 0.6초, 즉시(1)는 0.35초, 가장자리(2)는 0.25초마다 다시 낸다', () {
+    test('보통(0)은 0.6초, 즉시(1)는 0.35초, 큰 이탈(2)은 0.3초마다 다시 낸다', () {
       final n = VibrationPolicy();
       n.decidePattern('left', t0, 400);
       expect(n.decidePattern('left', ms(599), 400), isNull);
@@ -607,33 +607,33 @@ void main() {
       expect(v.decidePattern('left', ms(350), 400, level: 1), isNotNull);
       final e = VibrationPolicy();
       e.decidePattern('right', t0, 400, level: 2);
-      expect(e.decidePattern('right', ms(249), 400, level: 2), isNull);
-      expect(e.decidePattern('right', ms(250), 400, level: 2), isNotNull);
+      expect(e.decidePattern('right', ms(299), 400, level: 2), isNull);
+      expect(e.decidePattern('right', ms(300), 400, level: 2), isNotNull);
     });
 
-    test('단계가 오르면 새 간격으로 바로 맞춘다 — 보통→가장자리, 0.25초 지났으면 바로', () {
+    test('단계가 오르면 새 간격으로 바로 맞춘다 — 보통→큰 이탈, 0.3초 지났으면 바로', () {
       final v = VibrationPolicy();
       v.decidePattern('left', t0, 400);
-      expect(v.decidePattern('left', ms(200), 400, level: 2), isNull,
-          reason: '마지막 진동부터 0.25초 전');
-      expect(v.decidePattern('left', ms(250), 400, level: 2), isNotNull);
+      expect(v.decidePattern('left', ms(250), 400, level: 2), isNull,
+          reason: '마지막 진동부터 0.3초 전');
+      expect(v.decidePattern('left', ms(300), 400, level: 2), isNotNull);
     });
 
-    test('단계가 내려가면 바로 그 단계 간격으로 느려진다 — 가장자리→보통', () {
+    test('단계가 내려가면 바로 그 단계 간격으로 느려진다 — 큰 이탈→보통', () {
       final v = VibrationPolicy();
       v.decidePattern('right', t0, 400, level: 2);
-      expect(v.decidePattern('right', ms(250), 400, level: 2), isNotNull);
-      // 250ms에 마지막 진동. 보통으로 내려가면 0.6초를 기다린다.
-      expect(v.decidePattern('right', ms(500), 400, level: 0), isNull,
-          reason: '가장자리였다면 냈을 시각');
-      expect(v.decidePattern('right', ms(849), 400, level: 0), isNull);
-      expect(v.decidePattern('right', ms(850), 400, level: 0), isNotNull);
+      expect(v.decidePattern('right', ms(300), 400, level: 2), isNotNull);
+      // 300ms에 마지막 진동. 보통으로 내려가면 0.6초를 기다린다.
+      expect(v.decidePattern('right', ms(600), 400, level: 0), isNull,
+          reason: '큰 이탈이었다면 냈을 시각');
+      expect(v.decidePattern('right', ms(899), 400, level: 0), isNull);
+      expect(v.decidePattern('right', ms(900), 400, level: 0), isNotNull);
     });
 
-    test('단계가 내려가면 바로 느려진다 — 가장자리→즉시', () {
+    test('단계가 내려가면 바로 느려진다 — 큰 이탈→중간', () {
       final v = VibrationPolicy();
       v.decidePattern('left', t0, 400, level: 2);
-      expect(v.decidePattern('left', ms(250), 400, level: 1), isNull);
+      expect(v.decidePattern('left', ms(300), 400, level: 1), isNull);
       expect(v.decidePattern('left', ms(349), 400, level: 1), isNull);
       expect(v.decidePattern('left', ms(350), 400, level: 1), isNotNull);
     });
