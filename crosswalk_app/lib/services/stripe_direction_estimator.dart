@@ -305,7 +305,8 @@ class StripeAngleSmoother {
   double? get angleDegrees => _angle;
 
   /// 한 프레임의 추정 결과를 반영하고, 갱신된 각도를 돌려준다.
-  double? add(StripeDirectionEstimate? estimate) {
+  /// T146: [factor]를 주면 이번 프레임만 [smoothingFactor] 대신 쓴다(서 있을 때 더 느리게).
+  double? add(StripeDirectionEstimate? estimate, {double? factor}) {
     if (estimate == null || estimate.confidence < minConfidence) {
       _missStreak++;
       if (_missStreak >= missTolerance) _angle = null;
@@ -316,7 +317,8 @@ class StripeAngleSmoother {
     final current = _angle;
     _angle = current == null
         ? estimate.angleDegrees
-        : current + (estimate.angleDegrees - current) * smoothingFactor;
+        : current +
+            (estimate.angleDegrees - current) * (factor ?? smoothingFactor);
     return _angle;
   }
 
