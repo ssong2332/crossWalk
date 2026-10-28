@@ -1,0 +1,42 @@
+[검사 통과] 세션 214개 / 근사중복 클러스터 1026개 — 모두 단일 fold에 귀속
+  fold별 장수: [206, 206, 205, 205, 205]
+T150 304장, 묶음 30개(근사중복으로 합친 것 0), fold별 [61, 62, 60, 60, 61]
+[캐시] 신규 0장, 총 1331장
+  frozen  1/10 loss 0.2994
+  frozen  2/10 loss 0.2502
+  frozen  3/10 loss 0.2314
+  frozen  4/10 loss 0.2346
+  frozen  5/10 loss 0.2204
+  frozen  6/10 loss 0.2225
+  frozen  7/10 loss 0.2253
+  frozen  8/10 loss 0.2148
+  frozen  9/10 loss 0.2246
+  frozen  10/10 loss 0.2093
+  finetune 1/25 loss 0.1748
+  finetune 2/25 loss 0.1254
+  finetune 3/25 loss 0.1065
+  finetune 4/25 loss 0.0939
+  finetune 5/25 loss 0.0842
+  finetune 6/25 loss 0.0693
+  finetune 7/25 loss 0.0689
+  finetune 8/25 loss 0.0625
+  finetune 9/25 loss 0.0610
+  finetune 10/25 loss 0.0584
+  finetune 11/25 loss 0.0492
+  finetune 12/25 loss 0.0514
+  finetune 13/25 loss 0.0485
+  finetune 14/25 loss 0.0461
+  finetune 15/25 loss 0.0465
+  finetune 16/25 loss 0.0459
+  finetune 17/25 loss 0.0439
+  finetune 18/25 loss 0.0447
+  finetune 19/25 loss 0.0436
+  finetune 20/25 loss 0.0426
+  finetune 21/25 loss 0.0429
+  finetune 22/25 loss 0.0427
+  finetune 23/25 loss 0.0434
+  finetune 24/25 loss 0.0433
+  finetune 25/25 loss 0.0409
+C:\vibecoding\crossWalk\.claude\worktrees\t151-angle-retrain-a3a73a\train\t151_angle_retrain.py:507: DeprecationWarning: You are using the legacy TorchScript-based ONNX export. Starting in PyTorch 2.9, the new torch.export-based ONNX exporter has become the default. Learn more about the new export logic: https://docs.pytorch.org/docs/stable/onnx_export.html. For exporting control flow: https://pytorch.org/tutorials/beginner/onnx/export_control_flow_model_to_onnx_tutorial.html
+  torch.onnx.export(model, torch.randn(1, 3, ta.IMG_SIZE, ta.IMG_SIZE), NEW_ONNX,
+ONNX C:\vibecoding\crossWalk\.claude\worktrees\t151-angle-retrain-a3a73a\model\crosswalk_angle_t151.onnx ir=7 opset=12 sha256 e025bc55004e68304795d8214c54929ab728d2cbf40b7ba897a86c5a81cf6368
