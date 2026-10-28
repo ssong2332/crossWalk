@@ -1733,20 +1733,109 @@ void main() {
       await s.dispose();
     });
 
-    test('TTS가 말하는 중이면 건너뛴다(skip=tts)', () async {
-      EventLog.instance.clearForTest();
-      final s = FeedbackService();
-      var played = 0;
-      s.chimePlayer = () async => played++;
-      await s.alert('right', 0.9, angleDegrees: -mild);
-      s.isSpeaking.value = true;
-      await s.alert('front', 0.9);
-      await Future<void>.delayed(Duration.zero);
-      expect(played, 0);
-      expect(chimes().single, containsPair('skip', 'tts'));
-      expect(chimes().single['why'], 'recover');
-      s.isSpeaking.value = false;
-      await s.dispose();
+    // T147: TTS 중 복귀는 건너뛰지 않고 보류 → 음성이 끝났을 때 아직 직진이면 울린다.
+    group('TTS 중 복귀 보류 (T147)', () {
+      final t0 = DateTime(2026, 10, 28, 12);
+      late _FakeSched sched;
+      late FeedbackService s;
+      late int played;
+      late int gen;
+      var disposed = false;
+      setUp(() async {
+        EventLog.instance.clearForTest();
+        sched = _FakeSched(t0);
+        played = 0;
+        disposed = false;
+        s = FeedbackService()
+          ..clock = (() => sched.now)
+          ..timerFactory = sched.create
+          ..chimePlayer = () async => played++;
+        await s.alert('right', 0.9, angleDegrees: -mild);
+        // 이탈 경고를 말하는 중 — 새 세대라 앞 발화의 늦은 끝은 isSpeaking을 못 끈다.
+        gen = s.beginSpeechGeneration();
+        sched.advanceTo(t0.add(const Duration(milliseconds: 300)));
+        await s.alert('front', 0.9);
+        await Future<void>.delayed(Duration.zero);
+      });
+      tearDown(() async {
+        if (disposed) return;
+        s.isSpeaking.value = false;
+        await s.dispose();
+      });
+
+      test('TTS 중 복귀 → 바로는 안 울리고 defer=tts', () {
+        expect(played, 0);
+        expect(chimes().single, containsPair('defer', 'tts'));
+        expect(chimes().single['why'], 'recover');
+      });
+
+      test('TTS 중 복귀 → TTS 끝 → 아직 직진이면 울림(ok, after=tts, dt)', () async {
+        sched.advanceTo(t0.add(const Duration(milliseconds: 820)));
+        await s.alert('front', 0.9);
+        s.finishSpeechGeneration(gen);
+        await Future<void>.delayed(Duration.zero);
+        expect(played, 1);
+        expect(chimes().map((m) => m['defer'] ?? m['ok']), ['tts', true]);
+        expect(chimes().last, containsPair('after', 'tts'));
+        expect(chimes().last['dt'], 520);
+        // 한 번 울린 뒤에는 다음 TTS 끝에 또 울리지 않는다.
+        s.isSpeaking.value = true;
+        s.isSpeaking.value = false;
+        await Future<void>.delayed(Duration.zero);
+        expect(played, 1);
+      });
+
+      for (final cls in ['left', 'right']) {
+        test('TTS 중 다시 이탈($cls) → 취소(drop=redeviated), TTS가 끝나도 안 울림',
+            () async {
+          sched.advanceTo(t0.add(const Duration(milliseconds: 600)));
+          await s.alert(cls, 0.9, angleDegrees: cls == 'left' ? mild : -mild);
+          s.finishSpeechGeneration(gen);
+          await Future<void>.delayed(Duration.zero);
+          expect(played, 0);
+          expect(chimes().last, containsPair('drop', 'redeviated'));
+          expect(chimes().last['dt'], 300);
+          expect(chimes(), hasLength(2));
+        });
+      }
+
+      test('TTS 중 이미 틀었음(끝, 중앙 쪽 진동)도 재이탈로 취소', () async {
+        sched.advanceTo(t0.add(const Duration(milliseconds: 600)));
+        await s.alert('front', 0.9,
+            angleDegrees: 0, atEdge: true, edgeSteerClass: 'left');
+        s.finishSpeechGeneration(gen);
+        await Future<void>.delayed(Duration.zero);
+        expect(played, 0);
+        expect(chimes().last, containsPair('drop', 'redeviated'));
+      });
+
+      test('상한(2초) 초과 → 취소(drop=timeout), 뒤늦게 TTS가 끝나도 안 울림',
+          () async {
+        sched.advanceTo(t0.add(const Duration(milliseconds: 2300)));
+        expect(chimes().last, containsPair('drop', 'timeout'));
+        expect(chimes().last['dt'], FeedbackService.chimeDeferMax.inMilliseconds);
+        s.finishSpeechGeneration(gen);
+        await Future<void>.delayed(Duration.zero);
+        expect(played, 0);
+        expect(chimes(), hasLength(2));
+      });
+
+      test('TTS 끝날 때 직진이 아니면(none) 취소(drop=state, to=none)', () async {
+        sched.advanceTo(t0.add(const Duration(milliseconds: 600)));
+        await s.alert('none', 0.9);
+        s.finishSpeechGeneration(gen);
+        await Future<void>.delayed(Duration.zero);
+        expect(played, 0);
+        expect(chimes().last, containsPair('drop', 'state'));
+        expect(chimes().last['to'], 'none');
+      });
+
+      test('dispose()는 보류를 버리고 타이머를 멈춘다', () async {
+        await s.dispose();
+        disposed = true;
+        sched.advanceTo(t0.add(const Duration(seconds: 5)));
+        expect(chimes(), hasLength(1), reason: 'defer 줄만');
+      });
     });
 
     test('이탈 없이 직진이 이어지면 딩 없음', () async {
