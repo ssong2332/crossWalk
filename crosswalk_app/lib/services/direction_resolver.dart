@@ -110,120 +110,195 @@
 ///     | 그 외(끝 유도·일반 직진 등)       | 12 <= m <= 25       | 이미 틀었음           |
 ///   [previousAtEdge]가 직전 상태가 끝 규칙에서 나왔는지를 알린다(front + 끝 =
 ///   이미 틀었음). 21은 사용자 승인 값, 9는 T103 유지 기준과 같은 값(실기기 뒤 조정).
+///
+/// T146(2026-10-28, 사용자 승인 A~C, 오케스트레이터 확정 (a)안): **단계를 각도로 정한다.**
+///   10/28 실기기(`train/field_1028/report_angle.md` §1·§3): 단계 2가 위치(끝)에 묶여
+///   있어 큰 이탈 뒤 몸을 직진 쪽으로 돌려도 2→1→0으로 내려간 경우가 34번 중 0번,
+///   끝↔반대 방향 뒤집힘 31번(한 구간 19번, 앞 25초는 서 있음).
+///   - 보정각 c = 각도 + 끝 보정. 끝이면 가야 할 방향이 중앙 쪽으로
+///     [edgeSteerDegrees](20°) 옮겨진다: 왼쪽 끝 c = a + 20, 오른쪽 끝 c = a − 20,
+///     끝이 아니면 c = a. 각도가 없으면 끝에서 ±20, 아니면 없음.
+///     → 위 T98/T100/T137/T143 끝 표(±20 고정, '이미 틀었음' 12~25, 상한 25/21,
+///     하한 12/9)를 **대체**한다. '이미 틀었음'은 끝에서 |c| < 12인 상태(중앙 쪽
+///     8~32°)이고, 반대 방향 안내는 중앙 쪽으로 32° 넘게 돌았을 때만 나온다(종전 25°).
+///   - 방향 판정은 c에 T103 표(진입 12 / 유지 9)를 그대로 건다.
+///   - 단계([deviationLevel])도 |c|로: 0 = 12~20, 1 = 20~30, 2 = 30 이상.
+///     올라갈 때는 기준값, 내려갈 때는 [levelHysteresisDegrees](3°) 아래(17 / 27).
+///   - 끝 판정([edgeSide])에 떨림 방지: 들어갈 때 |p| >= 1.0, 나올 때 |p| < 0.8.
+///   - 끝이라는 사실은 단계가 아니라 음성·화면 문구로만 알린다([isEdge]).
+///   경계 상수는 모두 이 클래스에 모아 둔다(실기기 체감 뒤 조정).
 class DirectionResolver {
   DirectionResolver._();
 
   /// 이 크기 이상이면 이탈로 **들어간다**. 근거는 위 표(T103: 15 -> 12).
-  /// 끝 규칙의 "이미 중앙 쪽으로 틀었음"(T100 a안)도 이 값을 쓴다.
+  /// T146: 끝에서는 보정각 c에 건다.
   static const double deviationAngleDegrees = 12.0;
 
   /// T103: 이미 같은 방향 이탈이면 이 크기 이상인 동안 이탈을 **유지**한다
   /// (경계 떨림 방지). 이 밑으로 내려가야 직진으로 돌아온다.
   static const double recoverAngleDegrees = 9.0;
 
-  /// T98: |위치| 가 이 값 이상이면 "끝"으로 본다(라벨 단위: ±2가 끝).
+  /// T98: |위치| 가 이 값 이상이면 "끝"으로 **들어간다**(라벨 단위: ±2가 끝).
   static const double edgePosition = 1.0;
 
-  /// T98: 끝일 때 화살표·강도 판정에 쓰는 각도 크기. 부호는 중앙 쪽.
+  /// T146 B: 이미 끝이면 |위치|가 이 값 이상인 동안 끝을 **유지**한다.
+  /// 10/28 서 있을 때 위치 평균 −1.04, sd 0.24, 44%가 1.0 위(보고서 §3).
+  static const double edgeExitPosition = 0.8;
+
+  /// T98: 끝일 때 가야 할 방향을 중앙 쪽으로 옮기는 크기(도).
+  /// T146: 보정각 c = 각도 ± 이 값.
   static const double edgeSteerDegrees = 20.0;
 
-  /// T137: 끝 규칙 "이미 중앙 쪽으로 틀었음"(T100 a안)을 적용하는 각도 **상한**.
-  /// 이보다 크게 틀었으면 끝 규칙을 쓰지 않고 각도 표의 이탈 판정을 유지한다.
-  /// 근거: 10/26 밤 '그대로 가세요' + 32~42° 틀어짐 12장
-  /// (`train/field_1026/report.md` ⑥(a)). 25는 보고서 선택지 (a)의 값(사용자 승인).
-  static const double edgeTurnedMaxDegrees = 25.0;
+  /// T146 A: 단계 1(중간)·2(큰 이탈)로 **올라가는** |c| 기준(오케스트레이터 확정 (a)안).
+  /// 12/30은 T144 CV 표(`report_angle.md` §4-4)에서 중간 단계가 가장 나은 경계.
+  static const double level1Degrees = 20.0;
+  static const double level2Degrees = 30.0;
 
-  /// T143: 상한을 넘어 이탈로 나간 뒤 "이미 틀었음"으로 **다시 들어오는** 기준.
-  /// 이 값 이하로 내려와야 들어온다(나갈 때는 [edgeTurnedMaxDegrees] 초과).
-  static const double edgeTurnedReenterDegrees = 21.0;
+  /// T146 A: 단계가 **내려갈 때** 기준보다 이만큼 아래로 와야 내려간다(20→17, 30→27).
+  /// 끝에서 직진하면 c = 20이라 단계 0/1 경계에 정확히 걸린다 — 떨림 방지가 없으면
+  /// 서 있을 때 박자가 계속 바뀐다. 3°는 오케스트레이터 제안 값(`train/t146_report.md`).
+  static const double levelHysteresisDegrees = 3.0;
 
-  /// T143: "이미 틀었음"을 **유지**하는 하한. 들어갈 때는 [deviationAngleDegrees]
-  /// (12), 이미 그 상태면 이 값 이상인 동안 유지한다(T103 [recoverAngleDegrees]와 같은 9).
-  static const double edgeTurnedKeepDegrees = 9.0;
+  /// T146 C: 서 있을 때 각도·위치 EMA 계수(걸을 때 0.6, `camera_screen.dart`).
+  /// 0.3이면 응답이 약 2배 느려지고 떨림이 줄어든다(T70-3 표 기준 추정).
+  static const double stillSmoothingFactor = 0.3;
 
-  /// T98/T100: 위치가 끝이면 화살표·강도에 쓸 각도, 아니면 null.
-  ///   왼쪽 끝 → +20, 오른쪽 끝 → -20.
-  ///   단 각도 모델이 이미 중앙 쪽으로 ±[deviationAngleDegrees] 이상이면
-  ///   (사용자가 이미 틀었음) 0 — 직진 유지.
-  ///   T137: 중앙 쪽으로 [edgeTurnedMaxDegrees]를 넘게 틀었으면 null — 끝
-  ///   규칙을 쓰지 않고 각도 표로 넘긴다.
-  ///   T143: [previous]·[previousAtEdge](직전 최종 상태와 그것이 끝 규칙에서
-  ///   나왔는지)로 상한 25/21, 하한 12/9 떨림 방지를 건다(클래스 주석 표).
-  static double? edgeSteerAngle(double? position, double? angleDegrees,
-      {String? previous, bool previousAtEdge = false}) {
-    if (position == null) return null;
-    final double centerward;
-    final String overCapLabel;
-    if (position <= -edgePosition) {
-      centerward = -1.0;
-      overCapLabel = 'right';
-    } else if (position >= edgePosition) {
-      centerward = 1.0;
-      overCapLabel = 'left';
-    } else {
-      return null;
-    }
-    // 중앙 쪽으로 튼 크기(+). 왼쪽 끝이면 음수 각도가 중앙 쪽.
-    final m = angleDegrees == null ? null : centerward * angleDegrees;
-    final wasTurned = previous == 'front' && previousAtEdge;
-    final cap = previous == overCapLabel
-        ? edgeTurnedReenterDegrees
-        : edgeTurnedMaxDegrees;
-    if (m != null && m > cap) return null;
-    final low = wasTurned ? edgeTurnedKeepDegrees : deviationAngleDegrees;
-    final turned = m != null && m >= low;
-    return turned ? 0.0 : -centerward * edgeSteerDegrees;
+  /// T146 C: 서 있을 때 반대 방향 안내로 바꾸려면 반대 판정이 이만큼 이어져야 한다
+  /// ([StillOppositeDelay]).
+  static const stillOppositeHold = Duration(milliseconds: 1500);
+
+  /// T146 B: 끝 판정. −1 = 왼쪽 끝, +1 = 오른쪽 끝, 0 = 끝 아님.
+  /// [previousSide]가 같은 쪽 끝이면 |p| >= [edgeExitPosition]인 동안 유지한다.
+  static int edgeSide(double? position, {int previousSide = 0}) {
+    if (position == null) return 0;
+    if (position <= -edgePosition) return -1;
+    if (position >= edgePosition) return 1;
+    if (previousSide == -1 && position <= -edgeExitPosition) return -1;
+    if (previousSide == 1 && position >= edgeExitPosition) return 1;
+    return 0;
   }
 
-  /// T143: 끝 규칙이 중앙 쪽으로 보내는 상태(왼쪽 끝 → left "오른쪽으로",
+  /// T146 A: 보정각 c(가야 할 방향과 지금 방향의 차이, +면 오른쪽으로).
+  ///   왼쪽 끝 a + 20, 오른쪽 끝 a − 20, 끝 아님 a. 각도가 없으면 끝에서 ±20.
+  static double? correctedAngle(double? angleDegrees, int edgeSide) {
+    final shift = -edgeSide * edgeSteerDegrees;
+    if (angleDegrees == null) return edgeSide == 0 ? null : shift;
+    return angleDegrees + shift;
+  }
+
+  /// T143: 끝에서 중앙 쪽으로 보내는 상태(왼쪽 끝 → left "오른쪽으로",
   /// 오른쪽 끝 → right "왼쪽으로"). 끝이 아니면 null. "이미 틀었음"의 진동 방향에 쓴다.
-  static String? edgeSteerClass(double? position) {
-    if (position == null) return null;
-    if (position <= -edgePosition) return 'left';
-    if (position >= edgePosition) return 'right';
-    return null;
-  }
+  static String? edgeSteerClass(int edgeSide) =>
+      edgeSide < 0 ? 'left' : (edgeSide > 0 ? 'right' : null);
 
-  /// T102: 최종 상태 [resolvedLabel]이 끝 규칙에서 나왔는가(음성·화면 문구용).
-  ///   left/right + 끝 → 끝 안내("…가세요. 가장자리입니다" / "왼쪽 끝"),
-  ///   front + 끝 → 이미 중앙 쪽으로 틀었음("그대로 가세요").
+  /// T102/T146: 최종 상태 [resolvedLabel]에 끝 문구를 쓰는가.
+  ///   끝 + 중앙 쪽 이탈 → 끝 안내("…가세요. 가장자리입니다"),
+  ///   끝 + front → 이미 중앙 쪽으로 틀었음("그대로 가세요").
+  ///   끝 + 반대 방향(지나치게 돎) → 일반 이탈 안내(끝 아님).
   ///   none/approach면 옛 위치값이 남아 있어도 false.
-  /// T143: [previous]·[previousAtEdge]는 [resolve]에 넘긴 것과 같아야 한다.
-  static bool isEdge(
-          String resolvedLabel, double? position, double? angleDegrees,
-          {String? previous, bool previousAtEdge = false}) =>
-      isOnCrosswalk(resolvedLabel) &&
-      edgeSteerAngle(position, angleDegrees,
-              previous: previous, previousAtEdge: previousAtEdge) !=
-          null;
+  static bool isEdge(String resolvedLabel, int edgeSide) =>
+      edgeSide != 0 &&
+      (resolvedLabel == 'front' || resolvedLabel == edgeSteerClass(edgeSide));
 
   /// 분류기가 "횡단보도 위"라고 본 상태인가.
   static bool isOnCrosswalk(String label) =>
       label == 'front' || label == 'left' || label == 'right';
 
-  /// 분류기 [label]과 각도 모델의 [angleDegrees], 위치 모델의 [position]을
-  /// 합쳐 최종 상태를 낸다. 위치 규칙(T98)이 각도 규칙(T87)보다 앞선다.
+  /// 분류기 [label]과 각도 모델의 [angleDegrees], 끝 판정 [edgeSide]를 합쳐
+  /// 최종 상태를 낸다. T146: 보정각 c에 T103 표를 건다.
   /// [previous]는 직전 최종 상태 — 떨림 방지(T103)에 쓴다.
-  /// T143: [previousAtEdge]는 직전 상태가 끝 규칙에서 나왔는가(끝 떨림 방지).
   static String resolve(String label, double? angleDegrees,
-      {double? position, String? previous, bool previousAtEdge = false}) {
+      {int edgeSide = 0, String? previous}) {
     if (!isOnCrosswalk(label)) return label;
-    final steer = edgeSteerAngle(position, angleDegrees,
-        previous: previous, previousAtEdge: previousAtEdge);
-    if (steer != null) {
-      if (steer == 0) return 'front';
-      return steer > 0 ? 'left' : 'right';
-    }
-    if (angleDegrees == null) return label;
-    if (previous == 'left' && angleDegrees >= recoverAngleDegrees) {
-      return 'left';
-    }
-    if (previous == 'right' && angleDegrees <= -recoverAngleDegrees) {
-      return 'right';
-    }
-    if (angleDegrees >= deviationAngleDegrees) return 'left';
-    if (angleDegrees <= -deviationAngleDegrees) return 'right';
+    final c = correctedAngle(angleDegrees, edgeSide);
+    if (c == null) return label;
+    if (previous == 'left' && c >= recoverAngleDegrees) return 'left';
+    if (previous == 'right' && c <= -recoverAngleDegrees) return 'right';
+    if (c >= deviationAngleDegrees) return 'left';
+    if (c <= -deviationAngleDegrees) return 'right';
     return 'front';
+  }
+
+  /// T146 A: 이탈 단계 — |c|로 정한다. 0 = 보통(12~20), 1 = 중간(20~30), 2 = 큰(30~).
+  ///   [previous]는 같은 방향 직전 단계(방향이 바뀌었거나 처음이면 null).
+  ///   올라갈 때는 즉시, 내려갈 때는 기준 − [levelHysteresisDegrees] 밑으로 와야 한다.
+  ///   각도가 없으면 0.
+  static int deviationLevel(double? correctedAngleDegrees, {int? previous}) {
+    if (correctedAngleDegrees == null) return 0;
+    final m = correctedAngleDegrees.abs();
+    final up = m >= level2Degrees ? 2 : (m >= level1Degrees ? 1 : 0);
+    if (previous == null || previous <= up) return up;
+    if (previous >= 2 && m >= level2Degrees - levelHysteresisDegrees) return 2;
+    if (m >= level1Degrees - levelHysteresisDegrees) return 1;
+    return 0;
+  }
+}
+
+/// T146 C(사용자 승인 2026-10-28): 서 있을 때 반대 방향 안내로 바로 바꾸지 않는다.
+///
+/// 10/28 16:52:31~16:53:44(`train/field_1028/report_angle.md` §3): 서 있는 동안에도
+/// 폰이 ±20° 흔들려 '오른쪽으로…가장자리' ↔ '즉시 왼쪽으로'가 번갈아 나왔다.
+///
+/// 판정표 ([DirectionResolver.resolve] 결과 뒤에 본다, 시간은 인자로 주입):
+///   | # | 조건                                                         | 결과            |
+///   | 1 | 결과가 위(front/left/right)가 아님                           | 그대로, 기억 지움 |
+///   | 2 | 결과 front                                                   | 그대로 (후보 지움) |
+///   | 3 | 결과 left/right, 마지막 이탈 방향 없음 또는 같은 방향          | 그대로, 방향 기억 |
+///   | 4 | 반대 방향 + 서 있지 않음                                     | 그대로, 방향 기억 |
+///   | 5 | 반대 방향 + 서 있음 + 반대 판정이 [hold] 미만 이어짐           | **직전 상태 유지** (held) |
+///   | 6 | 반대 방향 + 서 있음 + [hold] 이상 이어짐                      | 바꿈, 방향 기억 |
+/// '마지막 이탈 방향' = 마지막으로 내보낸 left/right(사이에 front가 있어도 기억).
+/// '이어짐' = 반대 판정이 끊기지 않고(front·같은 방향이 끼면 처음부터) 계속된 시간.
+/// 막았을 때 내보내는 '직전 상태'가 위가 아니거나 반대 방향 그 자체면 front.
+class StillOppositeDelay {
+  StillOppositeDelay({this.hold = DirectionResolver.stillOppositeHold});
+
+  final Duration hold;
+
+  String? _lastDir;
+  String? _candidate;
+  DateTime? _since;
+
+  /// [resolved]를 받아 내보낼 상태를 돌려준다.
+  ({String label, bool held}) apply(String resolved,
+      {required String previous, required bool still, required DateTime now}) {
+    if (!DirectionResolver.isOnCrosswalk(resolved)) {
+      reset();
+      return (label: resolved, held: false);
+    }
+    if (resolved == 'front') {
+      _candidate = null;
+      _since = null;
+      return (label: resolved, held: false);
+    }
+    final last = _lastDir;
+    if (last == null || last == resolved || !still) {
+      _lastDir = resolved;
+      _candidate = null;
+      _since = null;
+      return (label: resolved, held: false);
+    }
+    if (_candidate != resolved) {
+      _candidate = resolved;
+      _since = now;
+    }
+    if (now.difference(_since!) >= hold) {
+      _lastDir = resolved;
+      _candidate = null;
+      _since = null;
+      return (label: resolved, held: false);
+    }
+    final keep =
+        DirectionResolver.isOnCrosswalk(previous) && previous != resolved
+            ? previous
+            : 'front';
+    return (label: keep, held: true);
+  }
+
+  void reset() {
+    _lastDir = null;
+    _candidate = null;
+    _since = null;
   }
 }
 
@@ -262,7 +337,8 @@ class FlipGuardDecision {
 ///   | 5 | 반대 방향 + 출처(끝/각도)가 다름 + 직전 방향에 마지막으로 있던  | **직전 상태 유지** (held) |
 ///   |   | 때부터 [window] 안                                            |             |
 ///   | 6 | 그 밖(반대 방향이지만 같은 출처, 또는 [window] 지남)           | 그대로      |
-/// 출처: [DirectionResolver.edgeSteerAngle]이 값을 내면 `edge`, 아니면 `angle`.
+/// 출처: 위치가 끝([DirectionResolver.edgePosition] 이상)이면 `edge`, 아니면 `angle`
+/// (T146: 끝 규칙이 보정각으로 바뀌어 위치만 본다 — 꺼져 있는 동안 동작 차이 없음).
 /// '마지막으로 있던 때' = 그 방향 상태였던 마지막 판정 시각(직진으로 바뀐 순간 포함).
 /// 막은 판정은 기억을 갱신하지 않는다 — 막는 것이 [window]를 넘겨 이어지지 않게.
 /// 1초는 사용자 결정 값이다(실기기 뒤 조정).
@@ -301,10 +377,7 @@ class EdgeAngleFlipGuard {
       if (previous == _dir) _lastInDir = now;
       return FlipGuardDecision(resolved);
     }
-    final source =
-        DirectionResolver.edgeSteerAngle(position, angleDegrees) != null
-            ? 'edge'
-            : 'angle';
+    final source = DirectionResolver.edgeSide(position) != 0 ? 'edge' : 'angle';
     final dir = _dir;
     final lastIn = _lastInDir;
     if (dir != null &&

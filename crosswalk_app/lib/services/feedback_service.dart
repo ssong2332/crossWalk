@@ -8,7 +8,7 @@ import '../localization/app_strings.dart';
 import 'audio_policy.dart';
 import 'direction_repeat_timer.dart';
 import 'event_log.dart';
-import 'severity_latch.dart';
+import 'direction_resolver.dart';
 import 'stillness_detector.dart';
 import 'surface_guide.dart';
 
@@ -38,16 +38,20 @@ class FeedbackService {
   @visibleForTesting
   Timer Function(Duration, void Function())? timerFactory;
 
-  /// T82: 이탈 강도가 프레임마다 뒤집혀 음성·진동이 반복되는 것을 막는다.
-  /// 화면(`camera_screen.dart`의 `_severe`)도 같은 값을 읽어, 문구·색과
-  /// 소리가 서로 다른 강도를 말하는 일이 없게 한다.
-  @visibleForTesting
-  final SeverityLatch severityLatch = SeverityLatch();
+  // T146: T82 `SeverityLatch`(심함→약함 2초 대기)는 쓰지 않는다. 단계를 보정각 |c|와
+  // 경계마다 3° 떨림 방지([DirectionResolver.deviationLevel])로 정한다 — 10/28 실기기에서
+  // 단계 1 다음 같은 방향 0으로 내려간 경우가 2번뿐이었다(F 31번,
+  // `train/field_1028/report_angle.md` §1 원인 D). 2초 안에 각도가 9° 밑으로 내려가
+  // 직진이 되어 '느려짐'이 느껴질 틈이 없었다. T82가 막던 재발화는 T120 6초 묶음이
+  // 같은 방향 하강·재상승을 묶고, 입력이 EMA 평활 각도라 튐이 작다(T88 주석).
 
   /// T133: 가속도로 판단한 '서 있음'. 서 있으면 같은 방향 음성 반복을 멈춘다
   /// ([decideMessage]). 표본은 `CameraScreen`이 [addAccelerometer]로 넣는다.
   @visibleForTesting
   final StillnessDetector stillness = StillnessDetector();
+
+  /// T146 C: 지금 서 있는가(`CameraScreen`이 각도·위치 평활과 반대 전환 지연에 쓴다).
+  bool isStillAt(DateTime now) => stillness.isStillAt(now);
 
   /// T137(사용자 승인 결정 5): 흔들림 값(`mot`)을 남기는 간격. `still`은 바뀌는
   /// 순간에만 남아 0.35~0.6 사이 분포를 볼 수 없었다(`train/field_1026/report.md`).
@@ -91,14 +95,15 @@ class FeedbackService {
   /// 말한다(`say.force` why=still_off).
   bool _stillOffPending = false;
 
-  /// 화면 표시용 — 지금 보고 중인 이탈 강도.
-  bool get isSevere => severityLatch.isSevere;
+  /// 화면 표시용 — 지금 이탈 단계가 1 이상('즉시' 문구)인가.
+  bool get isSevere => (_frameDeviationLevel ?? 0) >= 1;
 
-  /// T84: '크게 벗어남' 판정 각도(도). 이 값 이상 틀어지면 심함.
+  /// T84: '크게 벗어남'('즉시' 문구) 판정 각도(도). 이 값 이상 틀어지면 심함.
   /// 근거(누수 없는 CV, left/right 354장, 정답=|기하각도|>=30):
   ///   20도 재현율 89%/정밀도 90%, **25도 82%/92%**, 30도 72%/94%.
-  /// 25는 사용자가 고른 균형점(2026-09-13). 실기기 결과에 따라 여기만 바꾼다.
-  static const double severeAngleDegrees = 25.0;
+  /// T146(오케스트레이터 확정 (a)안): 단계 1 기준([DirectionResolver.level1Degrees],
+  /// 20)과 같다 — 단계 1 이상이면 '즉시' 문구. 종전 25.
+  static const double severeAngleDegrees = DirectionResolver.level1Degrees;
 
   DateTime? _lastAlertTime;
   String? _lastAlertClass;
@@ -125,11 +130,13 @@ class FeedbackService {
   /// 보고 묶음을 푼다(그 뒤 이탈은 새 이탈 — 바로 말함).
   DateTime? _frontSince;
 
-  /// T120: 이탈 경고 단계 — 가장자리 2 > 즉시(심함) 1 > 보통 0.
-  /// [decideMessage]가 문장을 고르는 순서 그대로다(사용자 확정 2026-10-20).
+  /// T120: 이탈 경고 단계. T146: 가장자리 여부가 아니라 보정각 |c|로 정한다 —
+  /// 큰 2(30~) > 중간 1(20~30) > 보통 0(~20), 내려갈 때 3° 떨림 방지
+  /// ([DirectionResolver.deviationLevel]). [previous]는 같은 방향 직전 단계.
   @visibleForTesting
-  static int deviationLevel({required bool severe, required bool atEdge}) =>
-      atEdge ? 2 : (severe ? 1 : 0);
+  static int deviationLevel(double? correctedAngleDegrees, {int? previous}) =>
+      DirectionResolver.deviationLevel(correctedAngleDegrees,
+          previous: previous);
 
   /// T124(사용자 확정 2026-10-21): 직전 [decideMessage]가 '빠른 상승' 문장을 골랐는가.
   /// 빠른 상승 = 앞 이탈 경고가 아직 재생 중인데 같은 방향 단계가 오름(T3).
@@ -161,7 +168,7 @@ class FeedbackService {
   // 쿨다운에 걸려 갱신이 안 될 수 있어 이 목적에 쓸 수 없다.
   String? _lastRawClass;
 
-  /// T82: [severityLatch]를 언제 초기화할지 판단하기 위한 직전 이탈 방향.
+  /// T82: 단계(T146: 떨림 방지의 직전 단계)를 언제 초기화할지 판단하기 위한 직전 이탈 방향.
   /// `_lastRawClass`는 `alert()`가 `decideMessage()`를 부르기 전에 이미
   /// 현재 클래스로 덮어써서 이 목적에 쓸 수 없다.
   String? _lastSeverityClass;
@@ -396,16 +403,16 @@ class FeedbackService {
   /// 미검출)이면 보수적으로 약함으로 본다.
   @visibleForTesting
   ///
-  /// T102: [atEdge]면(끝 규칙이 낸 left/right) 강도와 무관하게 끝 전용 문구
-  /// ("오른쪽으로 가세요. 가장자리입니다")를 낸다. 끝 각도는 ±20으로
-  /// 고정돼 심함(25) 기준에 닿지 않으므로 "즉시" 변형은 없다.
+  /// T102: [atEdge]면(끝 + 중앙 쪽 이탈) 강도와 무관하게 끝 전용 문구
+  /// ("오른쪽으로 가세요. 가장자리입니다")를 낸다. "즉시" 변형은 없다.
+  /// T146: [angleDegrees]는 보정각 c(끝이면 각도 ± 20)이고, 단계는 끝 여부와 무관하게
+  /// |c|로 정한다(끝은 문구로만 알린다).
   String? decideMessage(
       String detectedClass, double? angleDegrees, DateTime now,
       {bool atEdge = false}) {
     final stillOff = _stillOffPending;
     _stillOffPending = false;
     if (detectedClass != 'left' && detectedClass != 'right') {
-      severityLatch.reset();
       _lastSeverityClass = null;
       _frameDeviationLevel = null;
       // T120: front가 [recoveryHold] 이상 이어지면 회복 — 묶음을 푼다. 더 짧은
@@ -427,14 +434,12 @@ class FeedbackService {
     // 심한 것은 아니다). `_lastRawClass`는 alert()가 decideMessage를 부르기
     // **전에** 이미 현재 클래스로 덮어쓰므로 여기서는 쓸 수 없다 — 이 목적의
     // 전용 필드를 따로 둔다.
-    if (_lastSeverityClass != null && _lastSeverityClass != detectedClass) {
-      severityLatch.reset();
-    }
+    final previousLevel =
+        _lastSeverityClass == detectedClass ? _frameDeviationLevel : null;
     _lastSeverityClass = detectedClass;
 
-    final severe = severityLatch.update(
-        angleDegrees != null && angleDegrees.abs() >= severeAngleDegrees, now);
-    final level = deviationLevel(severe: severe, atEdge: atEdge);
+    final level = deviationLevel(angleDegrees, previous: previousLevel);
+    final severe = level >= 1;
     _frameDeviationLevel = level;
     final strings = AppStrings.of(_language);
     // T124: 빠른 상승(T3) — 같은 방향 단계가 올랐고, 앞 이탈 경고가 아직 재생 중.
