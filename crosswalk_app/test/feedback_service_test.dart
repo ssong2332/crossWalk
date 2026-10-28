@@ -1512,10 +1512,9 @@ void main() {
   });
 
   // T142: 같은 방향 반복 진동을 경고 호출 주기(약 272ms)와 분리 — 타이머가
-  // 마지막 진동 + 단계 간격(600/350/250ms)에 맞춰 울린다.
+  // 마지막 진동 + 단계 간격(600/350/250ms, T146부터 600/350/300ms)에 맞춰 울린다.
   group('반복 진동 타이머 (T142)', () {
     final t0 = DateTime(2026, 10, 27, 12, 0, 0);
-    const severe = 30.0;
 
     late _FakeSched sched;
     late FeedbackService s;
