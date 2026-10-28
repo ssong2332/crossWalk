@@ -126,6 +126,13 @@
 ///     올라갈 때는 기준값, 내려갈 때는 [levelHysteresisDegrees](3°) 아래(17 / 27).
 ///   - 끝 판정([edgeSide])에 떨림 방지: 들어갈 때 |p| >= 1.0, 나올 때 |p| < 0.8.
 ///   - 끝이라는 사실은 단계가 아니라 음성·화면 문구로만 알린다([isEdge]).
+///   - T146 ②(사용자 승인 2026-10-28 "추천대로 같이 넣어서 진행하자"): 끝 보정을 위치에
+///     따라 점점 키운다 — |p| [edgeRampStartPosition](0.5)→[edgePosition](1.0)에서
+///     중앙 쪽 0→20° 선형([edgeShiftDegrees]), 끝 판정과 무관하게. 계단(끝이면 20, 아니면 0)이면
+///     '이미 틀었음'(중앙 쪽 15°)인 채 위치가 0.8 밑으로 내려오는 순간 목표가 20°→0°로 바뀌어
+///     같은 각도가 반대 방향 안내가 됐다(10/28 재생 끝 경계 뒤집힘 18). 재생 비교
+///     (`train/t146_report.md`): 계단 28/18/12, 0.8→1.0(끝 판정 안만) 33/13/15,
+///     **0.5→1.0 25/12/18** (전체 뒤집힘/끝 경계 뒤집힘/2→1→0).
 ///   경계 상수는 모두 이 클래스에 모아 둔다(실기기 체감 뒤 조정).
 class DirectionResolver {
   DirectionResolver._();
@@ -146,8 +153,12 @@ class DirectionResolver {
   static const double edgeExitPosition = 0.8;
 
   /// T98: 끝일 때 가야 할 방향을 중앙 쪽으로 옮기는 크기(도).
-  /// T146: 보정각 c = 각도 ± 이 값.
+  /// T146: 보정각 c = 각도 + 끝 보정, |p| >= 1.0이면 끝 보정 = ±이 값.
   static const double edgeSteerDegrees = 20.0;
+
+  /// T146 ②: 끝 보정이 0에서 커지기 시작하는 |위치|. 여기서 [edgePosition]까지
+  /// 0→[edgeSteerDegrees] 선형.
+  static const double edgeRampStartPosition = 0.5;
 
   /// T146 A: 단계 1(중간)·2(큰 이탈)로 **올라가는** |c| 기준(오케스트레이터 확정 (a)안).
   /// 12/30은 T144 CV 표(`report_angle.md` §4-4)에서 중간 단계가 가장 나은 경계.
@@ -178,10 +189,22 @@ class DirectionResolver {
     return 0;
   }
 
+  /// T146 ②: 끝 보정(도, +면 오른쪽으로). 중앙 쪽으로 |p| 0.5→1.0에서 0→20 선형,
+  /// 1.0 이상 20. 왼쪽(p < 0)이면 +, 오른쪽이면 −. 위치가 없으면 [edgeSide]로 ±20/0.
+  static double edgeShiftDegrees(double? position, int edgeSide) {
+    if (position == null) return -edgeSide * edgeSteerDegrees;
+    final f = ((position.abs() - edgeRampStartPosition) /
+            (edgePosition - edgeRampStartPosition))
+        .clamp(0.0, 1.0);
+    return (position < 0 ? 1.0 : -1.0) * edgeSteerDegrees * f;
+  }
+
   /// T146 A: 보정각 c(가야 할 방향과 지금 방향의 차이, +면 오른쪽으로).
-  ///   왼쪽 끝 a + 20, 오른쪽 끝 a − 20, 끝 아님 a. 각도가 없으면 끝에서 ±20.
-  static double? correctedAngle(double? angleDegrees, int edgeSide) {
-    final shift = -edgeSide * edgeSteerDegrees;
+  ///   c = 각도 + [edgeShiftDegrees]. 왼쪽 끝(|p| >= 1) a + 20, 오른쪽 끝 a − 20,
+  ///   |p| <= 0.5면 a. 각도가 없으면 끝 판정일 때만 끝 보정, 아니면 없음.
+  static double? correctedAngle(double? angleDegrees, int edgeSide,
+      {double? position}) {
+    final shift = edgeShiftDegrees(position, edgeSide);
     if (angleDegrees == null) return edgeSide == 0 ? null : shift;
     return angleDegrees + shift;
   }
@@ -204,13 +227,13 @@ class DirectionResolver {
   static bool isOnCrosswalk(String label) =>
       label == 'front' || label == 'left' || label == 'right';
 
-  /// 분류기 [label]과 각도 모델의 [angleDegrees], 끝 판정 [edgeSide]를 합쳐
-  /// 최종 상태를 낸다. T146: 보정각 c에 T103 표를 건다.
+  /// 분류기 [label]과 각도 모델의 [angleDegrees], 끝 판정 [edgeSide]·위치 [position]을
+  /// 합쳐 최종 상태를 낸다. T146: 보정각 c에 T103 표를 건다.
   /// [previous]는 직전 최종 상태 — 떨림 방지(T103)에 쓴다.
   static String resolve(String label, double? angleDegrees,
-      {int edgeSide = 0, String? previous}) {
+      {int edgeSide = 0, double? position, String? previous}) {
     if (!isOnCrosswalk(label)) return label;
-    final c = correctedAngle(angleDegrees, edgeSide);
+    final c = correctedAngle(angleDegrees, edgeSide, position: position);
     if (c == null) return label;
     if (previous == 'left' && c >= recoverAngleDegrees) return 'left';
     if (previous == 'right' && c <= -recoverAngleDegrees) return 'right';

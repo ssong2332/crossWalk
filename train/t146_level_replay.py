@@ -3,12 +3,13 @@
 기록의 angle/pos/alert/still 줄을 시간 순서대로 넣어 두 규칙으로 상태·단계를 다시 계산한다.
   - 이전(18e954a, T143까지): 기록의 평활값 그대로, 끝이면 ±20/0, 이미 틀었음 12~25(25/21·12/9),
     단계 = 끝 2 / |각도|>=25 1(내려갈 때 2초 래치) / 0.
-  - T146: raw로 다시 평활(걸을 때 0.6, 서 있을 때 0.3), 끝 판정 1.0/0.8, 보정각 c = a ± 20,
+  - T146: raw로 다시 평활(걸을 때 0.6, 서 있을 때 0.3), 끝 판정 1.0/0.8, 보정각 c = a + 끝 보정
+    (|p| 0.5→1.0에서 중앙 쪽 0→20° 선형, `--step`이면 끝 판정일 때 ±20 계단),
     방향 12/9, 단계 20/30(내려갈 때 3° 아래), 서 있을 때 반대 방향 1.5초.
 앱의 실제 호출 시점(분류·각도·위치 경로)을 기록 줄로 근사하므로 수치는 추정이다.
 
 사용: PYTHONIOENCODING=utf-8 python train/t146_level_replay.py "logs/crosswalk log 18e954a.txt"
-     [--hyst 3] [--still-hold 1.5] [--still-alpha 0.3]
+     [--hyst 3] [--still-hold 1.5] [--still-alpha 0.3] [--ramp 0.5 1.0 | --step] [--gated]
 """
 import argparse
 import json
@@ -133,6 +134,8 @@ class NewRule:
         self.hold_ms = args.still_hold * 1000
         self.alpha_still = args.still_alpha
         self.use_still = not args.no_still
+        self.ramp = None if args.step else tuple(args.ramp)  # None = 계단(끝이면 20 그대로)
+        self.ungated = not args.gated
         self.reset()
 
     def reset(self):
@@ -141,6 +144,19 @@ class NewRule:
         self.side = 0
         self.last_dir = None
         self.cand, self.since = None, None
+
+    def shift(self, side, p):
+        """끝 보정(도, +면 오른쪽). T146 ②: |p|가 lo→hi에서 0→20 선형."""
+        if p is None:
+            return -side * STEER
+        sgn = -1.0 if p < 0 else 1.0
+        if side == 0 and not (self.ungated and self.ramp):
+            return 0.0
+        if self.ramp is None:
+            return -side * STEER
+        lo, hi = self.ramp
+        f = min(1.0, max(0.0, (abs(p) - lo) / (hi - lo)))
+        return -sgn * STEER * f
 
     def level_of(self, c, prev):
         if c is None:
@@ -173,7 +189,8 @@ class NewRule:
                 s = 0
             self.side = s
         side = self.side
-        c = (None if side == 0 else -side * STEER) if a is None else a - side * STEER
+        shift = self.shift(side, p)
+        c = (None if side == 0 else shift) if a is None else a + shift
         prev = self.label
         if c is None:
             label = prev if prev in ON else "front"
@@ -393,6 +410,11 @@ def main():
     ap.add_argument("--hyst", type=float, default=3.0)
     ap.add_argument("--still-hold", type=float, default=1.5)
     ap.add_argument("--still-alpha", type=float, default=0.3)
+    ap.add_argument("--ramp", type=float, nargs=2, default=[0.5, 1.0], metavar=("LO", "HI"),
+                    help="끝 보정을 |p| LO→HI에서 0→20° 선형(기본 0.5 1.0 = 앱)")
+    ap.add_argument("--step", action="store_true",
+                    help="끝 보정 계단(끝 판정이면 20, 아니면 0) — T146 1차(커밋 548caaf)")
+    ap.add_argument("--gated", action="store_true", help="--ramp를 끝 판정(1.0/0.8) 안에서만 적용")
     ap.add_argument("--no-still", action="store_true", help="C(서 있을 때 처리)를 끈 T146")
     ap.add_argument("--paths", action="store_true")
     args = ap.parse_args()

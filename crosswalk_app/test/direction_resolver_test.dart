@@ -184,6 +184,53 @@ void main() {
     });
   });
 
+  // T146 ②: 끝 보정을 |p| 0.5→1.0에서 0→20° 선형(끝 판정과 무관).
+  group('DirectionResolver T146 끝 보정 경사 (|p| 0.5→1.0)', () {
+    test('상수: 0.5부터 커져 1.0에서 20', () {
+      expect(DirectionResolver.edgeRampStartPosition, 0.5);
+    });
+
+    test('pos 0.9에서 보정각은 중간값(16°), 0.75에서 10°', () {
+      expect(DirectionResolver.edgeShiftDegrees(-0.9, -1), closeTo(16, 1e-9));
+      expect(DirectionResolver.edgeShiftDegrees(0.9, 1), closeTo(-16, 1e-9));
+      expect(DirectionResolver.edgeShiftDegrees(-0.75, 0), closeTo(10, 1e-9));
+      expect(DirectionResolver.correctedAngle(-15, -1, position: -0.9),
+          closeTo(1, 1e-9));
+    });
+
+    test('|p| <= 0.5는 0, >= 1.0은 20, 위치가 없으면 끝 판정으로 ±20/0', () {
+      expect(DirectionResolver.edgeShiftDegrees(0, 0), 0);
+      expect(DirectionResolver.edgeShiftDegrees(-0.5, 0), 0);
+      expect(DirectionResolver.edgeShiftDegrees(-1.0, -1), 20);
+      expect(DirectionResolver.edgeShiftDegrees(1.7, 1), -20);
+      expect(DirectionResolver.edgeShiftDegrees(null, -1), 20);
+      expect(DirectionResolver.edgeShiftDegrees(null, 0), 0);
+    });
+
+    test('이미 틀었음(중앙 쪽 15°)인 채 끝 경계(0.8)를 넘어도 반대 방향 R0가 안 나온다', () {
+      // 왼쪽 끝 −1.1에서 중앙 쪽으로 15° 틀고(a = −15) 중앙 쪽으로 걸어간다.
+      var side = 0;
+      var label = 'front';
+      final out = <String>[];
+      for (final p in <double>[-1.1, -0.95, -0.85, -0.79, -0.7, -0.62]) {
+        side = DirectionResolver.edgeSide(p, previousSide: side);
+        label = DirectionResolver.resolve('front', -15,
+            edgeSide: side, position: p, previous: label);
+        out.add(label);
+      }
+      expect(out, everyElement('front'));
+      // 계단(위치 없이 끝 판정만)이면 끝을 벗어나는 −0.79에서 바로 right(왼쪽으로)였다.
+      expect(DirectionResolver.resolve('front', -15, edgeSide: 0), 'right');
+    });
+
+    test('중앙 가까이(0.5 이하)까지 그 각도로 오면 그때 직진 쪽 안내(right)', () {
+      expect(
+          DirectionResolver.resolve('front', -15,
+              edgeSide: 0, position: -0.5, previous: 'front'),
+          'right');
+    });
+  });
+
   group('DirectionResolver.deviationLevel (T146 A: 12~20 / 20~30 / 30~, 내려갈 때 3°)', () {
     int lv(double? c, [int? prev]) =>
         DirectionResolver.deviationLevel(c, previous: prev);
