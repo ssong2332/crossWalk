@@ -1,0 +1,7 @@
+G0 exit=0
+G1 exit=0
+W0 exit=0
+W1 exit=0
+ALLDONE
+final exit=0
+bench exit=0
