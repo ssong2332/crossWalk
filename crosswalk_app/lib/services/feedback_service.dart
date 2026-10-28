@@ -195,6 +195,14 @@ class FeedbackService {
   /// T140: 오래 건넌 뒤 발밑 인도로 풀렸다 — 다음 none/approach에서 "건넜습니다".
   bool _crossedOnGroundRelease = false;
 
+  /// T149: 마지막으로 건넌 신호(crossed 또는 T140 발밑 인도 해제 건넘)를 본 시각.
+  DateTime? _lastCrossedAt;
+
+  /// T149: none -> 위도 진입으로 보되, 건넌 신호 뒤 이 시간 안이면 침묵한다
+  /// (건넌 직후 재진입 오발화 방지). 기록 근거(`train/t149_report.md`):
+  /// 건넌 직후 오검출 0.8·4.0·7.1초, 실제 다음 횡단보도 10.9초(10/27 12:23:03).
+  static const entryAfterCrossedQuiet = Duration(seconds: 9);
+
   /// T118: `CrossingHold`가 발밑이 인도라서 hold를 푼 직후 부른다.
   /// [holdStartedAt]은 그 hold가 시작된 시각(`CrossingHold.releasedHoldStartedAt`).
   /// T140: [crossed]면(`CrossingHold.releasedAfterLongCrossing`) 같은 프레임의
@@ -550,7 +558,13 @@ class FeedbackService {
     String detectedClass,
     DateTime now,
   ) {
-    final entering = previousClass == 'approach' &&
+    // T149(사용자 승인 2026-10-28): approach를 거치지 않은 none -> 위도 진입이다
+    // (10/28 E10·E24 누락). 단 건넌 신호 뒤 [entryAfterCrossedQuiet] 안이면 침묵.
+    final lastCrossed = _lastCrossedAt;
+    final fromNone = previousClass == 'none' &&
+        (lastCrossed == null ||
+            now.difference(lastCrossed) >= entryAfterCrossedQuiet);
+    final entering = (previousClass == 'approach' || fromNone) &&
         (detectedClass == 'front' ||
             detectedClass == 'left' ||
             detectedClass == 'right');
@@ -572,6 +586,7 @@ class FeedbackService {
     final groundCrossed = _crossedOnGroundRelease &&
         (detectedClass == 'none' || detectedClass == 'approach');
     _crossedOnGroundRelease = false;
+    if (groundCrossed || detectedClass == 'crossed') _lastCrossedAt = now;
     if (groundCrossed ||
         detectedClass == 'crossed' ||
         detectedClass == 'front' ||

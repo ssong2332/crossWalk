@@ -508,6 +508,59 @@ void main() {
       );
     });
 
+    // T149: approach 없이 none -> 위도 진입(10/28 E10·E24), 건넌 직후는 제외.
+    test('none -> front/left/right는 진입 안내를 낸다 (T149)', () {
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+      for (final on in ['front', 'left', 'right']) {
+        expect(FeedbackService().decidePhaseMessage('none', on, t0),
+            '횡단보도 진입.', reason: 'none -> $on');
+      }
+      expect(FeedbackService().decidePhaseMessage('crossed', 'front', t0),
+          isNull, reason: 'crossed -> 위는 여전히 침묵');
+    });
+
+    test('crossed 뒤 9초 안의 none -> 위는 침묵, 9초부터 진입 (T149)', () {
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+      final s = FeedbackService();
+      expect(s.decidePhaseMessage('front', 'crossed', t0), isNotNull);
+      s.decidePhaseMessage('crossed', 'none', t0.add(const Duration(seconds: 1)));
+      expect(
+          s.decidePhaseMessage(
+              'none', 'front', t0.add(const Duration(milliseconds: 8999))),
+          isNull);
+      expect(
+          s.decidePhaseMessage(
+              'none', 'front', t0.add(const Duration(seconds: 9))),
+          '횡단보도 진입.');
+      expect(FeedbackService.entryAfterCrossedQuiet,
+          const Duration(seconds: 9));
+    });
+
+    test('발밑 인도 해제 건넘(T140) 뒤 0.8초 none -> 위는 침묵 (T149, 10/28 16:29:48)',
+        () {
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+      final s = FeedbackService()..noteHoldReleasedByGround(t0, crossed: true);
+      expect(s.decidePhaseMessage('front', 'none', t0), '횡단보도를 건넜습니다.');
+      expect(
+          s.decidePhaseMessage(
+              'none', 'front', t0.add(const Duration(milliseconds: 875))),
+          isNull);
+      expect(
+          s.decidePhaseMessage(
+              'none', 'right', t0.add(const Duration(seconds: 30))),
+          '횡단보도 진입.');
+    });
+
+    test('approach -> 위는 건넌 직후라도 지금처럼 진입 (T149 범위 밖)', () {
+      final t0 = DateTime(2026, 1, 1, 12, 0, 0);
+      final s = FeedbackService();
+      s.decidePhaseMessage('front', 'crossed', t0);
+      expect(
+          s.decidePhaseMessage(
+              'approach', 'front', t0.add(const Duration(seconds: 2))),
+          '횡단보도 진입.');
+    });
+
     test('같은 전이가 3초 안에 반복되면(떨림) 억제한다', () {
       final service = FeedbackService();
       final t0 = DateTime(2026, 1, 1, 12, 0, 0);
