@@ -9,7 +9,7 @@
 ///   | 1   | 직전 3초 안에 앞 인도 많음 -> 앞 차도 많음(전이)       | road (+3초마다) |
 ///   | 2   | 전이 없이 앞 차도 많음 — 재무장 후 처음 1회            | road          |
 ///   | 3   | 앞 점형 없음 -> 있음 (3초 없었다가 다시 나타나야 재무장) | dotBlock      |
-///   | 5   | 앞 선형 없음 -> 있음                                  | linearOn      |
+///   | 5   | 앞 선형 없음 -> 있음 (T148: 앞 칸 15% 이상)            | linearOn      |
 ///   | 6·7 | 앞 선형이었다가 앞 없음 + 오른쪽/왼쪽 선형 있음         | linearRight/Left |
 ///   | 8   | 앞 선형이었다가 세 칸 모두 선형 없음이 2초 이상          | linearLost    |
 ///   | 4·9·10 | 분류기 상태가 none/crossed가 아님(approach·위·hold·무판정) | 없음(상태 초기화) |
@@ -172,6 +172,12 @@ class SurfaceGuide {
   static const roadRepeat = Duration(seconds: 3);
   static const lostAfter = Duration(seconds: 2);
 
+  /// T148(오케스트레이터 결정, 2026-10-28): 앞 칸 '선형 있음'(5번, 진동) 기준만 5% → 15%
+  /// (연속 2회 그대로). 10/28 낮 오인 6건(그림자 줄무늬·벽돌·판석) 중 4건이 막히고
+  /// 맞은 15건(10/28 4 + 10/26 밤 11) 중 14건이 남는다 — 기록 재생 `train/t148_tactile_yellow.py`,
+  /// `train/t148_report.md`. 옆 칸(6·7번)과 잃음(8번)은 [presentRatio] 그대로.
+  static const linearOnRatio = 0.15;
+
   /// T137(사용자 승인 결정 2-b, 2026-10-27): '점자블록 왼쪽/오른쪽/벗어났습니다'
   /// (linearLeft/linearRight/linearLost)는 **말하지 않는다**. 판정은 그대로 내고
   /// 기록(`surf.ev`, `surf.mute`)에만 남긴다. 10/26 밤 실기기에서 판정 가능한
@@ -180,12 +186,21 @@ class SurfaceGuide {
   /// 차도는 그대로다. 코드는 지우지 않고 상수로 끈다 — 다시 켤 때 이 값만 바꾼다.
   static const linearSideSpeechEnabled = false;
 
-  /// T137: [e]를 말하지 않고 기록만 남길 것인가([linearSideSpeechEnabled]).
+  /// T148(사용자 승인 추천안 F "그래도 줄지 않으면 끈다", 오케스트레이터 결정 2026-10-28):
+  /// '멈춤 블록입니다'(dotBlock)를 **말하지 않는다**. 10/28 낮 말한 16건 중 7건이 그림자
+  /// 줄무늬·벽돌·판석 오인이었고, 노란색 확인·연속 확인 상향·비율 상향 모두 맞은 건을
+  /// 크게 잃었다(`train/t148_report.md`). 판정은 그대로 내고 `surf.ev`·`surf.mute`에 남긴다.
+  /// 멈춤 블록은 원래 진동이 없다. 학습 보강 뒤 다시 켤 때 이 값만 바꾼다.
+  static const dotBlockSpeechEnabled = false;
+
+  /// T137·T148: [e]를 말하지 않고 기록만 남길 것인가
+  /// ([linearSideSpeechEnabled], [dotBlockSpeechEnabled]).
   static bool isMuted(SurfaceEvent e) =>
-      !linearSideSpeechEnabled &&
-      (e == SurfaceEvent.linearRight ||
-          e == SurfaceEvent.linearLeft ||
-          e == SurfaceEvent.linearLost);
+      (!linearSideSpeechEnabled &&
+          (e == SurfaceEvent.linearRight ||
+              e == SurfaceEvent.linearLeft ||
+              e == SurfaceEvent.linearLost)) ||
+      (!dotBlockSpeechEnabled && e == SurfaceEvent.dotBlock);
 
   /// 노면 안내가 말할 수 있는 분류기 상태(판정표 §2 모드).
   static bool isActiveState(String state) => state == 'none' || state == 'crossed';
@@ -274,7 +289,7 @@ class SurfaceGuide {
     }
 
     // 5~8: 선형.
-    _linFront.update(front.linear >= presentRatio);
+    _linFront.update(front.linear >= linearOnRatio);
     if (_linFront.value) {
       if (!_onLine) out.add(SurfaceEvent.linearOn);
       _onLine = true;

@@ -66,7 +66,7 @@
 | `caut.ev` | 주의 구역 판정표 이벤트 (T105) | `names`(manholeGrating/treeZone 목록), `st` | `_updateSurfaceGuidance` |
 | `hold.end` | "횡단 중" 유지를 발밑이 인도라서 일찍 풂 (T118 — 10초 만료·위·crossed로 풀린 것은 `state`만 남음) | `why`(ground), `to`(이번 판정), `said`(T140: 위 지속 >= 6초라 "횡단보도를 건넜습니다"를 요청했는가 — 실제 재생 여부는 뒤따르는 `say` 줄), `dur`(T140: 위로 들어온 뒤 해제까지 초, 소수 3자리. 들어온 시각을 모르면 null) | `CameraScreen` 분류 결과 처리 |
 | `surf.ev` | 노면 판정표 이벤트 | `names`(road/dotBlock/linearOn/linearRight/linearLeft/linearLost 목록), `st` | `_updateSurfaceGuidance` |
-| `surf.mute` | T137: 노면 이벤트 중 말하지 않고 기록만 남긴 것 — '점자블록 왼쪽/오른쪽/벗어났습니다'(`SurfaceGuide.linearSideSpeechEnabled` = false, 10/26 밤 판정 가능 8건 중 1건만 맞음). 같은 판정의 `surf.ev` 바로 뒤에 나온다 | `names`(linearRight/linearLeft/linearLost 목록) | `FeedbackService.surfaceAlert` |
+| `surf.mute` | T137: 노면 이벤트 중 말하지 않고 기록만 남긴 것 — '점자블록 왼쪽/오른쪽/벗어났습니다'(`SurfaceGuide.linearSideSpeechEnabled` = false, 10/26 밤 판정 가능 8건 중 1건만 맞음). 같은 판정의 `surf.ev` 바로 뒤에 나온다 | `names`(linearRight/linearLeft/linearLost 목록; T148부터 dotBlock도 — '멈춤 블록입니다'를 `SurfaceGuide.dotBlockSpeechEnabled` = false로 끔) | `FeedbackService.surfaceAlert` |
 | `state` | 화면 상태가 바뀜 (무판정·오류 포함, 1초 안) | `from`, `to`, `edge`, `conf` | `_logStateIfChanged` |
 | `still` | T133: 가속도로 본 '서 있음'이 바뀜 (`StillnessDetector`) / 가속도 센서 오류 | `on`(true = 서 있음), `mot`(바뀐 순간의 움직임 크기 = 최근 1초 \|a\| 표준편차, m/s²) / 오류면 `on`=false, `why`=error | `FeedbackService.addAccelerometer`, `CameraScreen._startStillness` |
 | `mot` | T137: 흔들림 값 1초마다 — 기록 남기기가 켜져 있을 때만, 창(최근 1초 표본 5개 이상)이 찬 뒤부터 | `mot`(최근 1초 \|a\| 표준편차, m/s², 소수 3자리 — `still`의 `mot`과 같은 값), `still`(지금 서 있음 판정, 센서 멈춤은 보지 않음) | `FeedbackService.addAccelerometer` |
