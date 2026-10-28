@@ -1,4 +1,7 @@
-"""T150: 10/25~28 실기기 프레임 각도 라벨링 도구 (시범 50장 → 이후 전체에도 사용).
+"""T150: 10/25~28 실기기 프레임 각도 라벨링 도구 (시범 50장, 본 목록 413장).
+
+긋는 규칙 (사용자 확인, 2026-10-28): 줄무늬 방향으로 긋는다(기존 라벨과 같은 기준).
+비스듬한 횡단보도는 S(건너뛰기).
 
 `label_angles.py`(T81)·`label_surface_on.py`(T94)와 같은 규약이다:
   - 선을 드래그해 긋는다. 화면 위쪽=0도, 시계방향=+, 반시계방향=−.
@@ -19,7 +22,8 @@
     R=선 다시 긋기  Q=종료
 
 실행 (저장소 루트에서):
-    python train/t150_label_angles.py --root C:/vibecoding/crossWalk
+    python train/t150_label_angles.py --root C:/vibecoding/crossWalk                 (시범 50장)
+    python train/t150_label_angles.py --root C:/vibecoding/crossWalk         --list train/t150_main413.csv --out train/angle_labels_t150_main.csv         (본 413장)
 시간 요약만 보기:
     python train/t150_label_angles.py --summary
 """
@@ -94,8 +98,8 @@ class Labeler:
         self.info = tk.Label(root, font=("Malgun Gothic", 11), anchor="w", justify="left")
         self.info.pack(fill="x", padx=8, pady=(6, 0))
         help_text = (
-            "규칙: 「이 자리에서 건너려면 걸어갈 방향」을 사진에 보이는 대로 드래그해서 긋기 "
-            "(label_angles.py와 같은 규칙). 위험하다고 더 꺾지 않기.\n"
+            "규칙: 줄무늬 방향으로 드래그해서 긋기 (기존 라벨과 같은 기준). "
+            "비스듬한 횡단보도·애매하면 S. 위험하다고 더 꺾지 않기.\n"
             "드래그=선   Enter/Space=저장 후 다음   S=건너뛰기(안 보이거나 애매)   "
             "Z=이전 장   R=다시 긋기   Q=종료(다음에 이어서)"
         )
@@ -202,7 +206,7 @@ class Labeler:
         self.show()
 
 
-def summary(out):
+def summary(out, n_list=0):
     tp = times_path(out)
     if not os.path.exists(tp):
         print(f"시간 기록 없음: {tp}")
@@ -220,7 +224,10 @@ def summary(out):
         print(f"장당(ok·skipped 기록 {len(done)}개): 중앙값 {statistics.median(done):.1f}초, "
               f"평균 {statistics.mean(done):.1f}초, 최대 {max(done):.1f}초")
         per = sum(secs) / len(labels) if labels else 0
-        print(f"전체 시간 ÷ 장수 = {per:.1f}초/장 → 680장이면 약 {per * 680 / 3600:.1f}시간")
+        print(f"전체 시간 ÷ 장수 = {per:.1f}초/장")
+        if n_list:
+            left = n_list - len(labels)
+            print(f"목록 {n_list}장 중 남은 {left}장 → 같은 속도면 약 {per * left / 60:.0f}분")
     return 0
 
 
@@ -233,8 +240,9 @@ def main():
     ap.add_argument("--out", default=os.path.join(HERE, "angle_labels_t150_pilot.csv"))
     ap.add_argument("--summary", action="store_true", help="시간 요약만 출력")
     a = ap.parse_args()
+    n_list = len(load_targets(a.list, a.root)) if os.path.exists(a.list) else 0
     if a.summary:
-        return summary(a.out)
+        return summary(a.out, n_list)
 
     all_targets = load_targets(a.list, a.root)
     missing = [p for _, _, p in all_targets if not os.path.exists(p)]
@@ -247,12 +255,12 @@ def main():
     targets = [t for t in all_targets if (t[0], t[1]) not in done]
     print(f"대상 {len(all_targets)}장 중 완료 {len(all_targets) - len(targets)}장 -> 남은 {len(targets)}장")
     if not targets:
-        return summary(a.out)
+        return summary(a.out, n_list)
 
     root = tk.Tk()
     Labeler(root, targets, a.out)
     root.mainloop()
-    return summary(a.out)
+    return summary(a.out, n_list)
 
 
 if __name__ == "__main__":
