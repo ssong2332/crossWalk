@@ -1046,12 +1046,14 @@ void main() {
           .where((m) => (m['ev'] as String).startsWith('say'))
           .map((m) => m['text']);
 
-      test('상수로 꺼져 있고, 좌우·벗어남만 끈다', () {
+      test('상수로 꺼져 있고, 좌우·벗어남·멈춤 블록(T148)만 끈다', () {
         expect(SurfaceGuide.linearSideSpeechEnabled, isFalse);
         expect(SurfaceGuide.isMuted(SurfaceEvent.linearLeft), isTrue);
         expect(SurfaceGuide.isMuted(SurfaceEvent.linearRight), isTrue);
         expect(SurfaceGuide.isMuted(SurfaceEvent.linearLost), isTrue);
-        expect(SurfaceGuide.isMuted(SurfaceEvent.dotBlock), isFalse);
+        // T148: 멈춤 블록도 꺼짐(SurfaceGuide.dotBlockSpeechEnabled).
+        expect(SurfaceGuide.dotBlockSpeechEnabled, isFalse);
+        expect(SurfaceGuide.isMuted(SurfaceEvent.dotBlock), isTrue);
         expect(SurfaceGuide.isMuted(SurfaceEvent.linearOn), isFalse);
         expect(SurfaceGuide.isMuted(SurfaceEvent.road), isFalse);
       });
@@ -1074,17 +1076,16 @@ void main() {
         expect(lines('vib'), isEmpty, reason: '좌우·벗어남은 원래 진동 없음');
       });
 
-      // 멈춤 블록은 1.3초 보류 타이머(T118)가 있어 testWidgets로 시간을 돌린다.
-      testWidgets('멈춤 블록은 그대로 말하고, 선형 있음은 그대로 진동', (tester) async {
+      // T148: 멈춤 블록은 말하지 않고(보류 타이머도 없음) surf.mute에 남긴다. 진동은 원래 없다.
+      testWidgets('멈춤 블록은 말하지 않고 surf.mute만, 선형 있음은 그대로 진동', (tester) async {
         EventLog.instance.clearForTest();
         final s = FeedbackService();
+        await s.alert('none', 0.9);
         await s.surfaceAlert([SurfaceEvent.linearLost, SurfaceEvent.dotBlock]);
         await tester.pump(const Duration(seconds: 2));
-        expect(
-            lines('say')
-                .where((m) => m['text'] == ko.surfaceDotBlockMessage),
-            hasLength(1));
-        expect(lines('surf.mute').single['names'], ['linearLost']);
+        expect(spokenOrQueued(), isNot(contains(ko.surfaceDotBlockMessage)));
+        expect(lines('surf.mute').single['names'], ['linearLost', 'dotBlock']);
+        expect(lines('vib'), isEmpty, reason: '멈춤 블록은 원래 진동 없음');
         EventLog.instance.clearForTest();
         await FeedbackService().surfaceAlert([SurfaceEvent.linearOn]);
         expect(lines('surf.mute'), isEmpty);
@@ -1233,6 +1234,9 @@ void main() {
     final ko = AppStrings.of(AppLanguage.ko);
     final dotBlock = ko.surfaceDotBlockMessage;
     final approach = ko.approachAheadMessage;
+    // T148: 멈춤 블록 음성이 꺼져 있으면(SurfaceGuide.dotBlockSpeechEnabled) 보류 경로를
+    // 지나지 않는다. 다시 켜면 이 시험들이 그대로 돈다.
+    const dotSkip = !SurfaceGuide.dotBlockSpeechEnabled;
 
     List<Map<String, dynamic>> logged(String ev, String text) =>
         EventLog.instance.earlyLines
@@ -1240,7 +1244,7 @@ void main() {
             .where((m) => m['ev'] == ev && m['text'] == text)
             .toList();
 
-    testWidgets('(a) 횡단보도 없음에서 블록은 1.3초 뒤 발화', (tester) async {
+    testWidgets('(a) 횡단보도 없음에서 블록은 1.3초 뒤 발화', skip: dotSkip, (tester) async {
       EventLog.instance.clearForTest();
       final s = FeedbackService();
       await s.alert('none', 0.9);
@@ -1255,7 +1259,7 @@ void main() {
     });
 
     testWidgets("(b) 보류 중 none -> approach면 블록 취소, '앞에 횡단보도'만",
-        (tester) async {
+        skip: dotSkip, (tester) async {
       EventLog.instance.clearForTest();
       final s = FeedbackService();
       await s.alert('none', 0.9);
@@ -1268,7 +1272,7 @@ void main() {
       expect(logged('say', approach), hasLength(1));
     });
 
-    testWidgets('(c) 보류 중 front로 바뀌면 발화하지 않는다', (tester) async {
+    testWidgets('(c) 보류 중 front로 바뀌면 발화하지 않는다', skip: dotSkip, (tester) async {
       EventLog.instance.clearForTest();
       final s = FeedbackService();
       await s.alert('none', 0.9);
@@ -1281,7 +1285,7 @@ void main() {
     });
 
     testWidgets('(d) 마지막 상태가 위(front, hold 중 포함)·crossed면 즉시 발화',
-        (tester) async {
+        skip: dotSkip, (tester) async {
       // hold 동안에는 alert가 불리지 않아 마지막 상태가 front로 남는다.
       for (final last in ['front', 'crossed']) {
         EventLog.instance.clearForTest();
@@ -1294,7 +1298,7 @@ void main() {
       }
     });
 
-    testWidgets('(e) dispose는 보류 타이머를 취소한다', (tester) async {
+    testWidgets('(e) dispose는 보류 타이머를 취소한다', skip: dotSkip, (tester) async {
       EventLog.instance.clearForTest();
       final s = FeedbackService();
       await s.alert('none', 0.9);
@@ -1321,7 +1325,7 @@ void main() {
     });
 
     testWidgets('(g) 대기 칸이 찬 상태에서 같은 안내는 한 번만 대기로 기록된다',
-        (tester) async {
+        skip: dotSkip, (tester) async {
       // 최소 간격은 실제 시각으로 재므로, 이 시험은 실제 시간으로 돌린다.
       await tester.runAsync(() async {
         EventLog.instance.clearForTest();

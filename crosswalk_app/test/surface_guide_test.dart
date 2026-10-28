@@ -258,6 +258,15 @@ void main() {
       expect(ev.map((e) => e.$2), [SurfaceEvent.linearOn, SurfaceEvent.linearLost]);
     });
 
+    test('T148: 앞 칸 선형 15% 미만이면 linearOn 없음, 15% 이상이면 있음', () {
+      expect(SurfaceGuide.linearOnRatio, 0.15);
+      const thin = SurfaceRegion(sidewalk: 0.9, linear: 0.10);
+      const edge = SurfaceRegion(sidewalk: 0.85, linear: 0.15);
+      expect(run(SurfaceGuide(), List.filled(6, feat(front: thin))), isEmpty);
+      expect(run(SurfaceGuide(), List.filled(3, feat(front: edge))).map((e) => e.$2),
+          [SurfaceEvent.linearOn]);
+    });
+
     test('선형 위에 한 번도 없었으면 옆 선형만으로는 말하지 않는다', () {
       final g = SurfaceGuide();
       expect(run(g, List.filled(6, feat(front: sidewalk, right: linearHere))), isEmpty);
