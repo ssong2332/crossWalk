@@ -75,6 +75,7 @@ class AppStrings {
 
   // T143(사용자 승인 2026-10-27): 끝에서 이미 중앙 쪽으로 틀어 "그대로"인 상태의
   // 화면 제목. 일반 직진과 구분한다(진동도 보통 단계 박자로 낸다).
+  // T158: '· 그대로'를 뺐다(음성 문구와 같은 이유).
   final String labelLeftEdgeTurned;
   final String labelRightEdgeTurned;
 
@@ -129,7 +130,10 @@ class AppStrings {
   // T102: 끝인데 이미 중앙 쪽으로 틀어 직진 판정(T100 a안)일 때 1회 확인.
   // "직진하세요"(recoveredMessage)는 줄무늬에 다시 나란히 서라는 뜻으로
   // 들려 끝에 머물게 할 수 있어 쓰지 않는다.
-  final String edgeTurnedMessage;
+  // T158(사용자 결정 A안, 2026-10-29): '그대로 가세요'는 끝에 머무는 것을 승인하는
+  // 것처럼 들려, 서 있는 쪽 끝만 알린다. 끝 직진(|p| < 1.5)도 같은 front + 끝이다.
+  final String leftEdgeTurnedMessage;
+  final String rightEdgeTurnedMessage;
 
   // T104: 노면 안내 음성(`docs/SurfaceGuidance.md`, 사용자 확정 2026-09-30).
   // 선형 방향은 위치를 말한다("점자블록 오른쪽") — "오른쪽으로"는 횡단보도
@@ -355,7 +359,8 @@ class AppStrings {
     required this.rightEdgeRapidMessage,
     required this.leftSevereRapidMessage,
     required this.rightSevereRapidMessage,
-    required this.edgeTurnedMessage,
+    required this.leftEdgeTurnedMessage,
+    required this.rightEdgeTurnedMessage,
     required this.surfaceRoadMessage,
     required this.surfaceDotBlockMessage,
     required this.surfaceLinearRightMessage,
@@ -480,8 +485,8 @@ class AppStrings {
     labelRightSevere: '오른쪽으로 크게 벗어남',
     labelLeftEdge: '왼쪽 끝',
     labelRightEdge: '오른쪽 끝',
-    labelLeftEdgeTurned: '왼쪽 끝 · 그대로',
-    labelRightEdgeTurned: '오른쪽 끝 · 그대로',
+    labelLeftEdgeTurned: '왼쪽 끝',
+    labelRightEdgeTurned: '오른쪽 끝',
     labelNoCall: '판정 없음',
     noCallBody: '확신이 낮습니다',
     cameraEntryAnnouncement: '횡단보도 안내. 보조 도구입니다. 안내는 음성과 진동으로 나갑니다.',
@@ -510,7 +515,8 @@ class AppStrings {
     rightEdgeRapidMessage: '왼쪽! 가장자리',
     leftSevereRapidMessage: '오른쪽, 지금',
     rightSevereRapidMessage: '왼쪽, 지금',
-    edgeTurnedMessage: '그대로 가세요',
+    leftEdgeTurnedMessage: '왼쪽 끝입니다',
+    rightEdgeTurnedMessage: '오른쪽 끝입니다',
     surfaceRoadMessage: '차도입니다',
     surfaceDotBlockMessage: '멈춤 블록입니다',
     surfaceLinearRightMessage: '점자블록 오른쪽',
@@ -667,8 +673,8 @@ class AppStrings {
     labelRightSevere: 'Veering right sharply',
     labelLeftEdge: 'Left edge',
     labelRightEdge: 'Right edge',
-    labelLeftEdgeTurned: 'Left edge · keep going',
-    labelRightEdgeTurned: 'Right edge · keep going',
+    labelLeftEdgeTurned: 'Left edge',
+    labelRightEdgeTurned: 'Right edge',
     labelNoCall: 'No call',
     noCallBody: 'Confidence is low',
     cameraEntryAnnouncement:
@@ -703,7 +709,8 @@ class AppStrings {
     rightEdgeRapidMessage: "Move to the left. You're at the edge",
     leftSevereRapidMessage: 'Move right now',
     rightSevereRapidMessage: 'Move left now',
-    edgeTurnedMessage: 'Keep going',
+    leftEdgeTurnedMessage: "You're at the left edge",
+    rightEdgeTurnedMessage: "You're at the right edge",
     surfaceRoadMessage: 'Road ahead',
     surfaceDotBlockMessage: 'Stop blocks',
     surfaceLinearRightMessage: 'Guide blocks on the right',

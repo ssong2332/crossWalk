@@ -59,7 +59,8 @@ void main() {
       expect(strings.labelRightEdge, '오른쪽 끝');
       expect(strings.leftEdgeMessage, '오른쪽으로 가세요. 가장자리입니다');
       expect(strings.rightEdgeMessage, '왼쪽으로 가세요. 가장자리입니다');
-      expect(strings.edgeTurnedMessage, '그대로 가세요');
+      expect(strings.leftEdgeTurnedMessage, '왼쪽 끝입니다');
+      expect(strings.rightEdgeTurnedMessage, '오른쪽 끝입니다');
       // T104: 노면 안내(사용자 확정 2026-09-30).
       expect(strings.surfaceRoadMessage, '차도입니다');
       expect(strings.surfaceDotBlockMessage, '멈춤 블록입니다');
@@ -94,7 +95,8 @@ void main() {
       expect(strings.labelRightEdge, 'Right edge');
       expect(strings.leftEdgeMessage, "Move to the right. You're at the edge");
       expect(strings.rightEdgeMessage, "Move to the left. You're at the edge");
-      expect(strings.edgeTurnedMessage, 'Keep going');
+      expect(strings.leftEdgeTurnedMessage, "You're at the left edge");
+      expect(strings.rightEdgeTurnedMessage, "You're at the right edge");
       expect(strings.surfaceRoadMessage, 'Road ahead');
       expect(strings.surfaceLinearRightMessage, 'Guide blocks on the right');
       expect(strings.settingsSurfaceGuidanceLabel,

@@ -374,6 +374,18 @@ void main() {
       expect(lv(null, -1, -1.8), 1); // c = 20
     });
 
+    test('끝 + 각도 없음 = 직진 아님 → T146 그대로(중앙 쪽 명령)', () {
+      for (final p in <double>[-0.9, -1.2, -1.49, -1.5, -2.0]) {
+        expect(r(null, -1, p), 'left', reason: 'p=$p');
+        expect(DirectionResolver.levelAngle(null, -1, position: p),
+            DirectionResolver.correctedAngle(null, -1, position: p),
+            reason: 'p=$p');
+      }
+      expect(r(null, 1, 1.2), 'right');
+      expect(r(null, 1, 1.8), 'right');
+      expect(DirectionResolver.isEdgeStraight(null, -1), isFalse);
+    });
+
     test('4행: 끝 아님 → 그대로', () {
       expect(r(0, 0, -0.7), 'front');
       expect(r(12, 0, -0.3), 'left');

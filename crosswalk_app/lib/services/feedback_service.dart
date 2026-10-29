@@ -807,10 +807,15 @@ class FeedbackService {
   // 때만** 내고(머무는 동안 반복하지 않음), 경계에서 떨릴 때 반복되지 않게
   // 다른 1회성 안내와 같은 3초 재쿨다운을 둔다.
   @visibleForTesting
+  ///
+  /// T158(사용자 결정 A안): 문구는 서 있는 쪽 끝('왼쪽 끝입니다'/'오른쪽 끝입니다').
+  /// 쪽은 [edgeSteerClass]로 안다 — 중앙 쪽 방향이라 왼쪽 끝이면 'left'.
+  /// 없으면(끝 판정 없음) 말하지 않는다. 발화 시점(들어올 때 1회, 3초)은 그대로.
   String? decideEdgeTurnedMessage(
     String detectedClass,
     DateTime now, {
     required bool atEdge,
+    required String? edgeSteerClass,
   }) {
     final edgeTurned = detectedClass == 'front' && atEdge;
     final entering = edgeTurned && !_lastEdgeTurned;
@@ -821,8 +826,12 @@ class FeedbackService {
         now.difference(_lastEdgeTurnedAt!).inSeconds < _cooldownSeconds) {
       return null;
     }
+    if (edgeSteerClass != 'left' && edgeSteerClass != 'right') return null;
     _lastEdgeTurnedAt = now;
-    return AppStrings.of(_language).edgeTurnedMessage;
+    final strings = AppStrings.of(_language);
+    return edgeSteerClass == 'left'
+        ? strings.leftEdgeTurnedMessage
+        : strings.rightEdgeTurnedMessage;
   }
 
   /// T143(사용자 승인 2026-10-27): "이미 틀었음"(끝 + 중앙 쪽으로 틀어 front)일 때
@@ -1390,7 +1399,8 @@ class FeedbackService {
     // T102: 끝에서 이미 중앙 쪽으로 틀었을 때의 확인 안내(회복 안내와 같은
     // 채널). 위 회복 안내는 atEdge면 침묵하므로 둘이 함께 나가지 않는다.
     final edgeTurnedMessage =
-        decideEdgeTurnedMessage(detectedClass, now, atEdge: atEdge);
+        decideEdgeTurnedMessage(detectedClass, now,
+            atEdge: atEdge, edgeSteerClass: edgeSteerClass);
     if (edgeTurnedMessage != null) {
       _holdRecovery(edgeTurnedMessage, now, edge: true);
     }

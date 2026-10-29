@@ -50,11 +50,12 @@ String zoomProbeText(double? zoomMin, double? zoomMax, int backCameras) {
 /// T143(사용자 승인 2026-10-27): 끝에서 이미 중앙 쪽으로 틀어 "그대로"인 상태
 /// (front + 끝)의 화면 제목. 아니면 null(제목은 종전대로).
 ///   | 상태  | 끝    | 위치 p     | 제목                |
-///   | front | true  | p < 0      | '왼쪽 끝 · 그대로'   |
-///   | front | true  | p > 0      | '오른쪽 끝 · 그대로' |
+///   | front | true  | p < 0      | '왼쪽 끝'            |
+///   | front | true  | p > 0      | '오른쪽 끝'          |
 ///   | 그 외 | —     | —          | null                |
 /// T146: 끝을 나올 때 기준이 0.8이라(|p| 0.8~1.0도 끝) 쪽은 부호로 본다.
 /// 화살표는 곧은 모양(끝 각도 0) 그대로, 색은 일반 이탈 색([isEdgeTurnedDisplay]).
+/// T158: 제목에서 '· 그대로'를 뺐다(끝 직진 front도 같은 제목).
 @visibleForTesting
 String? edgeTurnedHeadline(
     String fieldState, bool atEdge, double? position, AppStrings strings) {
