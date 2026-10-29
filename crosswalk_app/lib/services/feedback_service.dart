@@ -6,7 +6,6 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:vibration/vibration.dart';
 import '../localization/app_strings.dart';
 import 'audio_policy.dart';
-import 'crossing_hold.dart';
 import 'direction_repeat_timer.dart';
 import 'event_log.dart';
 import 'direction_resolver.dart';
@@ -283,11 +282,17 @@ class FeedbackService {
   /// 근거(`train/t157_report.md` A): 10/29 16:26:29 연석에 서 있던 장면은 위 11.8초 중
   /// 걸은 시간 5.1초, 실제 건넘(10/28·10/29 발밑 해제 20번)은 걸은 시간 최소 6.2초.
   /// 정지 비율로는 나눌 수 없다(실제 건넘 최대 0.85 > 잘못 0.57).
-  static const groundCrossedMinWalk = CrossingHold.groundReleaseCrossedMinOn;
+  /// 오케스트레이터 확정(2026-10-29): T140과 같은 6초지만 따로 둔다. 여유가 1.1초로 얇다 —
+  /// 다음 실기기 `hold.end` `walk_ms`로 다시 본다.
+  static const groundCrossedMinWalk = Duration(seconds: 6);
 
   /// T157 A: 마지막 [noteHoldReleasedByGround]에서 잰 걸은 위 시간(기록용, 모르면 null).
   Duration? get lastReleaseWalk => _lastReleaseWalk;
   Duration? _lastReleaseWalk;
+
+  /// T157 A: 같은 때 잰 정지 비율(서 있던 시간 / 위 지속, 기록용, 모르면 null).
+  double? get lastReleaseStillRatio => _lastReleaseStillRatio;
+  double? _lastReleaseStillRatio;
 
   /// T118: `CrossingHold`가 발밑이 인도라서 hold를 푼 직후 부른다.
   /// [holdStartedAt]은 그 hold가 시작된 시각(`CrossingHold.releasedHoldStartedAt`).
@@ -300,11 +305,15 @@ class FeedbackService {
     _holdReleasedByGroundAt = now;
     _releasedHoldStartedAt = holdStartedAt;
     _lastReleaseWalk = null;
+    _lastReleaseStillRatio = null;
     var said = crossed;
     if (onDuration != null) {
-      final walk =
-          onDuration - stillTimeBetween(now.subtract(onDuration), now);
+      final still = stillTimeBetween(now.subtract(onDuration), now);
+      final walk = onDuration - still;
       _lastReleaseWalk = walk;
+      _lastReleaseStillRatio = onDuration.inMilliseconds > 0
+          ? still.inMilliseconds / onDuration.inMilliseconds
+          : 0.0;
       if (walk < groundCrossedMinWalk) said = false;
     }
     _crossedOnGroundRelease = said;

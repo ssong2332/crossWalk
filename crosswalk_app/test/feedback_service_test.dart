@@ -1775,6 +1775,8 @@ void main() {
               crossed: true, onDuration: const Duration(seconds: 12)),
           isFalse);
       expect(s.lastReleaseWalk!.inSeconds, lessThan(6));
+      expect(s.lastReleaseStillRatio, closeTo(7 / 12, 0.05));
+      expect(FeedbackService.groundCrossedMinWalk, const Duration(seconds: 6));
       expect(s.decidePhaseMessage('front', 'none', at(0)), isNull);
     });
 
@@ -1786,6 +1788,7 @@ void main() {
               crossed: true, onDuration: const Duration(seconds: 9)),
           isTrue);
       expect(s.lastReleaseWalk, const Duration(seconds: 9));
+      expect(s.lastReleaseStillRatio, 0.0);
       expect(s.decidePhaseMessage('front', 'none', at(0)),
           '횡단보도를 건넜습니다.');
     });

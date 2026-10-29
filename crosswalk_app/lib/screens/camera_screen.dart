@@ -679,7 +679,7 @@ class _CameraScreenState extends State<CameraScreen>
       // "건넜습니다"를 지키도록 알린다(A2). T140: 위가 6초 이상 이어졌으면
       // 이 프레임에서 바로 "건넜습니다"(`said`=요청함, 실제 재생은 `say` 줄).
       // T157 A: 위에서 걸은 시간이 6초 안 되면(서서 줄무늬를 봄) 말하지 않는다 —
-      // `said`=최종 결정, `walk`=걸은 위 시간(초).
+      // `said`=최종 결정, `walk_ms`=걸은 위 시간, `still_ratio`=정지 비율.
       if (_crossingHold.releasedByGround) {
         final onDur = _crossingHold.releasedOnDuration;
         final said = _feedback.noteHoldReleasedByGround(DateTime.now(),
@@ -687,12 +687,15 @@ class _CameraScreenState extends State<CameraScreen>
             crossed: _crossingHold.releasedAfterLongCrossing,
             onDuration: onDur);
         final walk = _feedback.lastReleaseWalk;
+        final stillRatio = _feedback.lastReleaseStillRatio;
         EventLog.instance.log('hold.end', {
           'why': 'ground',
           'to': label,
           'said': said,
           'dur': onDur == null ? null : onDur.inMilliseconds / 1000,
-          if (walk != null) 'walk': walk.inMilliseconds / 1000,
+          if (walk != null) 'walk_ms': walk.inMilliseconds,
+          if (stillRatio != null)
+            'still_ratio': double.parse(stillRatio.toStringAsFixed(3)),
         });
       }
       // T102: 끝 규칙에서 나온 상태면 끝 전용 음성·화면 문구를 쓴다.
