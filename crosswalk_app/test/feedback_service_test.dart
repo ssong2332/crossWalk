@@ -895,53 +895,69 @@ void main() {
       );
     });
 
-    test('끝에서 이미 튼 front로 들어올 때 "그대로 가세요" 1회', () {
+    test('끝에서 이미 튼 front로 들어올 때 "왼쪽 끝입니다" 1회', () {
       final service = FeedbackService();
-      expect(service.decideEdgeTurnedMessage('left', t0, atEdge: true),
+      expect(
+          service.decideEdgeTurnedMessage('left', t0,
+              atEdge: true, edgeSteerClass: 'left'),
           isNull);
       expect(
         service.decideEdgeTurnedMessage(
             'front', t0.add(const Duration(seconds: 1)),
-            atEdge: true),
-        '그대로 가세요',
+            atEdge: true, edgeSteerClass: 'left'),
+        '왼쪽 끝입니다',
       );
       // 머무는 동안은 반복하지 않는다(쿨다운이 지나도).
       expect(
         service.decideEdgeTurnedMessage(
             'front', t0.add(const Duration(seconds: 10)),
-            atEdge: true),
+            atEdge: true, edgeSteerClass: 'left'),
         isNull,
       );
     });
 
-    test('중앙에서의 front는 "그대로 가세요"를 내지 않는다', () {
+    test('T158: 오른쪽 끝이면 "오른쪽 끝입니다", 쪽을 모르면 침묵', () {
       expect(
-        FeedbackService().decideEdgeTurnedMessage('front', t0, atEdge: false),
+          FeedbackService().decideEdgeTurnedMessage('front', t0,
+              atEdge: true, edgeSteerClass: 'right'),
+          '오른쪽 끝입니다');
+      expect(
+          FeedbackService().decideEdgeTurnedMessage('front', t0,
+              atEdge: true, edgeSteerClass: null),
+          isNull);
+    });
+
+    test('중앙에서의 front는 "왼쪽 끝입니다"를 내지 않는다', () {
+      expect(
+        FeedbackService().decideEdgeTurnedMessage('front', t0,
+            atEdge: false, edgeSteerClass: null),
         isNull,
       );
     });
 
     test('경계에서 떨리면 3초 안의 재진입은 침묵, 이후 재진입은 안내', () {
       final service = FeedbackService();
-      expect(service.decideEdgeTurnedMessage('front', t0, atEdge: true),
-          '그대로 가세요');
+      expect(
+          service.decideEdgeTurnedMessage('front', t0,
+              atEdge: true, edgeSteerClass: 'left'),
+          '왼쪽 끝입니다');
       service.decideEdgeTurnedMessage(
           'left', t0.add(const Duration(seconds: 1)),
-          atEdge: true);
+          atEdge: true, edgeSteerClass: 'left');
       expect(
         service.decideEdgeTurnedMessage(
             'front', t0.add(const Duration(seconds: 2)),
-            atEdge: true),
+            atEdge: true, edgeSteerClass: 'left'),
         isNull,
       );
       service.decideEdgeTurnedMessage(
           'left', t0.add(const Duration(seconds: 5)),
-          atEdge: true);
+          atEdge: true, edgeSteerClass: 'left');
       expect(
         service.decideEdgeTurnedMessage(
             'front', t0.add(const Duration(seconds: 6)),
-            atEdge: true),
-        '그대로 가세요',
+            atEdge: true, edgeSteerClass: 'left'),
+        '왼쪽 끝입니다',
       );
     });
   });
@@ -1012,7 +1028,7 @@ void main() {
           FeedbackService.edgeTurnedVibrationClass('front', true, null), isNull);
     });
 
-    test('T143: 이미 틀었음 동안 lvl0 진동, 그대로 가세요는 들어갈 때 한 번', () async {
+    test('T143: 이미 틀었음 동안 lvl0 진동, 왼쪽 끝입니다는 들어갈 때 한 번', () async {
       EventLog.instance.clearForTest();
       // T157 P1: 단계 1→0은 700ms 유지 뒤 — 호출 사이를 800ms로 둔다.
       var now = DateTime(2026, 10, 29, 16, 0, 0);
@@ -1036,7 +1052,7 @@ void main() {
       final alerts = lines.where((m) => m['ev'] == 'alert').toList();
       expect(alerts.skip(1).map((m) => m['vibAs']), ['left', 'left', 'left']);
       expect(
-          alerts.where((m) => m['edgeTurned'] == ko.edgeTurnedMessage),
+          alerts.where((m) => m['edgeTurned'] == ko.leftEdgeTurnedMessage),
           hasLength(1));
       expect(lines.where((m) => m['ev'] == 'vib' && m['kind'] == 'recover'),
           isEmpty);

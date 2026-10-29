@@ -330,6 +330,94 @@ void main() {
     });
   });
 
+  group('DirectionResolver T158 끝 직진 ((a2)+(e))', () {
+    String r(double? a, int side, double? p, [String? prev]) =>
+        DirectionResolver.resolve('front', a,
+            edgeSide: side, position: p, previous: prev);
+    int lv(double? a, int side, double? p, [int? prev]) =>
+        DirectionResolver.deviationLevel(
+            DirectionResolver.levelAngle(a, side, position: p),
+            previous: prev);
+
+    test('상수: 직진 9°, 깊은 끝 1.5', () {
+      expect(DirectionResolver.edgeStraightDegrees, 9.0);
+      expect(DirectionResolver.deepEdgePosition, 1.5);
+    });
+
+    test('1행: 끝 + |p| < 1.5 + 직진 → front(+ 끝)', () {
+      expect(r(0, -1, -1.2), 'front'); // 종전 c = 20 → left
+      expect(r(8.9, -1, -1.2), 'front');
+      expect(r(-8.9, -1, -1.2), 'front');
+      expect(r(0, -1, -1.2, 'left'), 'front'); // 직전 left여도
+      expect(r(0, -1, -0.9, 'left'), 'front'); // 끝 유지 구간(0.8~1.0)
+      expect(DirectionResolver.isEdge('front', -1), isTrue);
+      expect(DirectionResolver.levelAngle(0, -1, position: -1.2), 20);
+    });
+
+    test('2행: 끝 + |p| >= 1.5 + 직진 → 중앙 쪽 명령, 단계 0 고정', () {
+      expect(r(0, -1, -1.8), 'left');
+      expect(r(8.9, -1, -2.0), 'left'); // c = 28.9 → 종전 단계 1
+      expect(DirectionResolver.isEdge('left', -1), isTrue);
+      expect(lv(0, -1, -1.8), 0);
+      expect(lv(8.9, -1, -2.0), 0);
+      expect(lv(8.9, -1, -2.0, 2), 0); // 이전 단계 2여도 0
+      expect(DirectionResolver.levelAngle(8.9, -1, position: -2.0), 12.0);
+    });
+
+    test('3행: 끝 + 직진 아님 → T146 그대로', () {
+      expect(r(9, -1, -1.2), 'left'); // 바깥쪽 9° (c = 29)
+      expect(lv(9, -1, -1.2), 1);
+      expect(lv(15, -1, -1.8), 2); // 깊은 끝도 직진 아니면 단계 그대로 (c = 35)
+      expect(r(-9, -1, -1.2), 'front'); // 중앙 쪽 9° (c = 11, 이미 틀었음)
+      expect(r(-40, -1, -1.2), 'right'); // 지나치게 돎
+      expect(r(null, -1, -1.2), 'left'); // 각도 없음 = 직진 아님
+      expect(lv(null, -1, -1.8), 1); // c = 20
+    });
+
+    test('끝 + 각도 없음 = 직진 아님 → T146 그대로(중앙 쪽 명령)', () {
+      for (final p in <double>[-0.9, -1.2, -1.49, -1.5, -2.0]) {
+        expect(r(null, -1, p), 'left', reason: 'p=$p');
+        expect(DirectionResolver.levelAngle(null, -1, position: p),
+            DirectionResolver.correctedAngle(null, -1, position: p),
+            reason: 'p=$p');
+      }
+      expect(r(null, 1, 1.2), 'right');
+      expect(r(null, 1, 1.8), 'right');
+      expect(DirectionResolver.isEdgeStraight(null, -1), isFalse);
+    });
+
+    test('4행: 끝 아님 → 그대로', () {
+      expect(r(0, 0, -0.7), 'front');
+      expect(r(12, 0, -0.3), 'left');
+      expect(DirectionResolver.levelAngle(5, 0, position: -0.7),
+          DirectionResolver.correctedAngle(5, 0, position: -0.7));
+    });
+
+    test('|p| 1.49 / 1.5 경계', () {
+      expect(r(0, -1, -1.49), 'front');
+      expect(r(0, -1, -1.5), 'left');
+      expect(lv(0, -1, -1.5), 0);
+      expect(r(0, 1, 1.49), 'front');
+      expect(r(0, 1, 1.5), 'right');
+      expect(lv(0, 1, 1.5), 0);
+    });
+
+    test('좌우 대칭', () {
+      for (final (a, p) in <(double, double)>[
+        (0, 1.2), (5, 1.2), (8.9, 1.49), (0, 1.5), (5, 1.8), (8.9, 2.0),
+        (9, 1.2), (15, 1.8), (-40, 1.2),
+      ]) {
+        final lr = r(a, -1, -p);
+        final rr = r(-a, 1, p);
+        final mirror = {'left': 'right', 'right': 'left', 'front': 'front'};
+        expect(rr, mirror[lr], reason: 'a=$a p=$p');
+        expect(DirectionResolver.levelAngle(-a, 1, position: p),
+            -DirectionResolver.levelAngle(a, -1, position: -p)!,
+            reason: 'a=$a p=$p');
+      }
+    });
+  });
+
   group('StillOppositeDelay (T146 C: 서 있을 때 반대 방향 1.5초)', () {
     final t0 = DateTime(2026, 10, 28, 16, 52, 41);
     DateTime at(int ms) => t0.add(Duration(milliseconds: ms));
