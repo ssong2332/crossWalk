@@ -2,6 +2,15 @@
 
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-permission android:name="android.permission.VIBRATE"/>
+    <!-- T153: BLE 좌우 진동 모듈(개발 설정, 기본 꺼짐). Android 12 이상은 SCAN·CONNECT,
+         11 이하는 BLUETOOTH·ADMIN(universal_ble 매니페스트가 maxSdk 30으로 넣음)과 위치.
+         SCAN은 위치 판단에 쓰지 않는다(neverForLocation). -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"
+        android:maxSdkVersion="30"/>
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false"/>
     <uses-feature android:name="android.hardware.camera" android:required="true"/>
 
     <application

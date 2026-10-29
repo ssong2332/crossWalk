@@ -18,6 +18,9 @@ import '../services/crosswalk_surface_gate.dart';
 import '../services/curb_front_gate.dart';
 import '../services/dev_capture.dart';
 import '../services/event_log.dart';
+import '../services/audio_policy.dart' show VibrationPolicy;
+import '../services/vib_module.dart';
+import '../services/vib_module_ble.dart';
 import '../services/surface_estimator.dart';
 import '../services/surface_guide.dart';
 import '../services/direction_resolver.dart';
@@ -764,6 +767,16 @@ class _CameraScreenState extends State<CameraScreen>
   final FrameSaver _frameSaver = FrameSaver();
   bool _streamSizeLogged = false;
 
+  // T153: BLE 좌우 진동 모듈(개발, 기본 꺼짐·세션 한정). 켜면
+  // [FeedbackService.attachVibModule]로 붙이고 연결을 시작하고, 끄면 떼고 끊는다.
+  // 컨트롤러는 처음 쓸 때 만든다(플러그인은 연결을 시작할 때만 부른다) — 설정 화면이
+  // 켜기 전부터 같은 연결 상태를 듣게 하려고 화면 수명 동안 하나를 쓴다.
+  late final VibModuleController _vibModule =
+      VibModuleController(UniversalBleVibTransport());
+  bool _vibModuleEnabled = false;
+  bool _vibModuleWithPhone = false;
+  int _vibModuleStrength = VibModuleProtocol.defaultStrength;
+
   // T129: 촉각 악보(개발, 기본 꺼짐). 켜면 EventLog와 같은 사건을 받아 디버그
   // 상자 안에 시간축으로 그린다. 끄면 구독을 풀어 비용이 없다.
   bool _scoreEnabled = false;
@@ -869,6 +882,43 @@ class _CameraScreenState extends State<CameraScreen>
     EventLog.instance.log('set', {'key': 'ultraWide', 'value': enabled});
     if (mounted) setState(() => _ultraWideEnabled = enabled);
     await _applyUltraWide(false);
+  }
+
+  /// T153: 진동 모듈 연결(개발) 켬·끔.
+  Future<void> _setVibModuleEnabled(bool enabled) async {
+    EventLog.instance.log('set', {'key': 'vibModule', 'value': enabled});
+    if (enabled == _vibModuleEnabled) return;
+    _vibModuleEnabled = enabled;
+    if (enabled) {
+      _vibModule.strength = _vibModuleStrength;
+      _feedback.vibModuleWithPhone = _vibModuleWithPhone;
+      _feedback.attachVibModule(_vibModule);
+      await _vibModule.start();
+    } else {
+      _feedback.attachVibModule(null);
+      await _vibModule.stop();
+    }
+  }
+
+  void _setVibModuleWithPhone(bool value) {
+    EventLog.instance.log('set', {'key': 'vibModuleWithPhone', 'value': value});
+    _vibModuleWithPhone = value;
+    _feedback.vibModuleWithPhone = value;
+  }
+
+  void _setVibModuleStrength(int value) {
+    EventLog.instance.log('set', {'key': 'vibModuleStrength', 'value': value});
+    _vibModuleStrength = value;
+    _vibModule.strength = value;
+  }
+
+  /// T153: 착용 시험 — 앱 방향 진동 1번과 같은 길이로 한쪽(또는 양쪽)만 울린다.
+  /// 연결이 아니면 보내지 않고 `ble.test`에 ok=false를 남긴다.
+  void _vibModuleTest(String kind) {
+    final sent = _vibModuleEnabled &&
+        _vibModule.send(kind, <int>[0, VibrationPolicy.directionPulseMs],
+            src: 'test');
+    if (!sent) EventLog.instance.log('ble.test', {'kind': kind, 'ok': false});
   }
 
   void _setCameraMount(CameraMount mount) {
@@ -1491,6 +1541,8 @@ class _CameraScreenState extends State<CameraScreen>
       EventLog.instance.flushSync();
       // T142: 화면 꺼짐·일시정지 — 같은 방향 반복 진동을 바로 멈춘다.
       _feedback.stopDirectionVibration('pause');
+      // T153: 모듈도 바로 끈다(연결은 유지 — 앱이 죽으면 기기가 3초 무응답으로 끈다).
+      if (_vibModuleEnabled) _vibModule.sendStop('pause');
     }
     if (state == AppLifecycleState.inactive) {
       if (_controller != null && _controller!.value.isInitialized) {
@@ -1506,6 +1558,12 @@ class _CameraScreenState extends State<CameraScreen>
     _noCallTicker?.cancel();
     _accelSub?.cancel();
     if (_scoreEnabled) EventLog.instance.tap = null;
+    // T153: 모듈을 떼고 끈다(STOP 뒤 연결 해제).
+    if (_vibModuleEnabled) {
+      _vibModuleEnabled = false;
+      _feedback.attachVibModule(null);
+      unawaited(_vibModule.dispose());
+    }
     WidgetsBinding.instance.removeObserver(this);
     WakelockPlus.disable();
     _pulseController.dispose();
@@ -1794,6 +1852,14 @@ class _CameraScreenState extends State<CameraScreen>
                   frameSaveEnabled: _frameSaveEnabled,
                   onFrameSaveChanged: _setFrameSaveEnabled,
                   onShareFrames: _shareFrames,
+                  vibModuleEnabled: _vibModuleEnabled,
+                  onVibModuleChanged: _setVibModuleEnabled,
+                  vibModuleState: _vibModule.state,
+                  vibModuleWithPhone: _vibModuleWithPhone,
+                  onVibModuleWithPhoneChanged: _setVibModuleWithPhone,
+                  vibModuleStrength: _vibModuleStrength,
+                  onVibModuleStrengthChanged: _setVibModuleStrength,
+                  onVibModuleTest: _vibModuleTest,
                 ),
               ),
             );

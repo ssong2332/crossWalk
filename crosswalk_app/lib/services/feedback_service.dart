@@ -11,6 +11,7 @@ import 'event_log.dart';
 import 'direction_resolver.dart';
 import 'stillness_detector.dart';
 import 'surface_guide.dart';
+import 'vib_module.dart';
 
 /// T108 Q1: 보류한 회복 안내를 어떻게 할지([FeedbackService.decideHeldRecovery]).
 enum HeldRecoveryVerdict { wait, speak, cancel, expire }
@@ -26,6 +27,37 @@ class FeedbackService {
   final AudioPolicy audioPolicy = AudioPolicy();
   @visibleForTesting
   final VibrationPolicy vibrationPolicy = VibrationPolicy();
+
+  /// T153: BLE 좌우 진동 모듈(개발 설정, 기본 꺼짐). null이면 종전과 똑같이 폰만
+  /// 울린다. 붙어 있어도 연결이 아니면 폰으로 낸다(`vib`의 `out`=phone).
+  VibModuleController? _vibModule;
+  VibModuleController? get vibModule => _vibModule;
+
+  /// T153: 모듈이 연결된 동안 폰 진동도 함께 낼지. 기본 false = 모듈만.
+  bool vibModuleWithPhone = false;
+
+  /// T153: 모듈을 붙이거나(설정 켬) 뗀다(null, 설정 끔). 연결·끊김이 바뀔 때
+  /// 음성으로 한 번 알린다(`docs/HardwarePlan.md` §4 고장 시 동작).
+  void attachVibModule(VibModuleController? module) {
+    _vibModule?.onLinkAnnounce = null;
+    _vibModule = module;
+    module?.onLinkAnnounce = _announceVibModule;
+  }
+
+  void _announceVibModule(bool connected) {
+    final strings = AppStrings.of(_language);
+    unawaited(_speak(
+        connected ? strings.vibModuleConnectedMessage : strings.vibModuleLostMessage,
+        priority: FeedbackPriority.p1));
+  }
+
+  /// T153: 진동 1번을 모듈로 보내 본다. 모듈이 없으면 null(종전 경로), 보냈으면
+  /// 'ble', 붙어 있지만 연결이 아니면 'phone'(폰으로 대체).
+  String? _sendToVibModule(String kind, List<int> pattern, {String? src}) {
+    final module = _vibModule;
+    if (module == null) return null;
+    return module.send(kind, pattern, src: src) ? 'ble' : 'phone';
+  }
 
   /// T142: 같은 방향 이탈 진동을 경고 호출 주기와 따로 울리는 타이머.
   @visibleForTesting
@@ -1105,12 +1137,15 @@ class FeedbackService {
     int? level,
     int? gapMs,
     String? src,
+    String? out,
   }) {
     final extra = {
       if (level != null) 'lvl': level,
       if (gapMs != null) 'gap': gapMs,
       // T142: 반복 타이머로 울린 것만 'timer'(경고 호출로 울린 것은 종전 형식 그대로).
       if (src != null) 'src': src,
+      // T153: 진동 모듈을 붙였을 때만 — phone(대체)/both(모듈+폰). 없으면 종전 형식.
+      if (out != null) 'out': out,
     };
     if (!hasVibrator) {
       return {'kind': kind, 'ok': false, 'why': 'no_vibrator', ...extra};
@@ -1123,6 +1158,25 @@ class FeedbackService {
       ...extra,
     };
   }
+
+  /// T153: 모듈로만 낸 진동의 `vib` 줄. 폰 진동은 요청하지 않았다(`out`=ble).
+  @visibleForTesting
+  static Map<String, Object?> moduleVibrationLogData(
+    String kind,
+    List<int> pattern, {
+    int? level,
+    int? gapMs,
+    String? src,
+  }) =>
+      {
+        'kind': kind,
+        'ok': true,
+        'out': 'ble',
+        'pat': pattern,
+        if (level != null) 'lvl': level,
+        if (gapMs != null) 'gap': gapMs,
+        if (src != null) 'src': src,
+      };
 
   // Marks vibration as active and (re)schedules the timer that will clear
   // it. Cancelling any previous timer first guarantees that only the most
@@ -1330,6 +1384,8 @@ class FeedbackService {
     if (!directionTimer.stop()) return;
     EventLog.instance
         .log('vib.stop', {'why': why, if (to != null) 'to': to});
+    // T153: 모듈 펄스는 스스로 꺼지지만, 켜져 있는 중이면 바로 끈다.
+    _vibModule?.sendStop(why);
   }
 
   /// 진동을 내고 `vib` 줄을 남긴다. [src]는 T142 타이머로 울린 것만 'timer'.
@@ -1342,6 +1398,18 @@ class FeedbackService {
     // T136: 방향 진동은 단일 진동으로 내려가도 짧게(가장 짧은 간격 400ms보다 짧게).
     final fallbackMs =
         directional ? VibrationPolicy.directionPulseMs : _vibrationDurationMs;
+    // T153: 모듈이 연결돼 있으면 가야 할 쪽 모터로 보낸다. 폰을 함께 내지 않으면 끝.
+    final out = _sendToVibModule(kind, pattern, src: src);
+    if (out == 'ble' && !vibModuleWithPhone) {
+      EventLog.instance.log(
+          'vib',
+          moduleVibrationLogData(kind, pattern,
+              level: level, gapMs: gapMs, src: src));
+      final total = pattern.fold<int>(0, (a, b) => a + b);
+      activateVibrationIndicator(total > 0 ? total : fallbackMs);
+      return;
+    }
+    final phoneOut = out == 'ble' ? 'both' : out;
     if (await Vibration.hasVibrator() ?? false) {
       // 패턴 진동을 지원하지 않는 기기에서는 단일 진동으로 내려간다.
       // 방향은 음성으로만 전달되지만, 아무 알림도 없는 것보다는 낫다.
@@ -1359,7 +1427,8 @@ class FeedbackService {
               fallbackMs: fallbackMs,
               level: level,
               gapMs: gapMs,
-              src: src));
+              src: src,
+              out: phoneOut));
       final total = pattern.fold<int>(0, (a, b) => a + b);
       activateVibrationIndicator(total > 0 ? total : fallbackMs);
     } else {
@@ -1371,7 +1440,8 @@ class FeedbackService {
               fallbackMs: fallbackMs,
               level: level,
               gapMs: gapMs,
-              src: src));
+              src: src,
+              out: phoneOut));
     }
   }
 
@@ -1511,6 +1581,15 @@ class FeedbackService {
     }
     if (pattern == null) return;
     final kind = events.contains(SurfaceEvent.road) ? 'road' : 'line_on';
+    // T153: 차도·선형 블록 위는 양쪽 모터. 폰을 함께 내지 않으면 끝.
+    final out = _sendToVibModule(kind, pattern);
+    if (out == 'ble' && !vibModuleWithPhone) {
+      EventLog.instance.log('vib', moduleVibrationLogData(kind, pattern));
+      final total = pattern.fold<int>(0, (a, b) => a + b);
+      activateVibrationIndicator(total > 0 ? total : _vibrationDurationMs);
+      return;
+    }
+    final phoneOut = out == 'ble' ? 'both' : out;
     if (await Vibration.hasVibrator()) {
       final supportsPattern = await Vibration.hasCustomVibrationsSupport();
       if (supportsPattern) {
@@ -1523,7 +1602,8 @@ class FeedbackService {
           vibrationLogData(kind, pattern,
               hasVibrator: true,
               supportsPattern: supportsPattern,
-              fallbackMs: _vibrationDurationMs));
+              fallbackMs: _vibrationDurationMs,
+              out: phoneOut));
       final total = pattern.fold<int>(0, (a, b) => a + b);
       activateVibrationIndicator(total > 0 ? total : _vibrationDurationMs);
     } else {
@@ -1532,7 +1612,8 @@ class FeedbackService {
           vibrationLogData(kind, pattern,
               hasVibrator: false,
               supportsPattern: false,
-              fallbackMs: _vibrationDurationMs));
+              fallbackMs: _vibrationDurationMs,
+              out: phoneOut));
     }
   }
 
@@ -1579,6 +1660,7 @@ class FeedbackService {
 
   Future<void> dispose() async {
     directionTimer.stop();
+    _vibModule?.onLinkAnnounce = null;
     await _tts.stop();
     _vibrationTimer?.cancel();
     _drainTimer?.cancel();

@@ -24,6 +24,9 @@ dependencies:
   path_provider: ^2.1.5
   share_plus: ^12.0.2
   sensors_plus: ^7.1.1
+  # T153: BLE 좌우 진동 모듈. 정확한 판 고정(BSD-3). 2.x·3.x는 android/build.gradle의
+  # kotlin {} 블록이 Flutter 3.32.2/AGP 8.7.3에서 설정 오류 → 1.2.0 (docs/T153_ble_vib.md §2-4).
+  universal_ble: 1.2.0
 
 dev_dependencies:
   flutter_test:
