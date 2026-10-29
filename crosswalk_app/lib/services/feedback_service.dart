@@ -12,6 +12,7 @@ import 'direction_resolver.dart';
 import 'stillness_detector.dart';
 import 'surface_guide.dart';
 import 'vib_module.dart';
+import 'vibration_level_dwell.dart';
 
 /// T108 Q1: 보류한 회복 안내를 어떻게 할지([FeedbackService.decideHeldRecovery]).
 enum HeldRecoveryVerdict { wait, speak, cancel, expire }
@@ -64,6 +65,10 @@ class FeedbackService {
   late final DirectionRepeatTimer directionTimer =
       DirectionRepeatTimer(onDue: _onDirectionDue, timerFactory: timerFactory);
 
+  /// T157 P1: 진동 박자 단계를 한 단계씩, 단계마다 최소 700ms 내린다(음성은 그대로).
+  @visibleForTesting
+  final VibrationLevelDwell levelDwell = VibrationLevelDwell();
+
   /// T142: 테스트가 시계·타이머를 바꿔 끼운다. [directionTimer]를 처음 쓰기 전에 정한다.
   @visibleForTesting
   DateTime Function() clock = DateTime.now;
@@ -97,6 +102,7 @@ class FeedbackService {
     final changed = stillness.add(x, y, z, now);
     _logMotion(now);
     if (!changed) return;
+    _noteStillSpan(stillness.isStill, now);
     final mot = stillness.motion;
     EventLog.instance.log('still', {
       'on': stillness.isStill,
@@ -107,6 +113,34 @@ class FeedbackService {
     final raw = _lastRawClass;
     _stillOffPending =
         !stillness.isStill && (raw == 'left' || raw == 'right');
+  }
+
+  /// T157 A: 서 있던 구간(시작, 끝 — 아직 서 있으면 null). 발밑 인도 해제 때 위에서
+  /// 걸은 시간을 재는 데 쓴다. [stillSpanKeep]보다 오래된 것은 버린다.
+  final List<(DateTime, DateTime?)> _stillSpans = [];
+  static const stillSpanKeep = Duration(minutes: 5);
+
+  void _noteStillSpan(bool still, DateTime now) {
+    if (still) {
+      _stillSpans.add((now, null));
+    } else if (_stillSpans.isNotEmpty && _stillSpans.last.$2 == null) {
+      _stillSpans.last = (_stillSpans.last.$1, now);
+    }
+    final cutoff = now.subtract(stillSpanKeep);
+    _stillSpans.removeWhere((e) => e.$2 != null && e.$2!.isBefore(cutoff));
+  }
+
+  /// T157 A: [from]~[to] 사이에 서 있던 시간(`still` 기준). 센서가 멈춰 끝이 안 난
+  /// 구간은 [to]까지로 본다(추정 — 그동안 표본이 없으면 서 있었는지 알 수 없다).
+  @visibleForTesting
+  Duration stillTimeBetween(DateTime from, DateTime to) {
+    var total = Duration.zero;
+    for (final (a, b) in _stillSpans) {
+      final start = a.isAfter(from) ? a : from;
+      final end = b == null || b.isAfter(to) ? to : b;
+      if (end.isAfter(start)) total += end.difference(start);
+    }
+    return total;
   }
 
   void _logMotion(DateTime now) {
@@ -235,15 +269,55 @@ class FeedbackService {
   /// 건넌 직후 오검출 0.8·4.0·7.1초, 실제 다음 횡단보도 10.9초(10/27 12:23:03).
   static const entryAfterCrossedQuiet = Duration(seconds: 9);
 
+  /// T157 A: none -> 위 진입이라도 이 시간 안에 approach가 있었으면 지금처럼 바로 말한다.
+  static const entryRecentApproach = Duration(seconds: 3);
+  DateTime? _lastApproachAt;
+
+  /// T157 A: 서 있는 채 none -> 위로 바뀌어 미뤄 둔 진입 안내의 시각. 걸음이 시작되면
+  /// 말하고, 그 전에 위를 벗어나면 버린다.
+  DateTime? _entryAwaitWalkAt;
+
+  /// T157 A: 발밑 인도 해제 때 "건넜습니다"를 낼 최소 **걸은** 위 시간(위 지속 − 서 있던
+  /// 시간). T140의 6초(`CrossingHold.groundReleaseCrossedMinOn`)를 걸은 시간에 적용한다.
+  /// 근거(`train/t157_report.md` A): 10/29 16:26:29 연석에 서 있던 장면은 위 11.8초 중
+  /// 걸은 시간 5.1초, 실제 건넘(10/28·10/29 발밑 해제 20번)은 걸은 시간 최소 6.2초.
+  /// 정지 비율로는 나눌 수 없다(실제 건넘 최대 0.85 > 잘못 0.57).
+  /// 오케스트레이터 확정(2026-10-29): T140과 같은 6초지만 따로 둔다. 여유가 1.1초로 얇다 —
+  /// 다음 실기기 `hold.end` `walk_ms`로 다시 본다.
+  static const groundCrossedMinWalk = Duration(seconds: 6);
+
+  /// T157 A: 마지막 [noteHoldReleasedByGround]에서 잰 걸은 위 시간(기록용, 모르면 null).
+  Duration? get lastReleaseWalk => _lastReleaseWalk;
+  Duration? _lastReleaseWalk;
+
+  /// T157 A: 같은 때 잰 정지 비율(서 있던 시간 / 위 지속, 기록용, 모르면 null).
+  double? get lastReleaseStillRatio => _lastReleaseStillRatio;
+  double? _lastReleaseStillRatio;
+
   /// T118: `CrossingHold`가 발밑이 인도라서 hold를 푼 직후 부른다.
   /// [holdStartedAt]은 그 hold가 시작된 시각(`CrossingHold.releasedHoldStartedAt`).
   /// T140: [crossed]면(`CrossingHold.releasedAfterLongCrossing`) 같은 프레임의
   /// alert(none/approach)에서 "건넜습니다"를 낸다.
-  void noteHoldReleasedByGround(DateTime now,
-      {DateTime? holdStartedAt, bool crossed = false}) {
+  /// T157 A: [onDuration](위 지속)이 있으면 그중 걸은 시간이 [groundCrossedMinWalk]보다
+  /// 짧을 때 말하지 않는다(서서 줄무늬를 본 것). 실제로 "건넜습니다"를 낼지 돌려준다.
+  bool noteHoldReleasedByGround(DateTime now,
+      {DateTime? holdStartedAt, bool crossed = false, Duration? onDuration}) {
     _holdReleasedByGroundAt = now;
     _releasedHoldStartedAt = holdStartedAt;
-    _crossedOnGroundRelease = crossed;
+    _lastReleaseWalk = null;
+    _lastReleaseStillRatio = null;
+    var said = crossed;
+    if (onDuration != null) {
+      final still = stillTimeBetween(now.subtract(onDuration), now);
+      final walk = onDuration - still;
+      _lastReleaseWalk = walk;
+      _lastReleaseStillRatio = onDuration.inMilliseconds > 0
+          ? still.inMilliseconds / onDuration.inMilliseconds
+          : 0.0;
+      if (walk < groundCrossedMinWalk) said = false;
+    }
+    _crossedOnGroundRelease = said;
+    return said;
   }
 
   /// T118 보완: 일찍 푼 뒤 crossed를 "건넜습니다"로 볼 마지막 시각 —
@@ -590,6 +664,32 @@ class FeedbackService {
     String detectedClass,
     DateTime now,
   ) {
+    final approachAt = _lastApproachAt;
+    if (detectedClass == 'approach') _lastApproachAt = now;
+    // T157 A: 서 있어서 미뤄 둔 진입 안내 — 위에서 걸음이 시작되면 말하고, 위를
+    // 벗어나면 버린다(버린 뒤에는 이번 판정을 평소대로 본다).
+    final awaitAt = _entryAwaitWalkAt;
+    if (awaitAt != null) {
+      final entry = AppStrings.of(_language).enteredCrosswalkMessage;
+      if (!DirectionResolver.isOnCrosswalk(detectedClass)) {
+        _entryAwaitWalkAt = null;
+        EventLog.instance.log('say.cancel', {'text': entry, 'why': 'state'});
+      } else {
+        // 위에 머묾 — 아래 평소 경로처럼 발밑 해제 건넘 창을 비운다.
+        _holdReleasedByGroundAt = null;
+        _releasedHoldStartedAt = null;
+        _crossedOnGroundRelease = false;
+        if (stillness.isStillAt(now)) return null;
+        _entryAwaitWalkAt = null;
+        EventLog.instance.log('say.force', {
+          'text': entry,
+          'why': 'walk',
+          'wait': now.difference(awaitAt).inMilliseconds,
+        });
+        _lastPhaseAt[entry] = now;
+        return entry;
+      }
+    }
     // T149(사용자 승인 2026-10-28): approach를 거치지 않은 none -> 위도 진입이다
     // (10/28 E10·E24 누락). 단 건넌 신호 뒤 [entryAfterCrossedQuiet] 안이면 침묵.
     final lastCrossed = _lastCrossedAt;
@@ -651,6 +751,18 @@ class FeedbackService {
         : entering
             ? strings.enteredCrosswalkMessage
             : strings.crossedCrosswalkMessage;
+    // T157 A(사용자 승인 2026-10-29): approach 없이 none -> 위로 바뀌었는데 서 있으면
+    // (연석에 서서 줄무늬를 봄, 10/29 16:26:29) 바로 말하지 않고 걸음이 시작될 때 말한다.
+    // 직전 [entryRecentApproach] 안에 approach가 있었으면 지금처럼 바로.
+    if (entering &&
+        previousClass == 'none' &&
+        (approachAt == null ||
+            now.difference(approachAt) > entryRecentApproach) &&
+        stillness.isStillAt(now)) {
+      _entryAwaitWalkAt = now;
+      EventLog.instance.log('say.defer', {'text': message, 'why': 'still'});
+      return null;
+    }
     // T123: 같은 문장만 3초 안에 다시 말하지 않는다(떨림 방지). 다른 진행 안내는
     // 서로 막지 않는다.
     final last = _lastPhaseAt[message];
@@ -1256,6 +1368,15 @@ class FeedbackService {
         EventLog.instance
             .log('say.cancel', {'text': dotBlock, 'why': 'superseded'});
       }
+      // T157 B: 진입 순간 대기 슬롯의 '앞에 횡단보도'는 이미 늦은 말이다 — 지우고 진입을
+      // 넣는다(10/29 16:19:56, 기록 줄 5296·5327·5335: 진입 slot_full 뒤 위에서 '앞에 횡단보도').
+      final strings = AppStrings.of(_language);
+      if (phaseMessage == strings.enteredCrosswalkMessage &&
+          audioPolicy.pendingMessage == strings.approachAheadMessage) {
+        audioPolicy.clearPending();
+        EventLog.instance.log('say.cancel',
+            {'text': strings.approachAheadMessage, 'why': 'entry'});
+      }
       unawaited(_speak(phaseMessage,
           priority: FeedbackPriority.p1, supersedes: supersedes));
     }
@@ -1314,10 +1435,19 @@ class FeedbackService {
     // T143: "이미 틀었음"은 무음 직진이 아니라 끝 유도 방향의 보통 단계 박자.
     final edgeTurnedVib =
         edgeTurnedVibrationClass(detectedClass, atEdge, edgeSteerClass);
-    final vibClass = edgeTurnedVib ?? detectedClass;
+    var vibClass = edgeTurnedVib ?? detectedClass;
+    var vibLevel = edgeTurnedVib != null ? 0 : (_frameDeviationLevel ?? 0);
+    // T157 P1: 내려갈 때(같은 방향 낮은 단계·직진)는 박자를 한 단계씩 최소 시간 유지한다.
+    // 직진이어도 유지가 끝날 때까지 lvl0 박자를 내고, 끝나면 그때 직진 확인(진동·딩).
+    if (vibClass == 'left' || vibClass == 'right' || vibClass == 'front') {
+      vibClass = _applyLevelDwell(vibClass, vibLevel, now);
+      if (vibClass != 'front') vibLevel = levelDwell.level;
+    } else {
+      levelDwell.reset();
+    }
     final pattern = vibrationPolicy.decidePattern(
         vibClass, now, _vibrationDurationMs,
-        level: edgeTurnedVib != null ? 0 : (_frameDeviationLevel ?? 0));
+        level: vibLevel);
 
     // T106: 경고 입력과 이번에 낸 것(음성 문장 여부·진동 여부). 말이 안 나간
     // 이유(쿨다운)도 이 줄과 'say' 줄을 함께 보면 알 수 있다.
@@ -1357,6 +1487,37 @@ class FeedbackService {
     await _vibrate(kind, pattern);
   }
 
+  /// T157 P1: [levelDwell]로 이번 진동 방향을 정하고 바뀐 것을 `vib.dwell`로 남긴다.
+  /// act=hold(판정보다 높은 박자 유지 시작)·step(한 단계 내림)·end(유지 끝, late=직진 판정
+  /// 뒤 늦어진 ms). 판정과 같은 박자면 남기지 않는다.
+  String _applyLevelDwell(String judged, int judgedLevel, DateTime now) {
+    final wasHolding = levelDwell.holding;
+    final prevCls = levelDwell.cls;
+    final prevLevel = levelDwell.level;
+    final out = levelDwell.resolve(
+        judged == 'front' ? null : judged, judgedLevel, now);
+    final late = levelDwell.releaseLate;
+    if (out == null) {
+      if (late != null) {
+        EventLog.instance.log('vib.dwell', {
+          'act': 'end',
+          'cls': prevCls,
+          'late': late.inMilliseconds,
+        });
+      }
+      return 'front';
+    }
+    final to = judged == 'front' ? 'front' : judgedLevel;
+    if (wasHolding && prevCls == out && levelDwell.level < prevLevel) {
+      EventLog.instance.log('vib.dwell',
+          {'act': 'step', 'cls': out, 'lvl': levelDwell.level, 'to': to});
+    } else if (levelDwell.holding && !wasHolding) {
+      EventLog.instance.log('vib.dwell',
+          {'act': 'hold', 'cls': out, 'lvl': levelDwell.level, 'to': to});
+    }
+    return out;
+  }
+
   /// T142: 반복 타이머가 예정 시각에 부른다. 판정이 멈췄으면(경고 호출이
   /// [DirectionRepeatTimer.staleAfter]보다 오래 없음) 울리지 않고 멈춘다.
   void _onDirectionDue() {
@@ -1381,6 +1542,8 @@ class FeedbackService {
   /// hold(`hold`), 앱 일시정지·화면 꺼짐(`pause`), 화면 종료(`dispose`).
   /// 돌고 있던 타이머를 멈췄을 때만 `vib.stop`을 남긴다.
   void stopDirectionVibration(String why, {String? to}) {
+    // T157 P1: 하강 유지도 함께 비운다(hold 뒤 첫 판정이 옛 단계를 이어 내리지 않게).
+    levelDwell.reset();
     if (!directionTimer.stop()) return;
     EventLog.instance
         .log('vib.stop', {'why': why, if (to != null) 'to': to});
