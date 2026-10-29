@@ -1403,8 +1403,8 @@ class _CameraScreenState extends State<CameraScreen>
       {required bool flipHeld, required bool stillHeld}) {
     if (flipHeld) return angle;
     if (stillHeld) return 0.0;
-    return DirectionResolver.correctedAngle(angle, _edgeSide,
-        position: position);
+    // T158: 깊은 끝 직진이면 단계 0으로 고정한 보정각.
+    return DirectionResolver.levelAngle(angle, _edgeSide, position: position);
   }
 
   // T103: X형 교차 횡단보도처럼 줄무늬 없는 구간에서 "횡단 중"을 유지한다.

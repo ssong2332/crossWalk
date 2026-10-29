@@ -134,6 +134,18 @@
 ///     (`train/t146_report.md`): 계단 28/18/12, 0.8→1.0(끝 판정 안만) 33/13/15,
 ///     **0.5→1.0 25/12/18** (전체 뒤집힘/끝 경계 뒤집힘/2→1→0).
 ///   경계 상수는 모두 이 클래스에 모아 둔다(실기기 체감 뒤 조정).
+///
+/// T158(2026-10-29, 사용자 승인 (a2)+(e)): **끝에서 직진하면 중앙 쪽 안내를 줄인다.**
+///   10/29 실기기(빌드 939a2d5): 끝에서 똑바로 걸으면 c = a ± 20이라 단계 1~2의
+///   중앙 쪽 안내('즉시 오른쪽으로' 등)가 21번 나왔다(`train/t158_report.md`).
+///   끝 판정(1.0/0.8)·보정각 c·방향 표(12/9)는 그대로 두고, 끝에서 직진
+///   (|a| < [edgeStraightDegrees])일 때만 아래를 본다:
+///     | 끝   | |p| (평활)              | 각도 a    | 결과                                        |
+///     | 끝   | < [deepEdgePosition]    | |a| < 9   | front (+ 끝 → 끝 문구, T143 중앙 쪽 보통 박자) |
+///     | 끝   | >= [deepEdgePosition]   | |a| < 9   | 지금 그대로(중앙 쪽 명령), 단계 0 고정       |
+///     | 끝   | 무엇이든                | 직진 아님 | 지금 그대로(T146)                            |
+///     | 아님 | —                       | —         | 지금 그대로                                  |
+///   각도가 없으면 직진이 아니다(지금 그대로). 1.5와 9는 재생 값(실기기 뒤 조정).
 class DirectionResolver {
   DirectionResolver._();
 
@@ -177,6 +189,46 @@ class DirectionResolver {
   /// T146 C: 서 있을 때 반대 방향 안내로 바꾸려면 반대 판정이 이만큼 이어져야 한다
   /// ([StillOppositeDelay]).
   static const stillOppositeHold = Duration(milliseconds: 1500);
+
+  /// T158: 끝에서 |각도|가 이 값 미만이면 "직진"으로 본다.
+  static const double edgeStraightDegrees = 9.0;
+
+  /// T158: |위치|가 이 값 이상이면 "깊은 끝" — 직진이어도 중앙 쪽 명령을 유지한다(단계 0).
+  static const double deepEdgePosition = 1.5;
+
+  /// T158: 끝에서 직진(|a| < [edgeStraightDegrees])인가. 각도가 없으면 false.
+  static bool isEdgeStraight(double? angleDegrees, int edgeSide) =>
+      edgeSide != 0 &&
+      angleDegrees != null &&
+      angleDegrees.abs() < edgeStraightDegrees;
+
+  /// T158 표 3행: 끝 + 직진 + |p| < [deepEdgePosition] → front.
+  static bool _edgeStraightFront(
+          double? angleDegrees, int edgeSide, double? position) =>
+      isEdgeStraight(angleDegrees, edgeSide) &&
+      position != null &&
+      position.abs() < deepEdgePosition;
+
+  /// T158 표 4행: 끝 + 직진 + |p| >= [deepEdgePosition] → 단계 0 고정.
+  static bool isDeepEdgeStraight(
+          double? angleDegrees, int edgeSide, double? position) =>
+      isEdgeStraight(angleDegrees, edgeSide) &&
+      position != null &&
+      position.abs() >= deepEdgePosition;
+
+  /// T158: 단계·음성에 넘기는 보정각. 깊은 끝 직진이면 방향(부호)은 두고 크기를
+  /// [deviationAngleDegrees]로 줄여 단계 0이 되게 한다('즉시'·빠른 박자 없음).
+  /// 그 밖에는 [correctedAngle] 그대로.
+  static double? levelAngle(double? angleDegrees, int edgeSide,
+      {double? position}) {
+    final c = correctedAngle(angleDegrees, edgeSide, position: position);
+    if (c == null || !isDeepEdgeStraight(angleDegrees, edgeSide, position)) {
+      return c;
+    }
+    return c.abs() <= deviationAngleDegrees
+        ? c
+        : (c < 0 ? -deviationAngleDegrees : deviationAngleDegrees);
+  }
 
   /// T146 B: 끝 판정. −1 = 왼쪽 끝, +1 = 오른쪽 끝, 0 = 끝 아님.
   /// [previousSide]가 같은 쪽 끝이면 |p| >= [edgeExitPosition]인 동안 유지한다.
@@ -233,6 +285,8 @@ class DirectionResolver {
   static String resolve(String label, double? angleDegrees,
       {int edgeSide = 0, double? position, String? previous}) {
     if (!isOnCrosswalk(label)) return label;
+    // T158 3행: 끝에서 직진(깊은 끝 아님)이면 중앙 쪽 명령 없이 front(+ 끝).
+    if (_edgeStraightFront(angleDegrees, edgeSide, position)) return 'front';
     final c = correctedAngle(angleDegrees, edgeSide, position: position);
     if (c == null) return label;
     if (previous == 'left' && c >= recoverAngleDegrees) return 'left';
