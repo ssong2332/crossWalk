@@ -230,6 +230,26 @@ class AppStrings {
   final String settingsFrameShare;
   final String settingsFrameShareEmpty;
   final String settingsFrameShareFailed;
+  // T153: BLE 좌우 진동 모듈(개발 설정).
+  final String settingsVibModuleSectionHeader;
+  final String settingsVibModuleLabel;
+  final String settingsVibModuleNote;
+  final String settingsVibModuleWithPhoneLabel;
+  final String settingsVibModuleWithPhoneNote;
+  final String settingsVibModuleStrengthLabel;
+  final String settingsVibModuleStrengthLow;
+  final String settingsVibModuleStrengthMid;
+  final String settingsVibModuleStrengthHigh;
+  final String settingsVibModuleTestLeft;
+  final String settingsVibModuleTestRight;
+  final String settingsVibModuleTestBoth;
+  final String vibModuleStateOff;
+  final String vibModuleStateSearching;
+  final String vibModuleStateConnected;
+  final String vibModuleStateLost;
+  final String vibModuleStateDenied;
+  final String vibModuleConnectedMessage;
+  final String vibModuleLostMessage;
   // T135: 골라 보내기 화면(기록 파일·프레임 묶음).
   final String sharePickLogTitle;
   final String sharePickFramesTitle;
@@ -395,6 +415,25 @@ class AppStrings {
     required this.settingsFrameShare,
     required this.settingsFrameShareEmpty,
     required this.settingsFrameShareFailed,
+    required this.settingsVibModuleSectionHeader,
+    required this.settingsVibModuleLabel,
+    required this.settingsVibModuleNote,
+    required this.settingsVibModuleWithPhoneLabel,
+    required this.settingsVibModuleWithPhoneNote,
+    required this.settingsVibModuleStrengthLabel,
+    required this.settingsVibModuleStrengthLow,
+    required this.settingsVibModuleStrengthMid,
+    required this.settingsVibModuleStrengthHigh,
+    required this.settingsVibModuleTestLeft,
+    required this.settingsVibModuleTestRight,
+    required this.settingsVibModuleTestBoth,
+    required this.vibModuleStateOff,
+    required this.vibModuleStateSearching,
+    required this.vibModuleStateConnected,
+    required this.vibModuleStateLost,
+    required this.vibModuleStateDenied,
+    required this.vibModuleConnectedMessage,
+    required this.vibModuleLostMessage,
     required this.sharePickLogTitle,
     required this.sharePickFramesTitle,
     required this.sharePickSend,
@@ -544,6 +583,26 @@ class AppStrings {
     settingsFrameShare: '프레임 보내기',
     settingsFrameShareEmpty: '보낼 프레임이 없습니다',
     settingsFrameShareFailed: '프레임을 보내지 못했습니다',
+    settingsVibModuleSectionHeader: '진동 모듈 (개발)',
+    settingsVibModuleLabel: '진동 모듈 연결 (개발)',
+    settingsVibModuleNote: 'BLE 좌우 진동 모듈로 가야 할 쪽을 울립니다. '
+        '끊기면 폰 진동으로 바뀌고 한 번 알려 줍니다.',
+    settingsVibModuleWithPhoneLabel: '폰 진동도 함께',
+    settingsVibModuleWithPhoneNote: '끄면 모듈이 연결된 동안 모듈만 울립니다.',
+    settingsVibModuleStrengthLabel: '모듈 세기',
+    settingsVibModuleStrengthLow: '약하게',
+    settingsVibModuleStrengthMid: '보통',
+    settingsVibModuleStrengthHigh: '강하게',
+    settingsVibModuleTestLeft: '왼쪽 시험',
+    settingsVibModuleTestRight: '오른쪽 시험',
+    settingsVibModuleTestBoth: '양쪽 시험',
+    vibModuleStateOff: '꺼짐',
+    vibModuleStateSearching: '찾는 중',
+    vibModuleStateConnected: '연결됨',
+    vibModuleStateLost: '끊김 — 폰 진동 사용, 다시 찾는 중',
+    vibModuleStateDenied: '블루투스 권한이 없습니다',
+    vibModuleConnectedMessage: '진동 모듈이 연결되었습니다',
+    vibModuleLostMessage: '진동 모듈 연결이 끊겼습니다. 폰 진동으로 바꿉니다',
     sharePickLogTitle: '보낼 기록 고르기',
     sharePickFramesTitle: '보낼 프레임 묶음 고르기',
     sharePickSend: '보내기',
@@ -720,6 +779,26 @@ class AppStrings {
     settingsFrameShare: 'Send frames',
     settingsFrameShareEmpty: 'No frames to send',
     settingsFrameShareFailed: 'Could not send the frames',
+    settingsVibModuleSectionHeader: 'Vibration module (developer)',
+    settingsVibModuleLabel: 'Connect vibration module (developer)',
+    settingsVibModuleNote: 'Vibrates the side to move toward on a BLE left/right module. '
+        'Falls back to phone vibration and tells you once if it disconnects.',
+    settingsVibModuleWithPhoneLabel: 'Also vibrate the phone',
+    settingsVibModuleWithPhoneNote: 'When off, only the module vibrates while it is connected.',
+    settingsVibModuleStrengthLabel: 'Module strength',
+    settingsVibModuleStrengthLow: 'Weak',
+    settingsVibModuleStrengthMid: 'Medium',
+    settingsVibModuleStrengthHigh: 'Strong',
+    settingsVibModuleTestLeft: 'Test left',
+    settingsVibModuleTestRight: 'Test right',
+    settingsVibModuleTestBoth: 'Test both',
+    vibModuleStateOff: 'Off',
+    vibModuleStateSearching: 'Searching',
+    vibModuleStateConnected: 'Connected',
+    vibModuleStateLost: 'Disconnected — using phone vibration, searching',
+    vibModuleStateDenied: 'No Bluetooth permission',
+    vibModuleConnectedMessage: 'Vibration module connected',
+    vibModuleLostMessage: 'Vibration module disconnected. Switching to phone vibration',
     sharePickLogTitle: 'Choose logs to send',
     sharePickFramesTitle: 'Choose frame sets to send',
     sharePickSend: 'Send',

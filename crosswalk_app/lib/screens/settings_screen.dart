@@ -1,8 +1,10 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import '../localization/app_strings.dart';
 import '../services/dev_capture.dart';
+import '../services/vib_module.dart';
 import '../services/feedback_service.dart';
 
 /// T39: language selection + TTS-rate/vibration-strength sliders + a
@@ -64,6 +66,14 @@ class SettingsScreen extends StatefulWidget {
     this.frameSaveEnabled = false,
     this.onFrameSaveChanged,
     this.onShareFrames,
+    this.vibModuleEnabled = false,
+    this.onVibModuleChanged,
+    this.vibModuleState,
+    this.vibModuleWithPhone = false,
+    this.onVibModuleWithPhoneChanged,
+    this.vibModuleStrength = VibModuleProtocol.defaultStrength,
+    this.onVibModuleStrengthChanged,
+    this.onVibModuleTest,
   });
 
   final FeedbackService feedback;
@@ -116,6 +126,18 @@ class SettingsScreen extends StatefulWidget {
   final ValueChanged<bool>? onFrameSaveChanged;
   final Future<String?> Function()? onShareFrames;
 
+  // T153: BLE 좌우 진동 모듈(개발, 기본 꺼짐). [onVibModuleChanged]가 없으면 이 구역을
+  // 그리지 않는다. [vibModuleState]는 연결 상태 표시용, [onVibModuleTest]는 kind
+  // (test_left/test_right/test_both)를 받아 착용 시험 진동을 낸다.
+  final bool vibModuleEnabled;
+  final ValueChanged<bool>? onVibModuleChanged;
+  final ValueListenable<VibLinkState>? vibModuleState;
+  final bool vibModuleWithPhone;
+  final ValueChanged<bool>? onVibModuleWithPhoneChanged;
+  final int vibModuleStrength;
+  final ValueChanged<int>? onVibModuleStrengthChanged;
+  final ValueChanged<String>? onVibModuleTest;
+
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
@@ -146,6 +168,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late CameraMount _mount;
   late bool _frameSave;
   bool _sharingFrames = false;
+  late bool _vibModule;
+  late bool _vibModuleWithPhone;
+  late int _vibModuleStrength;
 
   @override
   void initState() {
@@ -164,6 +189,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _ultraWide = widget.ultraWideEnabled;
     _mount = widget.cameraMount;
     _frameSave = widget.frameSaveEnabled;
+    _vibModule = widget.vibModuleEnabled;
+    _vibModuleWithPhone = widget.vibModuleWithPhone;
+    _vibModuleStrength = widget.vibModuleStrength;
   }
 
   void _selectLanguage(AppLanguage language) {
@@ -267,6 +295,140 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(message)));
     }
+  }
+
+  void _toggleVibModule(bool value) {
+    setState(() => _vibModule = value);
+    widget.onVibModuleChanged?.call(value);
+  }
+
+  void _toggleVibModuleWithPhone(bool value) {
+    setState(() => _vibModuleWithPhone = value);
+    widget.onVibModuleWithPhoneChanged?.call(value);
+  }
+
+  void _selectVibModuleStrength(int value) {
+    if (value == _vibModuleStrength) return;
+    setState(() => _vibModuleStrength = value);
+    widget.onVibModuleStrengthChanged?.call(value);
+  }
+
+  String _vibModuleStateText(VibLinkState state) {
+    switch (state) {
+      case VibLinkState.off:
+        return _strings.vibModuleStateOff;
+      case VibLinkState.searching:
+        return _strings.vibModuleStateSearching;
+      case VibLinkState.connected:
+        return _strings.vibModuleStateConnected;
+      case VibLinkState.lost:
+        return _strings.vibModuleStateLost;
+      case VibLinkState.denied:
+        return _strings.vibModuleStateDenied;
+    }
+  }
+
+  // T153: 진동 모듈 구역. 시험 버튼·세기·폰 함께는 설정을 켰을 때만 그린다.
+  Widget _buildVibModuleSection() {
+    const noteStyle = TextStyle(color: Colors.white38, fontSize: 12);
+    final stateListenable = widget.vibModuleState;
+    final buttonStyle = OutlinedButton.styleFrom(
+      foregroundColor: Colors.white,
+      side: const BorderSide(color: Colors.white38),
+      minimumSize: const Size(48, 48),
+    );
+    final levels = VibModuleProtocol.strengthLevels;
+    final strengthLabels = [
+      _strings.settingsVibModuleStrengthLow,
+      _strings.settingsVibModuleStrengthMid,
+      _strings.settingsVibModuleStrengthHigh,
+    ];
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SwitchListTile(
+            value: _vibModule,
+            onChanged: _toggleVibModule,
+            activeColor: _colorAccent,
+            contentPadding: EdgeInsets.zero,
+            title: Text(_strings.settingsVibModuleLabel,
+                style: const TextStyle(color: Colors.white70)),
+            subtitle: Text(_strings.settingsVibModuleNote, style: noteStyle),
+          ),
+          if (_vibModule && stateListenable != null)
+            ValueListenableBuilder<VibLinkState>(
+              valueListenable: stateListenable,
+              builder: (context, state, _) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(_vibModuleStateText(state),
+                    style: const TextStyle(color: Colors.white)),
+              ),
+            ),
+          if (_vibModule) ...[
+            if (widget.onVibModuleWithPhoneChanged != null)
+              SwitchListTile(
+                value: _vibModuleWithPhone,
+                onChanged: _toggleVibModuleWithPhone,
+                activeColor: _colorAccent,
+                contentPadding: EdgeInsets.zero,
+                title: Text(_strings.settingsVibModuleWithPhoneLabel,
+                    style: const TextStyle(color: Colors.white70)),
+                subtitle: Text(_strings.settingsVibModuleWithPhoneNote,
+                    style: noteStyle),
+              ),
+            if (widget.onVibModuleStrengthChanged != null) ...[
+              const SizedBox(height: 8),
+              Text(_strings.settingsVibModuleStrengthLabel,
+                  style: const TextStyle(color: Colors.white70)),
+              const SizedBox(height: 8),
+              SegmentedButton<int>(
+                segments: [
+                  for (var i = 0; i < levels.length; i++)
+                    ButtonSegment(
+                        value: levels[i], label: Text(strengthLabels[i])),
+                ],
+                selected: {_vibModuleStrength},
+                onSelectionChanged: (selection) =>
+                    _selectVibModuleStrength(selection.first),
+                style: SegmentedButton.styleFrom(
+                  backgroundColor: Colors.black,
+                  selectedBackgroundColor: _colorAccent,
+                  selectedForegroundColor: _colorAccentOnText,
+                  foregroundColor: Colors.white70,
+                  side: const BorderSide(color: Colors.white38),
+                ),
+              ),
+            ],
+            if (widget.onVibModuleTest != null) ...[
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton(
+                    onPressed: () => widget.onVibModuleTest!('test_left'),
+                    style: buttonStyle,
+                    child: Text(_strings.settingsVibModuleTestLeft),
+                  ),
+                  OutlinedButton(
+                    onPressed: () => widget.onVibModuleTest!('test_right'),
+                    style: buttonStyle,
+                    child: Text(_strings.settingsVibModuleTestRight),
+                  ),
+                  OutlinedButton(
+                    onPressed: () => widget.onVibModuleTest!('test_both'),
+                    style: buttonStyle,
+                    child: Text(_strings.settingsVibModuleTestBoth),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
   }
 
   Widget _buildDevCaptureSection() {
@@ -609,6 +771,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           if (widget.onUltraWideChanged != null) ...[
             _buildSectionHeader(_strings.settingsDevCaptureSectionHeader),
             _buildDevCaptureSection(),
+          ],
+          if (widget.onVibModuleChanged != null) ...[
+            _buildSectionHeader(_strings.settingsVibModuleSectionHeader),
+            _buildVibModuleSection(),
           ],
           _buildSectionHeader(_strings.settingsAccessibilitySectionHeader),
           Padding(
