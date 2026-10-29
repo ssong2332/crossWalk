@@ -15,7 +15,8 @@
 | 새 판 `camera_android_camerax`로 올리면 | 폰이 외부 카메라를 Camera2에 올려 주면 `CameraLensDirection.external`로 보인다. 판을 올리려면 Flutter도 올려야 한다(추정) | 0.6.19+1 (Dart ≥3.7) | GitHub `flutter/packages` main 소스(외부 카메라를 목록에 넣음). pub.dev 판 기록: 0.6.29 "렌즈 방향을 CameraX에서 직접 받음", 0.6.23+2부터 Dart ≥3.9. 지금 Flutter 3.32.2(Dart 3.8 계열, 추정) |
 | 갤럭시 S25 울트라가 외부 UVC 카메라를 Camera2(`LENS_FACING_EXTERNAL`)로 올리는가 | **미확인.** 직접 근거를 찾지 못했다 | — | AOSP는 제조사가 외부 카메라 HAL을 넣어야 한다고 쓴다(source.android.com External USB cameras). S25 기종 보고는 찾지 못했다. S21/S23 울트라에서 UVC 앱이 동작했다는 사용자 글만 있다(아래 §1-3) |
 | 앱 라이브러리로 USB를 직접 여는 경로(libusb/libuvc) | 쓸 수 있는 후보가 있다: `flutter_ffi_uvc` 1.1.2 (BSD-3, Dart ≥3.8.1 → 지금 Flutter 그대로 됨) | §9-4 표 | pub.dev `flutter_ffi_uvc` |
-| 추천 카메라 경로 | **① 사용자 확인(0원)을 먼저 하고, 결과에 따라 경로 1(표준) 또는 경로 2(라이브러리)** | — | §1-4 판정표 |
+| 추천 카메라 경로 | **먼저 폰 인식을 확인하고, 결과에 따라 경로 1(표준) 또는 경로 2(라이브러리)** | — | §1-4 판정표 |
+| 첫 인식 확인 방법 (사용자에게 USB 웹캠 없음, OV7670은 USB 아님 — 보류) | **(b) 국내 저가 UVC 웹캠(약 26,800원)을 먼저 사서 확인 추천.** B0305는 국내 재고가 없어 도착 시점이 불확실하다 | (a) B0305 바로 구매 약 142,564원(추정) | §5 비교표 |
 | 카메라 B0305 국내 판매 | **국내 소매 판매처를 찾지 못했다.** 디바이스마트에는 표준 화각(66°) USB판만 있다 | §9 해외가 £57.60 | 디바이스마트 검색 "IMX708 USB"(3건, B0305 없음), DigiKey KR ₩142,564(검색 결과 스니펫, 재고 0) / 같은 날 DigiKey 페이지는 "더 이상 판매하지 않음" |
 | BLE 마이컴 추천 | **Seeed XIAO ESP32-C3** (9,600원, 디바이스마트 재고 있음, 충전 칩 내장) | 계획: ESP32-C3 또는 nRF52 | 디바이스마트, Seeed 위키 |
 | 부품 합계 (배송비 별도) | **약 301,000원** (헤드폰 포함). 골전도 헤드폰을 이미 가지고 있으면 약 200,000원 | — | §2 표. 카메라 가격은 추정(₩142,564 기준) |
@@ -200,18 +201,60 @@ STATUS: `type seq batt flags` — `type` 1=PONG, 2=오류. `batt`는 분압 저�
 - §5 진행 순서 표를 A안 순서(A0~A5)로 다시 썼다. 이전 H1~H6 표는 지우지 않고 "이전 계획"으로 남겼다.
 - §7 안전 수칙과 "실사용자 체험(H6) 전 조건"(금지 3번)은 그대로 두었다.
 
-## 5. 사용자가 직접 확인할 것 (0원, 부품 도착 전에 가능)
+## 5. 사용자가 직접 확인할 것
+
+**조건 (오케스트레이터 2026-10-29):** 사용자에게 USB 웹캠이 없다. 가진 카메라는 OV7670뿐인데 DVP 병렬 방식이라 USB가 아니다(마이컴을 거쳐야 함). 그래서 OV7670은 계획대로 보류하고 A안에 쓰지 않는다(`HardwarePlan.md` §1). 인식 확인용 카메라를 하나 사야 한다.
+
+### 5-1. 두 가지 인식 경로 (따로 확인해야 한다)
+
+| 경로 | 무엇이 카메라를 여나 | 갤럭시가 해 줘야 하는 것 | 확인 앱 | 앱 경로 |
+|---|---|---|---|---|
+| **안드로이드 카메라 HAL 경로** (시스템 카메라) | 안드로이드 카메라 서비스(Camera2/CameraX)가 외부 카메라를 카메라 목록에 올림 | 제조사가 외부 카메라 HAL(provider)을 넣어야 함. 넣었는지는 기종마다 다름(source.android.com External USB cameras) | 카메라 정보 앱(Camera2 API Probe류)에서 External 카메라가 생기는가 | 경로 1 |
+| **사용자 공간 UVC 경로** (앱이 USB를 직접 엶) | 앱 안의 libusb/libuvc(예: saki4510t UVCCamera 계열, `flutter_ffi_uvc`)가 USB 장치를 직접 엶 | USB 호스트(OTG)만 되면 됨. Android 11 이상에서는 앱이 카메라 권한을 받아야 UVC 장치에 접근 가능(AOSP 문서) | UVC 뷰어 앱(USB Camera·CameraFi류)에 화면이 나오는가 | 경로 2 |
+
+### 5-2. 갤럭시에서 UVC를 쓴 사례 (조회 2026-10-29)
+
+| 기기 | 경로 | 결과 | 출처 |
+|---|---|---|---|
+| Galaxy Tab S6 Lite (Android 10 출고) | 사용자 공간(앱 + HDMI 캡처 장치, UVC) | **동작** ("처음부터 바로 됨") | Samsung EU 커뮤니티 Note 9 글 2021-02-27 https://eu.community.samsung.com/t5/galaxy-note-series/uvc-na-note-9-uvc-in-note-9/td-p/2951913 |
+| Galaxy Note 9 (Android 10으로 업데이트) | 사용자 공간 | **실패.** 글쓴이는 2020-03 Google이 UVC를 막았고 고친 판은 Android 11이 필요하다고 씀(본인 주장, 미검증) | 같은 글 |
+| Galaxy S21 Ultra | 미상(앱 이름 없음) | USB 내시경 **동작** (구매평) | https://www.pbtech.co.nz/product/SEVOEM9440/USB-3-IN-1-Inspection-Camera-EndoScope-2MP-Lens-Di |
+| Galaxy S23 Ultra | 사용자 공간(추정) | 소형 UVC 카메라 직결 **동작** (판매 사이트 글, 신뢰도 낮음) | AliExpress Wiki "android uvc camera github" |
+| Galaxy S24 Ultra | 사용자 공간 | 싸구려 내시경 + 앱 6개 **모두 실패.** 카메라 불량 가능성이 거론됐고 환불받음. 원인 불명 | https://eu.community.samsung.com/t5/galaxy-s24-series/endoscopy-cam/td-p/11018176 (2024-11-06) |
+| Galaxy A13 (One UI 5 → 6) | 사용자 공간 | 업데이트 뒤 UVC 카메라 **안 붙음** | Samsung EU 커뮤니티 (§1-3) |
+| Galaxy S25 울트라 | 둘 다 | **사례 없음 → 미확인** | — |
+
+- 해석(추정): 사용자 공간 경로는 여러 갤럭시에서 된 사례가 있다. 실패 사례는 카메라 불량이나 OS 판 문제로 설명될 수 있다. 카메라 HAL 경로(External 카메라)는 갤럭시에서 된 사례를 하나도 찾지 못했다. 그래서 **경로 2 가능성이 경로 1보다 높다고 본다(추정).**
+
+### 5-3. 인식 확인용 카메라 비교
+
+| 항목 | (a) B0305를 바로 사서 첫 시험 | (b) 국내 저가 UVC 웹캠을 먼저 사서 확인 |
+|---|---|---|
+| 고른 상품 | Arducam B0305 | 앱코 APC850 FHD 웹캠 (USB, 1080p 30fps, 시야각 110°, 마이크) |
+| 가격 | 약 142,564원 (**추정**, DigiKey KR 검색 스니펫) — 어차피 살 물건이라 추가 비용 0 | **26,800원** (다나와 가격비교 최저, 77몰, 2026-10-29) — 추가 비용 |
+| 도착 | **불확실.** 국내 재고 없음, Pi Hut 품절, DigiKey 재고 0·"판매 종료" 표시. 해외 직구 기간 미확인 | 국내 쇼핑몰 1~3일(추정) |
+| 확인되는 것 | 폰 쪽(HAL·사용자 공간) + **이 카메라 자체**(MJPG 모드, 마이크가 소리 경로에 주는 영향)를 한 번에 | **폰 쪽**(HAL·사용자 공간)만. 웹캠이 되어도 B0305가 꼭 된다는 보장은 없다(UVC 칩·지원 형식이 다름, 추정) |
+| 실패했을 때 | 폰 문제인지 카메라 문제인지 가르기 어렵다. 14만 원짜리 부품이 남음(PC·라즈베리파이에서는 쓸 수 있음) | 2.7만 원 손실. 웹캠 불량 가능성을 빼려면 PC에서 먼저 동작 확인 가능 |
+| 덤 | — | 110° 광각이라 B0305 도착 전 앱 변경(A2)·초기 화면 확인에 임시 카메라로 쓸 수 있다(추정 — 센서·왜곡이 달라 학습 데이터용은 아님) |
+| UVC 표기 | 상품 페이지에 UVC 명시 | 상품 정보에 "UVC" 문구 없음. 일반 PC 웹캠은 대부분 UVC라 드라이버 없이 붙는다(추정). 확실히 하려면 대안: Arducam B0196 (IMX219 8MP, **UVC 명시**) 40,000원, 디바이스마트 약 2일 |
+
+**추천: (b).** 이유: ① B0305는 도착 시점이 불확실해서, 기다리면 앱 경로 결정(A0)과 앱 변경(A2)이 함께 밀린다. ② 확인하려는 위험 두 가지(폰 HAL 지원, 사용자 공간 동작)는 모두 **폰 쪽** 문제라서 아무 UVC 카메라로도 가를 수 있다. ③ 추가 비용이 26,800원으로 작고, 임시 카메라로도 쓸 수 있다. B0305 주문을 웹캠 확인과 동시에 할지, 확인 뒤에 할지는 사용자가 정한다. 동시에 주문하면 일정은 빨라지지만 폰이 둘 다 실패할 때 14만 원 위험이 생긴다.
+
+OTG 젠더(Type-C 수 → USB-A 암, 1,700원, §2 #8)는 웹캠과 B0305가 같이 쓴다.
+
+### 5-4. 확인 순서 (웹캠 도착 뒤)
 
 | # | 할 일 | 보는 것 | 결과 쓰는 곳 |
 |---|---|---|---|
-| U1 | 가지고 있는 아무 USB 웹캠을 S25 울트라에 OTG 젠더로 꽂는다 | 연결 알림 또는 앱 선택 창이 뜨는가 | 오케스트레이터에게 |
+| U0 | (선택) 웹캠을 PC에 먼저 꽂아 본다 | 화면이 나오는가 — 웹캠 불량 제외 | 오케스트레이터에게 |
+| U1 | 웹캠을 S25 울트라에 OTG 젠더로 꽂는다 | 연결 알림 또는 앱 선택 창이 뜨는가 | 오케스트레이터에게 |
 | U2 | 플레이스토어 "Camera2 API Probe" 같은 카메라 정보 앱을 연다 | 카메라 목록에 **External**(외부) 카메라가 새로 생기는가 → §1-4 ⓐ | 같은 곳 |
 | U3 | 플레이스토어 "USB Camera" 같은 UVC 앱을 연다 | 웹캠 화면이 나오는가, 해상도는 얼마인가 → §1-4 ⓑ | 같은 곳 |
 | U4 | U1~U3 동안 골전도(또는 블루투스) 헤드폰으로 음악을 튼다 | 소리가 헤드폰에 그대로 나오는가(웹캠 마이크 때문에 바뀌지 않는가) | 같은 곳 |
 | U5 | (선택) 개발자 옵션의 USB 설정 | 웹캠을 꽂았을 때 폰이 "충전만"이 아니라 호스트로 동작하는가 | 같은 곳 |
 
 - 앱 이름은 예시다. 이번 조사에서 특정 앱을 검증하지 않았다. 설치는 사용자가 정한다.
-- 웹캠이 없으면 B0305가 도착한 뒤 같은 순서로 한다.
+- B0305가 도착하면 U1~U4를 한 번 더 한다(카메라 자체 확인).
 
 ## 6. 출처 (조회 2026-10-29)
 - 로컬 소스: `%LOCALAPPDATA%/Pub/Cache/hosted/pub.dev/camera_android_camerax-0.6.19+1/` (`lib/src/android_camera_camerax.dart:274-321`, `:1420-1428`; `android/build.gradle` CameraX 1.5.0-beta01)
@@ -221,6 +264,10 @@ STATUS: `type seq batt flags` — `type` 1=PONG, 2=오류. `batt`는 분압 저�
 - https://www.sammobile.com/?p=16662419 (SamMobile, 2026-06-26 갱신: 유선 웹캠 기능 S26 전용)
 - https://www.pbtech.co.nz/product/SEVOEM9440/USB-3-IN-1-Inspection-Camera-EndoScope-2MP-Lens-Di (S21 울트라 구매평)
 - https://eu.community.samsung.com/t5/mobile-apps-services/uvc-camera-cannot-connect-to-samsung-a13-one-ui-6-0/m-p/9333557/highlight/true
+- https://eu.community.samsung.com/t5/galaxy-note-series/uvc-na-note-9-uvc-in-note-9/td-p/2951913 (Note 9 실패, Tab S6 Lite 동작)
+- https://eu.community.samsung.com/t5/galaxy-s24-series/endoscopy-cam/td-p/11018176 (S24 Ultra 내시경 실패)
+- https://github.com/saki4510t/UVCCamera (사용자 공간 UVC 라이브러리)
+- https://search.danawa.com (검색: 웹캠 — 앱코 APC850 26,800원), 디바이스마트 (검색: USB 웹캠 — Arducam B0196 40,000원)
 - https://pub.dev/packages/flutter_ffi_uvc , https://pub.dev/packages/uvccamera , https://pub.dev/packages/flutter_uvc_camera
 - https://pub.dev/packages/universal_ble , https://pub.dev/packages/flutter_blue_plus
 - https://thepihut.com/products/arducam-wide-angle-12mp-imx708-usb-c-uvc-fixed-focus-camera-module (B0305 사양·구성품·£57.60 품절)
