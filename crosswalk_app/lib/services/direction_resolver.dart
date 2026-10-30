@@ -367,6 +367,17 @@ class DirectionResolver {
 /// '마지막 이탈 방향' = 마지막으로 내보낸 left/right(사이에 front가 있어도 기억).
 /// '이어짐' = 반대 판정이 끊기지 않고(front·같은 방향이 끼면 처음부터) 계속된 시간.
 /// 막았을 때 내보내는 '직전 상태'가 위가 아니거나 반대 방향 그 자체면 front.
+///
+/// T162 ②(오케스트레이터 확정 A): **후보를 지우거나 시계를 시작·연장하는 것은 angle 경로
+/// 판정만**([fromAngle] = true) 한다. 10/30 14:08:11(`train/field_1030/report.md` §2(b)):
+/// 분류기 경로 alert는 각도가 그대로인데 위치 보정으로 c만 바뀌어 front가 나왔고,
+/// 그때마다 후보가 지워져 1.5초가 끝내 차지 않았다(4.8초 늦음). 분류기·위치 경로
+/// ([fromAngle] = false)는:
+///   | 결과                                   | 분류기·위치 경로                              |
+///   | front                                  | 그대로 내보냄, **후보 유지**                  |
+///   | 같은 방향 / 마지막 방향 없음 / 걷는 중   | 그대로 내보냄, 방향 기억, **후보 유지**       |
+///   | 반대 + 서 있음, angle 후보가 [hold] 넘음 | 바꿈(angle 경로가 이미 채운 시계)            |
+///   | 반대 + 서 있음, 그 밖                   | **막음**(직전 상태 유지) — 시계는 건드리지 않음 |
 class StillOppositeDelay {
   StillOppositeDelay({this.hold = DirectionResolver.stillOppositeHold});
 
@@ -377,25 +388,34 @@ class StillOppositeDelay {
   DateTime? _since;
 
   /// [resolved]를 받아 내보낼 상태를 돌려준다.
+  /// [fromAngle]: angle 경로 판정인가(T162 ②). false면 후보·시계를 건드리지 않는다.
   ({String label, bool held}) apply(String resolved,
-      {required String previous, required bool still, required DateTime now}) {
+      {required String previous,
+      required bool still,
+      required DateTime now,
+      bool fromAngle = true}) {
     if (!DirectionResolver.isOnCrosswalk(resolved)) {
       reset();
       return (label: resolved, held: false);
     }
     if (resolved == 'front') {
-      _candidate = null;
-      _since = null;
+      if (fromAngle) {
+        _candidate = null;
+        _since = null;
+      }
       return (label: resolved, held: false);
     }
     final last = _lastDir;
     if (last == null || last == resolved || !still) {
       _lastDir = resolved;
-      _candidate = null;
-      _since = null;
+      if (fromAngle) {
+        _candidate = null;
+        _since = null;
+      }
       return (label: resolved, held: false);
     }
     if (_candidate != resolved) {
+      if (!fromAngle) return (label: _keep(previous, resolved), held: true);
       _candidate = resolved;
       _since = now;
     }
@@ -405,12 +425,13 @@ class StillOppositeDelay {
       _since = null;
       return (label: resolved, held: false);
     }
-    final keep =
-        DirectionResolver.isOnCrosswalk(previous) && previous != resolved
-            ? previous
-            : 'front';
-    return (label: keep, held: true);
+    return (label: _keep(previous, resolved), held: true);
   }
+
+  static String _keep(String previous, String resolved) =>
+      DirectionResolver.isOnCrosswalk(previous) && previous != resolved
+          ? previous
+          : 'front';
 
   void reset() {
     _lastDir = null;

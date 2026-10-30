@@ -539,6 +539,96 @@ void main() {
     });
   });
 
+  // T162 ②(오케스트레이터 확정 A): 후보를 지우거나 시계를 시작·연장하는 것은 angle 경로만.
+  group('StillOppositeDelay T162 ②: angle 경로만 센다', () {
+    final t0 = DateTime(2026, 10, 30, 14, 8, 11);
+    DateTime at(int ms) => t0.add(Duration(milliseconds: ms));
+    ({String label, bool held}) angle(StillOppositeDelay d, String r, int ms,
+            [String prev = 'left']) =>
+        d.apply(r, previous: prev, still: true, now: at(ms), fromAngle: true);
+    ({String label, bool held}) other(StillOppositeDelay d, String r, int ms,
+            [String prev = 'left']) =>
+        d.apply(r, previous: prev, still: true, now: at(ms), fromAngle: false);
+
+    StillOppositeDelay leftFirst() {
+      final d = StillOppositeDelay();
+      d.apply('left', previous: 'front', still: true, now: at(-3000));
+      return d;
+    }
+
+    test('angle 경로: front가 후보를 지운다(종전과 같음)', () {
+      final d = leftFirst();
+      expect(angle(d, 'right', 0).held, isTrue);
+      expect(angle(d, 'front', 700).held, isFalse);
+      expect(angle(d, 'right', 1000).held, isTrue);
+      expect(angle(d, 'right', 1600).held, isTrue, reason: '1000부터 다시 잼');
+      expect(angle(d, 'right', 2500).label, 'right');
+    });
+
+    test('분류기 경로: front가 와도 후보를 지우지 않는다 — 14:08:11 재현', () {
+      // 10/30: angle 경로는 right(c −30), 분류기 경로는 위치 보정으로 c −2 → front.
+      final d = leftFirst();
+      expect(angle(d, 'right', 0).held, isTrue);
+      expect(other(d, 'front', 200).label, 'front');
+      expect(angle(d, 'right', 600).held, isTrue);
+      expect(other(d, 'front', 900).label, 'front');
+      expect(angle(d, 'right', 1200).held, isTrue);
+      final r = angle(d, 'right', 1500);
+      expect(r.held, isFalse, reason: '0부터 1.5초 — 종전에는 front마다 처음부터');
+      expect(r.label, 'right');
+    });
+
+    test('위치 경로: front가 와도 후보를 지우지 않는다', () {
+      final d = leftFirst();
+      expect(angle(d, 'right', 0).held, isTrue);
+      expect(other(d, 'front', 400).label, 'front');
+      expect(angle(d, 'right', 1500).label, 'right');
+    });
+
+    test('분류기·위치 경로의 반대 판정은 막기만 하고 시계를 시작하지 않는다', () {
+      final d = leftFirst();
+      var r = other(d, 'right', 0);
+      expect(r.held, isTrue);
+      expect(r.label, 'left');
+      r = other(d, 'right', 2000);
+      expect(r.held, isTrue, reason: '분류기·위치 경로만으로는 1.5초가 차지 않는다');
+      expect(angle(d, 'right', 2100).held, isTrue, reason: 'angle 경로가 2100부터 잼');
+      expect(angle(d, 'right', 3600).label, 'right');
+    });
+
+    test('분류기·위치 경로의 같은 방향·걷는 중 판정도 후보를 지우지 않는다', () {
+      final d = leftFirst();
+      expect(angle(d, 'right', 0).held, isTrue);
+      expect(other(d, 'left', 300).label, 'left');
+      expect(
+          d
+              .apply('left',
+                  previous: 'left',
+                  still: false,
+                  now: at(600),
+                  fromAngle: false)
+              .held,
+          isFalse);
+      // 걷는 중 left가 마지막 방향이 됐지만 후보(right, 0부터)는 그대로.
+      expect(angle(d, 'right', 1500).label, 'right');
+    });
+
+    test('angle 후보가 1.5초를 넘었으면 분류기 경로 반대 판정도 바꾼다', () {
+      final d = leftFirst();
+      expect(angle(d, 'right', 0).held, isTrue);
+      final r = other(d, 'right', 1500);
+      expect(r.held, isFalse);
+      expect(r.label, 'right');
+    });
+
+    test('위를 벗어나면 어느 경로든 기억을 지운다', () {
+      final d = leftFirst();
+      angle(d, 'right', 0);
+      other(d, 'none', 100);
+      expect(other(d, 'right', 200, 'none').held, isFalse);
+    });
+  });
+
   group('DirectionResolver 경계 떨림 방지 (T103, T162: 들어갈 때 10 / 유지 7)', () {
     const r = DirectionResolver.recoverAngleDegrees;
     test('상수: 유지 7도 < 진입 10도 (간격 3)', () {

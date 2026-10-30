@@ -7,7 +7,8 @@
   - 방향 문턱: 끝 아님 enter/keep(지금 8.5/5.5, ③-a 10/7), 끝 12/9(그대로)
   - T158: 끝 + |a| < 9 + |p| < 1.5 → front, |p| >= 1.5면 단계 계산 각도를 ±12로
   - 단계: 2단계(약 0 / 강 2), 오를 때 up(지금 29, ① 35) / 내릴 때 up − 3
-  - 서 있을 때 반대 방향 1.5초 유지(T146 C). b5 = 분류기(alert) 경로 front는 후보를 지우지 않음(②)
+  - 서 있을 때 반대 방향 1.5초 유지(T146 C). b5 = ② A안: 후보를 지우거나 시계를 시작·연장하는 것은
+    angle 경로(ev == "angle")만. 분류기(alert)·위치(pos) 경로는 막기만(angle 후보가 1.5초를 넘었으면 바꿈)
 지표:
   - 끝↔반대 뒤집힘 (전체 · 끝 안 · **끝 경계**) = `t146.flips` — T146 ② 지표(18→12)
   - 같은 방향 단계 변화, 강(단계 2) 진입 수, 이탈 시간 중 강 비율
@@ -84,11 +85,17 @@ class Rule(t146.NewRule):
         else:
             label = "front"
         held = False
+        counts = not self.b5 or ev == "angle"
         if label == "front":
-            if not (self.b5 and ev == "alert"):
+            if counts:
                 self.cand = None
         elif self.last_dir is None or self.last_dir == label or not still:
-            self.last_dir, self.cand = label, None
+            self.last_dir = label
+            if counts:
+                self.cand = None
+        elif not counts and self.cand != label:
+            held = True
+            label = prev if (prev in ON and prev != label) else "front"
         else:
             if self.cand != label:
                 self.cand, self.since = label, t
