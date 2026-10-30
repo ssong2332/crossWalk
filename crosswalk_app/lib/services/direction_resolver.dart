@@ -157,21 +157,30 @@
 ///   단계 1은 나오지 않는다([level1Degrees] = [level2Degrees]). 음성은 약 = 단계 0 문구,
 ///   강 = 단계 2('즉시') 문구. 끝 보정 20°·[edgeStraightDegrees] 9·
 ///   [deepEdgePosition] 1.5는 그대로다.
+///   (아래 T162에서 진입/유지 10 / 7, 단계 경계 35 / 32로 바뀜.)
 ///   끝([edgeSide] != 0)의 동작은 바꾸지 않는다(오케스트레이터 답 B, 근거
 ///   `train/field_1029/report_edge_center.md` 144행 — 32°를 낮추면 반대편 끝 뒤집힘이
 ///   늘었다). 그래서 끝에서는 c에 종전 12 / 9를 건다: 반대 방향 안내 중앙 쪽 32°,
 ///   이미 틀었음 중앙 쪽 8~32°, 끝 유도 → 이미 틀었음 넘어가는 지점 11°가 그대로다.
+///
+/// T162(2026-10-30, 사용자 승인 '추천대로 진행'): **10/30 실기기 반영**
+///   (`train/field_1030/report.md`, 재생 `train/t162_report.md`).
+///     | 항목                     | T160      | T162                                        |
+///     | 강 단계 경계 오를/내릴 때 | 29 / 26   | 35 / 32 (강 시간 34% → 21%, 강 진입 22 → 14) |
+///     | 끝 아님 진입/유지         | 8.5 / 5.5 | 10 / 7 (걷는 중 이탈 묶음 40 → 34, 뒤집힘 11 → 5) |
+///   끝 12/9·바깥쪽 32°·T158·끝 보정 경사(0.5→1.0)는 그대로다.
 class DirectionResolver {
   DirectionResolver._();
 
   /// 이 크기 이상이면 이탈로 **들어간다**. 근거는 위 표(T103: 15 -> 12).
   /// T146: 끝에서는 보정각 c에 건다. T160: 12 → 8.5(T159 CV 문턱).
-  static const double deviationAngleDegrees = 8.5;
+  /// T162: 8.5 → 10(10/30 문턱 근처 중간각·위치 보정 오안내, report §2(a) a2).
+  static const double deviationAngleDegrees = 10.0;
 
   /// T103: 이미 같은 방향 이탈이면 이 크기 이상인 동안 이탈을 **유지**한다
   /// (경계 떨림 방지). 이 밑으로 내려가야 직진으로 돌아온다.
-  /// T160: 9 → 5.5(진입과 간격 3 유지).
-  static const double recoverAngleDegrees = 5.5;
+  /// T160: 9 → 5.5(진입과 간격 3 유지). T162: 5.5 → 7(간격 3 유지).
+  static const double recoverAngleDegrees = 7.0;
 
   /// T160 B: 끝([edgeSide] != 0)에서 보정각 c에 거는 진입 문턱 — 종전 12 그대로.
   static const double edgeDeviationAngleDegrees = 12.0;
@@ -197,9 +206,11 @@ class DirectionResolver {
   /// T146 A: 단계 1(중간)·2(큰 이탈)로 **올라가는** |c| 기준(오케스트레이터 확정 (a)안).
   /// 12/30은 T144 CV 표(`report_angle.md` §4-4)에서 중간 단계가 가장 나은 경계.
   /// T160: 2단계(약 0 / 강 2) — 둘을 29로 같게 둬 단계 1이 나오지 않는다.
-  /// 내릴 때는 29 − [levelHysteresisDegrees] = 26 밑에서 2 → 0으로 바로 내려간다.
-  static const double level1Degrees = 29.0;
-  static const double level2Degrees = 29.0;
+  /// 내릴 때는 경계 − [levelHysteresisDegrees] 밑에서 2 → 0으로 바로 내려간다.
+  /// T162: 29 → 35(내릴 때 32). 10/30 강 비율 34%가 너무 많았다(report §1).
+  /// 38 이상은 모델 출력 상한(|raw| 최대 39.9°) 바로 밑이라 고르지 않았다.
+  static const double level1Degrees = 35.0;
+  static const double level2Degrees = 35.0;
 
   /// T146 A: 단계가 **내려갈 때** 기준보다 이만큼 아래로 와야 내려간다(20→17, 30→27).
   /// 끝에서 직진하면 c = 20이라 단계 0/1 경계에 정확히 걸린다 — 떨림 방지가 없으면
@@ -313,7 +324,7 @@ class DirectionResolver {
     if (_edgeStraightFront(angleDegrees, edgeSide, position)) return 'front';
     final c = correctedAngle(angleDegrees, edgeSide, position: position);
     if (c == null) return label;
-    // T160 B: 끝이면 종전 12 / 9, 아니면 8.5 / 5.5.
+    // T160 B: 끝이면 종전 12 / 9, 아니면 [deviationAngleDegrees] / [recoverAngleDegrees].
     final enter =
         edgeSide != 0 ? edgeDeviationAngleDegrees : deviationAngleDegrees;
     final keep = edgeSide != 0 ? edgeRecoverAngleDegrees : recoverAngleDegrees;
@@ -325,7 +336,7 @@ class DirectionResolver {
   }
 
   /// T146 A: 이탈 단계 — |c|로 정한다. 0 = 보통(12~20), 1 = 중간(20~30), 2 = 큰(30~).
-  /// T160: [level1Degrees] = [level2Degrees] = 29라 0(약, 8.5~29) / 2(강, 29~)만 나온다.
+  /// T160: [level1Degrees] = [level2Degrees]라 0(약) / 2(강)만 나온다. T162: 경계 35.
   ///   [previous]는 같은 방향 직전 단계(방향이 바뀌었거나 처음이면 null).
   ///   올라갈 때는 즉시, 내려갈 때는 기준 − [levelHysteresisDegrees] 밑으로 와야 한다.
   ///   각도가 없으면 0.

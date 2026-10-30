@@ -1035,8 +1035,8 @@ void main() {
       var now = DateTime(2026, 10, 29, 16, 0, 0);
       final s = FeedbackService()..clock = (() => now);
       final ko = AppStrings.of(AppLanguage.ko);
-      // 왼쪽 끝 유도 → 이미 틀었음 3번. T146: 단계는 보정각 c로(T160: 30 → 단계 2).
-      await s.alert('left', 0.9, angleDegrees: 30, atEdge: true,
+      // 왼쪽 끝 유도 → 이미 틀었음 3번. T146: 단계는 보정각 c로(T162: 40 → 단계 2).
+      await s.alert('left', 0.9, angleDegrees: 40, atEdge: true,
           edgeSteerClass: 'left');
       expect(s.vibrationPolicy.lastLevel, 2);
       for (var i = 0; i < 3; i++) {
@@ -1104,23 +1104,23 @@ void main() {
       final s = FeedbackService()..clock = (() => now);
       final levels = <int>[];
       final gaps = <int>[];
-      for (final c in <double>[35, 28, 24, 18, 15]) {
+      for (final c in <double>[40, 33, 28, 18, 15]) {
         now = now.add(const Duration(milliseconds: 800));
         await s.alert('left', 0.9,
             angleDegrees: c, atEdge: true, edgeSteerClass: 'left');
         levels.add(s.vibrationPolicy.lastLevel);
         gaps.add(s.vibrationPolicy.lastInterval.inMilliseconds);
       }
-      expect(levels, [2, 2, 0, 0, 0]); // 28 >= 26이라 2 유지
+      expect(levels, [2, 2, 0, 0, 0]); // T162: 33 >= 32라 2 유지
       expect(gaps, [300, 300, 600, 600, 600]);
       expect(s.isSevere, isFalse);
       await s.dispose();
     });
 
-    test('T160: 강 경계(29) 근처가 ±3° 흔들려도 진동 단계가 깜빡이지 않는다', () async {
+    test('T162: 강 경계(35) 근처가 ±3° 흔들려도 진동 단계가 깜빡이지 않는다', () async {
       final s = FeedbackService();
       final levels = <int>[];
-      for (final c in <double>[30, 27.5, 28.2, 26.4, 29.9, 27, 28.6]) {
+      for (final c in <double>[36, 33.5, 34.2, 32.4, 35.9, 33, 34.6]) {
         await s.alert('left', 0.9,
             angleDegrees: c, atEdge: true, edgeSteerClass: 'left');
         levels.add(s.vibrationPolicy.lastLevel);
@@ -1464,7 +1464,7 @@ void main() {
   group('서 있을 때 같은 방향 반복 생략 (T133)', () {
     final t0 = DateTime(2026, 10, 25, 18, 9, 35);
     DateTime at(int ms) => t0.add(Duration(milliseconds: ms));
-    const severe = 30.0;
+    const severe = 40.0; // T162: 강 경계 35 위(종전 30)
 
     /// [fromMs]~[toMs] 동안 가만히 선 가속도(중력만)를 66ms마다 넣는다.
     void stand(FeedbackService s, int fromMs, int toMs) {
@@ -1994,13 +1994,13 @@ void main() {
         () async {
       // 왼쪽 끝 유도(가장자리) 0ms → 100ms부터 이미 틀었음, 경고 호출 272ms마다.
       await s.alert('left', 0.9,
-          angleDegrees: 30, atEdge: true, edgeSteerClass: 'left');
+          angleDegrees: 40, atEdge: true, edgeSteerClass: 'left');
       record();
       for (var ms = 100; ms <= 3000; ms += 272) {
         await turnedAt(ms, 'left');
       }
       runTo(3000);
-      // T157 P1: 끝 유도의 단계 2(c 30, T160)는 700ms 유지 — 0·300·600·900에 큰 박자,
+      // T157 P1: 끝 유도의 단계 2(c 40, T162)는 700ms 유지 — 0·300·600·900에 큰 박자,
       // 916 호출에서 보통(0)으로 바로 내려간 뒤 마지막 진동(900) + 600마다.
       expect(times(), [0, 300, 600, 900, 1500, 2100, 2700]);
       expect(vibs.every((v) => v.$2 == 'left'), isTrue,
@@ -2429,12 +2429,12 @@ void main() {
         .where((m) => m['ev'] == 'say.cancel' && m['why'] == 'same_dir')
         .toList();
 
-    test('단계(T160): 보정각 |c|로 — 강 2(29~) > 보통 0, 중간 없음', () {
+    test('단계(T162): 보정각 |c|로 — 강 2(35~) > 보통 0, 중간 없음', () {
       expect(FeedbackService.deviationLevel(10), 0);
-      expect(FeedbackService.deviationLevel(28.9), 0);
-      expect(FeedbackService.deviationLevel(-29), 2);
-      expect(FeedbackService.deviationLevel(26, previous: 2), 2);
-      expect(FeedbackService.deviationLevel(25.9, previous: 2), 0);
+      expect(FeedbackService.deviationLevel(34.9), 0);
+      expect(FeedbackService.deviationLevel(-35), 2);
+      expect(FeedbackService.deviationLevel(32, previous: 2), 2);
+      expect(FeedbackService.deviationLevel(31.9, previous: 2), 0);
       expect(FeedbackService.deviationLevel(null), 0);
       expect(FeedbackService.sameDirectionBundle, const Duration(seconds: 6));
     });
@@ -2487,11 +2487,11 @@ void main() {
 
     test('행2: 같은 방향 단계 상승은 6초와 무관하게 바로 (보통 -> 즉시 -> 가장자리)',
         () {
-      // T160: 보통(10) -> 강(30, '즉시'). 즉시 -> 끝 + 강(35)은 같은 단계라 묶인다.
+      // T160: 보통(10) -> 강(T162: 36, '즉시'). 즉시 -> 끝 + 강(40)은 같은 단계라 묶인다.
       final s = FeedbackService();
       expect(s.decideMessage('left', mild, t0), leftMild);
-      expect(s.decideMessage('left', 30, t0.add(ms(300))), leftSevere);
-      expect(s.decideMessage('left', 35, t0.add(ms(600)), atEdge: true),
+      expect(s.decideMessage('left', 36, t0.add(ms(300))), leftSevere);
+      expect(s.decideMessage('left', 40, t0.add(ms(600)), atEdge: true),
           isNull,
           reason: 'T160: 둘 다 단계 2');
 
@@ -2848,7 +2848,7 @@ void main() {
       await toApproach(s);
       await s.alert('left', 0.9, angleDegrees: mild); // 진입(대기) + 이탈(P0)
       await tester.pump(const Duration(milliseconds: 500)); // 이탈 경고 재생 중
-      await s.alert('left', 0.9, angleDegrees: 30); // 단계 상승 — 빠른 상승 문장
+      await s.alert('left', 0.9, angleDegrees: 40); // 단계 상승 — 빠른 상승 문장
       await tester.pump(const Duration(milliseconds: 150));
       expect(fake.speaking, ko.enteredCrosswalkMessage);
       final says = logged('say')
@@ -3037,9 +3037,9 @@ void main() {
     test('T160: 즉시 -> 가장자리는 같은 단계(2)라 재생 중이어도 상승이 아니다', () {
       // T146에서는 중간(25) -> 끝 + 큰 이탈(35) 상승이었다. T160은 단계 1이 없다.
       final s = FeedbackService();
-      expect(s.decideMessage('left', 30, t0), leftSevere);
+      expect(s.decideMessage('left', 36, t0), leftSevere); // T162: 강 경계 35
       playing(s, leftSevere);
-      expect(s.decideMessage('left', 35, t0.add(ms(500)), atEdge: true),
+      expect(s.decideMessage('left', 40, t0.add(ms(500)), atEdge: true),
           isNull);
       expect(s.lastDecisionRapid, isFalse);
     });
