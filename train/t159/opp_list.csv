@@ -1,0 +1,12 @@
+no,src,class,filename,gt_deg,pred_plain_deg,pred_tta_deg
+1,existing,3_left,20260731_012403.jpg,71.0,-39.3,nan
+2,existing,4_right,20260731_015826.jpg,-49.3,39.4,39.6
+3,t150,frames_1025b,f_1792919544256.jpg,18.1,-16.1,nan
+4,t150,frames_1028b,f_1793173247647.jpg,47.1,-26.2,nan
+5,existing,3_left,left (2630).jpg,55.8,-37.0,-36.0
+6,existing,4_right,20260907_211208.jpg,-62.8,39.9,nan
+7,existing,4_right,20260724_201430.jpg,-60.5,39.7,nan
+8,existing,1_approach,20260823_160850.jpg,-16.5,26.9,31.2
+9,existing,3_left,20260921_212715.jpg,12.3,-31.1,nan
+10,t150,frames_1025,f_1792898444467.jpg,-28.1,25.7,23.2
+11,t150,frames_1028b,f_1793173376264.jpg,-43.2,nan,36.7
