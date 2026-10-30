@@ -1,0 +1,198 @@
+[설정] img=224 t150w=2.0 {'cons': 0.0, 'bigw': 1.0, 'big_deg': 25.0, 'rot': 15.0, 'crop': 1.0}
+[검사 통과] 세션 214개 / 근사중복 클러스터 1026개 — 모두 단일 fold에 귀속
+  fold별 장수: [206, 206, 205, 205, 205]
+T150 304장, 묶음 30개(근사중복으로 합친 것 0), fold별 [61, 62, 60, 60, 61]
+[캐시] 신규 0장, 총 1331장
+[캐시 224] 신규 0장
+
+[full224 fold 0] train 1064 / test 267 (경과 0.0분)
+  frozen  1/10 loss 1.0701
+  frozen  2/10 loss 0.9167
+  frozen  3/10 loss 0.8758
+  frozen  4/10 loss 0.8195
+  frozen  5/10 loss 0.7960
+  frozen  6/10 loss 0.8141
+  frozen  7/10 loss 0.7835
+  frozen  8/10 loss 0.7793
+  frozen  9/10 loss 0.7547
+  frozen  10/10 loss 0.7702
+  finetune 1/25 loss 0.7060
+  finetune 2/25 loss 0.6167
+  finetune 3/25 loss 0.5668
+  finetune 4/25 loss 0.4980
+  finetune 5/25 loss 0.4649
+  finetune 6/25 loss 0.4509
+  finetune 7/25 loss 0.4137
+  finetune 8/25 loss 0.4071
+  finetune 9/25 loss 0.3805
+  finetune 10/25 loss 0.3621
+  finetune 11/25 loss 0.3683
+  finetune 12/25 loss 0.3535
+  finetune 13/25 loss 0.3656
+  finetune 14/25 loss 0.3333
+  finetune 15/25 loss 0.3302
+  finetune 16/25 loss 0.3277
+  finetune 17/25 loss 0.3192
+  finetune 18/25 loss 0.3308
+  finetune 19/25 loss 0.3210
+  finetune 20/25 loss 0.3224
+  finetune 21/25 loss 0.3149
+  finetune 22/25 loss 0.3197
+  finetune 23/25 loss 0.3199
+  finetune 24/25 loss 0.3198
+  finetune 25/25 loss 0.3169
+  -> fold 0 T150 reg TTA MAE 6.2도
+
+[full224 fold 1] train 1063 / test 268 (경과 27.9분)
+  frozen  1/10 loss 1.0600
+  frozen  2/10 loss 0.8809
+  frozen  3/10 loss 0.8385
+  frozen  4/10 loss 0.8173
+  frozen  5/10 loss 0.8118
+  frozen  6/10 loss 0.7838
+  frozen  7/10 loss 0.7941
+  frozen  8/10 loss 0.7752
+  frozen  9/10 loss 0.8084
+  frozen  10/10 loss 0.7433
+  finetune 1/25 loss 0.7245
+  finetune 2/25 loss 0.6258
+  finetune 3/25 loss 0.5630
+  finetune 4/25 loss 0.5161
+  finetune 5/25 loss 0.4861
+  finetune 6/25 loss 0.4697
+  finetune 7/25 loss 0.4278
+  finetune 8/25 loss 0.4276
+  finetune 9/25 loss 0.3856
+  finetune 10/25 loss 0.3793
+  finetune 11/25 loss 0.3574
+  finetune 12/25 loss 0.3736
+  finetune 13/25 loss 0.3461
+  finetune 14/25 loss 0.3386
+  finetune 15/25 loss 0.3420
+  finetune 16/25 loss 0.3399
+  finetune 17/25 loss 0.3356
+  finetune 18/25 loss 0.3237
+  finetune 19/25 loss 0.3239
+  finetune 20/25 loss 0.3109
+  finetune 21/25 loss 0.3218
+  finetune 22/25 loss 0.3384
+  finetune 23/25 loss 0.3073
+  finetune 24/25 loss 0.3229
+  finetune 25/25 loss 0.3122
+  -> fold 1 T150 reg TTA MAE 7.8도
+
+[full224 fold 2] train 1066 / test 265 (경과 56.6분)
+  frozen  1/10 loss 1.0362
+  frozen  2/10 loss 0.8847
+  frozen  3/10 loss 0.8299
+  frozen  4/10 loss 0.8177
+  frozen  5/10 loss 0.7889
+  frozen  6/10 loss 0.7821
+  frozen  7/10 loss 0.7710
+  frozen  8/10 loss 0.7792
+  frozen  9/10 loss 0.7981
+  frozen  10/10 loss 0.7655
+  finetune 1/25 loss 0.7130
+  finetune 2/25 loss 0.6389
+  finetune 3/25 loss 0.5574
+  finetune 4/25 loss 0.5117
+  finetune 5/25 loss 0.4882
+  finetune 6/25 loss 0.4444
+  finetune 7/25 loss 0.4226
+  finetune 8/25 loss 0.4240
+  finetune 9/25 loss 0.3990
+  finetune 10/25 loss 0.3744
+  finetune 11/25 loss 0.3700
+  finetune 12/25 loss 0.3546
+  finetune 13/25 loss 0.3534
+  finetune 14/25 loss 0.3327
+  finetune 15/25 loss 0.3387
+  finetune 16/25 loss 0.3290
+  finetune 17/25 loss 0.3328
+  finetune 18/25 loss 0.3173
+  finetune 19/25 loss 0.3235
+  finetune 20/25 loss 0.3099
+  finetune 21/25 loss 0.3123
+  finetune 22/25 loss 0.3123
+  finetune 23/25 loss 0.3184
+  finetune 24/25 loss 0.3227
+  finetune 25/25 loss 0.3242
+  -> fold 2 T150 reg TTA MAE 4.8도
+
+[full224 fold 3] train 1066 / test 265 (경과 81.0분)
+  frozen  1/10 loss 1.0686
+  frozen  2/10 loss 0.9013
+  frozen  3/10 loss 0.8198
+  frozen  4/10 loss 0.8220
+  frozen  5/10 loss 0.8233
+  frozen  6/10 loss 0.7857
+  frozen  7/10 loss 0.7668
+  frozen  8/10 loss 0.7713
+  frozen  9/10 loss 0.8077
+  frozen  10/10 loss 0.7818
+  finetune 1/25 loss 0.7081
+  finetune 2/25 loss 0.6409
+  finetune 3/25 loss 0.5582
+  finetune 4/25 loss 0.4994
+  finetune 5/25 loss 0.4680
+  finetune 6/25 loss 0.4553
+  finetune 7/25 loss 0.4062
+  finetune 8/25 loss 0.4035
+  finetune 9/25 loss 0.3846
+  finetune 10/25 loss 0.3686
+  finetune 11/25 loss 0.3742
+  finetune 12/25 loss 0.3416
+  finetune 13/25 loss 0.3416
+  finetune 14/25 loss 0.3319
+  finetune 15/25 loss 0.3419
+  finetune 16/25 loss 0.3345
+  finetune 17/25 loss 0.3197
+  finetune 18/25 loss 0.3047
+  finetune 19/25 loss 0.2950
+  finetune 20/25 loss 0.3232
+  finetune 21/25 loss 0.3088
+  finetune 22/25 loss 0.3153
+  finetune 23/25 loss 0.3305
+  finetune 24/25 loss 0.3140
+  finetune 25/25 loss 0.3068
+  -> fold 3 T150 reg TTA MAE 6.6도
+
+[full224 fold 4] train 1065 / test 266 (경과 109.2분)
+  frozen  1/10 loss 1.0653
+  frozen  2/10 loss 0.8837
+  frozen  3/10 loss 0.8480
+  frozen  4/10 loss 0.8420
+  frozen  5/10 loss 0.7918
+  frozen  6/10 loss 0.7712
+  frozen  7/10 loss 0.7914
+  frozen  8/10 loss 0.7857
+  frozen  9/10 loss 0.7798
+  frozen  10/10 loss 0.7762
+  finetune 1/25 loss 0.6993
+  finetune 2/25 loss 0.6374
+  finetune 3/25 loss 0.5455
+  finetune 4/25 loss 0.5107
+  finetune 5/25 loss 0.4757
+  finetune 6/25 loss 0.4422
+  finetune 7/25 loss 0.4147
+  finetune 8/25 loss 0.4051
+  finetune 9/25 loss 0.3807
+  finetune 10/25 loss 0.3820
+  finetune 11/25 loss 0.3581
+  finetune 12/25 loss 0.3517
+  finetune 13/25 loss 0.3420
+  finetune 14/25 loss 0.3450
+  finetune 15/25 loss 0.3318
+  finetune 16/25 loss 0.3231
+  finetune 17/25 loss 0.3151
+  finetune 18/25 loss 0.3251
+  finetune 19/25 loss 0.3146
+  finetune 20/25 loss 0.3157
+  finetune 21/25 loss 0.3196
+  finetune 22/25 loss 0.3086
+  finetune 23/25 loss 0.3116
+  finetune 24/25 loss 0.3123
+  finetune 25/25 loss 0.3181
+  -> fold 4 T150 reg TTA MAE 7.3도
+
+저장: C:\vibecoding\crossWalk\.claude\worktrees\lucid-sammet-9cdcb6\train\t159\cv_pred_full224.csv (총 135.5분)
