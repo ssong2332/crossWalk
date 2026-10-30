@@ -66,6 +66,7 @@ class FeedbackService {
       DirectionRepeatTimer(onDue: _onDirectionDue, timerFactory: timerFactory);
 
   /// T157 P1: 진동 박자 단계를 한 단계씩, 단계마다 최소 700ms 내린다(음성은 그대로).
+  /// T160: 단계가 0/2뿐이라 2 → 0 바로(700ms 유지는 그대로).
   @visibleForTesting
   final VibrationLevelDwell levelDwell = VibrationLevelDwell();
 
@@ -169,6 +170,7 @@ class FeedbackService {
   ///   20도 재현율 89%/정밀도 90%, **25도 82%/92%**, 30도 72%/94%.
   /// T146(오케스트레이터 확정 (a)안): 단계 1 기준([DirectionResolver.level1Degrees],
   /// 20)과 같다 — 단계 1 이상이면 '즉시' 문구. 종전 25.
+  /// T160: 29(단계 1 = 2 경계, 강 = 단계 2만 '즉시').
   static const double severeAngleDegrees = DirectionResolver.level1Degrees;
 
   DateTime? _lastAlertTime;

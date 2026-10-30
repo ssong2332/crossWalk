@@ -25,15 +25,22 @@ void main() {
     expect(step('left', 2, 100), 'left2');
   });
 
-  test('2에서 바로 0이 나와도 한 단계씩 700ms마다 내려간다', () {
+  test('T160: 2에서 0이 나오면 2를 700ms 낸 뒤 0으로 바로 내려간다', () {
     expect(step('left', 2, 0), 'left2');
     expect(step('left', 0, 300), 'left2');
     expect(d.holding, isTrue);
     expect(step('left', 0, 699), 'left2');
-    expect(step('left', 0, 700), 'left1');
-    expect(step('left', 0, 1000), 'left1');
-    expect(step('left', 0, 1400), 'left0');
+    expect(step('left', 0, 700), 'left0');
     expect(d.holding, isFalse, reason: '판정과 같은 단계에 닿음');
+  });
+
+  test('T160: 큰 이탈(2) 뒤 직진이면 2 700ms → 0 700ms → 멈춤(단계 1 없음)', () {
+    expect(step('left', 2, 0), 'left2');
+    expect(step(null, 0, 200), 'left2');
+    expect(step(null, 0, 700), 'left0');
+    expect(step(null, 0, 1399), 'left0');
+    expect(step(null, 0, 1400), 'front');
+    expect(d.releaseLate, const Duration(milliseconds: 1200));
   });
 
   test('직진이 돼도 lvl0을 700ms 낸 뒤 멈추고, 늦어진 시간을 알려 준다', () {
@@ -62,16 +69,17 @@ void main() {
 
   test('내려가는 중에 다시 올라가면 바로 그 단계', () {
     expect(step('left', 2, 0), 'left2');
-    expect(step('left', 0, 700), 'left1');
+    expect(step('left', 0, 700), 'left0');
     expect(step('left', 2, 800), 'left2');
     expect(step('left', 0, 1000), 'left2', reason: '다시 올라간 2부터 700ms');
-    expect(step('left', 0, 1500), 'left1');
+    expect(step('left', 0, 1500), 'left0');
   });
 
-  test('한 번에 한 단계만 — 오래 지나도 2→0으로 건너뛰지 않는다', () {
+  test('T160: 오래 지나도 한 번에 2→0까지만 — 0도 700ms 낸 뒤 멈춘다', () {
     expect(step('left', 2, 0), 'left2');
-    expect(step(null, 0, 5000), 'left1');
-    expect(step(null, 0, 5100), 'left1');
+    expect(step(null, 0, 5000), 'left0');
+    expect(step(null, 0, 5100), 'left0');
+    expect(step(null, 0, 5700), 'front');
   });
 
   test('reset이면 바로 비운다(hold·none 등)', () {

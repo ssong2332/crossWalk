@@ -6,14 +6,17 @@
 /// (`train/field_1029/report_angle.md` §1). 그래서 **진동 박자만** 한 단계씩, 단계마다
 /// 최소 [minDwell] 동안 내린다. 음성 판정(`FeedbackService.decideMessage`)은 그대로다.
 ///
+/// T160(오케스트레이터 확정 2026-10-30): 단계가 약 0 / 강 2 둘뿐이라(단계 1 없음)
+/// 내릴 때 2 → 0으로 **바로** 내린다. [minDwell] 유지는 그대로(2를 700ms 낸 뒤 0).
+///
 /// 판정표 (입력 = 이번 판정의 진동 방향·단계. 직진 = front, 끝의 '이미 틀었음'은 그 방향 lvl0):
 ///   | 지금 내는 박자 | 이번 판정                     | 결과                                              |
 ///   |---|---|---|
 ///   | 없음           | left/right                    | 그 방향·단계 바로                                 |
 ///   | 방향 d 단계 k  | 반대 방향                     | 바로 바꿈(새 방향·단계)                           |
 ///   | 방향 d 단계 k  | 같은 방향, 단계 >= k          | 바로 그 단계(올라가면 바로)                       |
-///   | 방향 d 단계 k  | 같은 방향, 단계 < k           | k를 [minDwell] 낸 뒤 k-1 (한 번에 한 단계)        |
-///   | 방향 d 단계 k>0 | 직진                         | 위와 같이 한 단계씩 내림                          |
+///   | 방향 d 단계 k  | 같은 방향, 단계 < k           | k를 [minDwell] 낸 뒤 0 (T160: 2 → 0 바로)         |
+///   | 방향 d 단계 k>0 | 직진                         | 위와 같이 0으로 내림                              |
 ///   | 방향 d 단계 0  | 직진, 내려와서 0이 됨          | 0을 [minDwell] 낸 뒤 멈춤 → 그때 직진 확인(진동·딩) |
 ///   | 방향 d 단계 0  | 직진, 처음부터 0(하강 아님)     | 바로 멈춤(종전과 같음)                            |
 ///   | 무엇이든       | none·approach·crossed·hold 등 | 바로 멈춤([reset], 틀린 방향 진동 방지)            |
@@ -73,7 +76,8 @@ class VibrationLevelDwell {
     }
     if (now.difference(_since!) >= minDwell) {
       if (_level > 0) {
-        _enter(cur, _level - 1, now, true);
+        // T160: 단계 1이 없으므로 한 단계(k-1)가 아니라 0으로 바로 내린다.
+        _enter(cur, 0, now, true);
       } else {
         final since = _straightSince;
         _releaseLate = since == null ? null : now.difference(since);
