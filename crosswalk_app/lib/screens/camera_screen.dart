@@ -1213,7 +1213,7 @@ class _CameraScreenState extends State<CameraScreen>
         'smooth': smoothed,
         'label': _guidanceLabel,
         'dur': angleMs,
-        // T160: 모델 추론만(ms, 좌우반전 평균이면 2회 합). dur은 전처리 포함.
+        // T160: 모델 추론만(ms, 1회 호출 — TTA 모델은 안에서 2배 연산). dur은 전처리 포함.
         'inf': _angleEstimator.lastInferenceMs,
       });
     }

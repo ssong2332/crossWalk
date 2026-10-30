@@ -60,10 +60,12 @@ class AngleEstimator {
   @visibleForTesting
   static const cropRatio = 1.0;
 
-  /// T160: 원본 + 좌우반전 2회 추론 후 평균한다(T159 통과 조건 = 반전 평균).
-  /// 반전 입력의 예측은 각도 부호가 뒤집히므로 부호를 되돌려 평균한다
-  /// (`t159_train.py` predict: s = -1 if flip). false면 1회 추론(종전).
-  static const flipAverage = true;
+  /// T160: 앱에서 원본 + 좌우반전 2회 추론 후 평균할지. **꺼 둔다(false).**
+  /// T159 검증 방식은 sign(평균 회귀) × 평균 순서형|각|이라, 출력 둘을 평균하면
+  /// 부호가 엇갈릴 때 결과가 다르다. 그래서 반전 TTA를 그래프 안에 넣은 ONNX
+  /// (`fullbw224_ord_reg_tta.onnx`)를 1회 호출한다(모델 안에서 2배 연산).
+  /// true면 앱에서 2회 추론해 부호를 되돌려 평균한다(`t159_train.py` predict: s = -1 if flip).
+  static const flipAverage = false;
 
   /// 출력 픽셀 하나당 평균낼 원본 격자 크기(kxk).
   /// 실측(전체 405장, 배포 ONNX): 1이면 16.0도, 2면 13.7도, 3이면 13.3도
@@ -80,7 +82,8 @@ class AngleEstimator {
 
   bool get isReady => _session != null;
 
-  /// T160: 직전 [estimate]의 모델 추론 시간(ms, [flipAverage]면 2회 합).
+  /// T160: 직전 [estimate]의 모델 추론 시간(ms, 1회 호출 — TTA 모델은 안에서 2배 연산.
+  /// [flipAverage]를 켜면 2회 합).
   /// 전처리는 빼고 `session.run`만 잰다(폰 실측용, `angle` 기록 `inf`).
   int? lastInferenceMs;
 

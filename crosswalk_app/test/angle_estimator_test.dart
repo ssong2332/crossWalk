@@ -101,8 +101,8 @@ void main() {
       expect(AngleEstimator.cropRatio, 1.0);
     });
 
-    test('T160: 좌우반전 평균이 켜져 있다', () {
-      expect(AngleEstimator.flipAverage, isTrue);
+    test('T160: 앱 쪽 좌우반전 평균은 꺼져 있다(TTA는 ONNX 그래프 안에서)', () {
+      expect(AngleEstimator.flipAverage, isFalse);
     });
 
     test('angleScale은 학습 스크립트의 ANGLE_SCALE(90.0)과 같아야 한다', () {
@@ -113,6 +113,7 @@ void main() {
   });
 
   // T160: 원본 + 좌우반전 2회 추론 평균(`t159_train.py` predict: torch.flip(x, dims=[3]),
+  // 지금은 꺼 둠([AngleEstimator.flipAverage] = false) — 켤 때를 위해 고정해 둔다.
   // 반전 예측은 s = -1로 부호를 되돌린다).
   group('AngleEstimator — 좌우반전 평균 (T160)', () {
     test('반전 예측은 부호를 뒤집어 평균한다', () {
