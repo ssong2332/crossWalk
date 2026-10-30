@@ -6,6 +6,8 @@
 // 기준: `image` 패키지 4.8.0의 실제 구현
 // (lib/src/transform/copy_rotate.dart `_rotate90`: `dst(x,y) = src(y, H-1-x)`)
 // 을 직접 읽어 확인한 **시계방향** 관례를 따른다.
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:crosswalk_app/services/angle_estimator.dart';
 
@@ -92,17 +94,55 @@ void main() {
   });
 
   group('AngleEstimator — 상수 동기화', () {
-    // T70-2: 학습(train_angle.py)은 CACHE_SIZE=288로 리사이즈한 뒤
-    // IMG_SIZE=224로 중앙 크롭한다. 앱이 이 비율을 안 맞추면 화각이 넓어져
-    // 물체가 학습 때보다 작게 보이고, 실측상 오차가 커진다.
-    test('cropRatio는 학습의 224/288과 같아야 한다', () {
-      expect(AngleEstimator.cropRatio, closeTo(224.0 / 288.0, 1e-12));
+    // T70-2: 앱 시야가 학습 시야와 어긋나면 물체 크기가 학습 때와 달라 오차가 커진다.
+    // T160: T159 모델(`t159_train.py` OPT crop=1.0)은 화면 전체를 224로 줄여 학습했다
+    // (캐시 round(224/1.0)=224, center_crop 224 = 자르지 않음). 종전 T103은 224/288.
+    test('cropRatio는 T159 학습의 1.0(화면 전체)과 같아야 한다', () {
+      expect(AngleEstimator.cropRatio, 1.0);
+    });
+
+    test('T160: 앱 쪽 좌우반전 평균은 꺼져 있다(TTA는 ONNX 그래프 안에서)', () {
+      expect(AngleEstimator.flipAverage, isFalse);
     });
 
     test('angleScale은 학습 스크립트의 ANGLE_SCALE(90.0)과 같아야 한다', () {
       // train/train_angle.py의 ANGLE_SCALE과 어긋나면 각도가 배율만큼
       // 조용히 틀어진다(에러 없음).
       expect(AngleEstimator.angleScale, 90.0);
+    });
+  });
+
+  // T160: 원본 + 좌우반전 2회 추론 평균(`t159_train.py` predict: torch.flip(x, dims=[3]),
+  // 지금은 꺼 둠([AngleEstimator.flipAverage] = false) — 켤 때를 위해 고정해 둔다.
+  // 반전 예측은 s = -1로 부호를 되돌린다).
+  group('AngleEstimator — 좌우반전 평균 (T160)', () {
+    test('반전 예측은 부호를 뒤집어 평균한다', () {
+      // 원본 +0.2(18°), 반전 −0.2 → 둘 다 '오른쪽 18°' → 0.2.
+      expect(AngleEstimator.flipAveraged(0.2, -0.2), closeTo(0.2, 1e-12));
+      // 원본 +0.3, 반전 −0.1 → (0.3 + 0.1) / 2 = 0.2.
+      expect(AngleEstimator.flipAveraged(0.3, -0.1), closeTo(0.2, 1e-12));
+      // 대칭인 장면(반전해도 같은 출력)이면 0으로 상쇄된다.
+      expect(AngleEstimator.flipAveraged(0.1, 0.1), 0);
+      expect(AngleEstimator.flipAveraged(-0.4, 0.4), closeTo(-0.4, 1e-12));
+    });
+
+    test('flipHorizontal은 NCHW의 가로(W)만 뒤집는다(torch.flip dims=[3])', () {
+      const n = 224;
+      final input = Float32List(3 * n * n);
+      for (var i = 0; i < input.length; i++) {
+        input[i] = i.toDouble();
+      }
+      final out = AngleEstimator.flipHorizontal(input);
+      expect(out.length, input.length);
+      for (final (c, y, x) in <(int, int, int)>[
+        (0, 0, 0), (0, 0, 223), (1, 17, 5), (2, 223, 100), (2, 223, 223),
+      ]) {
+        final idx = c * n * n + y * n + x;
+        final mirror = c * n * n + y * n + (n - 1 - x);
+        expect(out[idx], input[mirror], reason: 'c=$c y=$y x=$x');
+      }
+      // 두 번 뒤집으면 원래대로.
+      expect(AngleEstimator.flipHorizontal(out), input);
     });
   });
 }

@@ -51,12 +51,21 @@ import 'package:onnxruntime/onnxruntime.dart';
 class AngleEstimator {
   static const _inputSize = 224;
 
-  /// 학습은 288로 리사이즈한 뒤 중앙 224를 잘라낸다(`train_angle.py`의
-  /// CACHE_SIZE=288, IMG_SIZE=224). 즉 모델이 실제로 보는 것은 화면
-  /// 이미지의 중앙 224/288 영역이다. 이 비율이 어긋나면 화각이 달라져
-  /// 물체 크기가 학습 때와 맞지 않는다.
+  /// 학습 시야(중앙 크롭 비율). 이 비율이 어긋나면 화각이 달라져 물체 크기가
+  /// 학습 때와 맞지 않는다.
+  /// T160: T159 모델(`train/t159_train.py` OPT crop=1.0)은 **화면 전체**를
+  /// 224로 BILINEAR 리사이즈해 학습했다(캐시 크기 = round(224 / crop) = 224,
+  /// center_crop 224 = 자르지 않음). 위치 모델(T98)과 같은 1.0이다.
+  /// 종전 T103 모델은 288 리사이즈 후 중앙 224(= 224/288)였다.
   @visibleForTesting
-  static const cropRatio = 224.0 / 288.0;
+  static const cropRatio = 1.0;
+
+  /// T160: 앱에서 원본 + 좌우반전 2회 추론 후 평균할지. **꺼 둔다(false).**
+  /// T159 검증 방식은 sign(평균 회귀) × 평균 순서형|각|이라, 출력 둘을 평균하면
+  /// 부호가 엇갈릴 때 결과가 다르다. 그래서 반전 TTA를 그래프 안에 넣은 ONNX
+  /// (`fullbw224_ord_reg_tta.onnx`)를 1회 호출한다(모델 안에서 2배 연산).
+  /// true면 앱에서 2회 추론해 부호를 되돌려 평균한다(`t159_train.py` predict: s = -1 if flip).
+  static const flipAverage = false;
 
   /// 출력 픽셀 하나당 평균낼 원본 격자 크기(kxk).
   /// 실측(전체 405장, 배포 ONNX): 1이면 16.0도, 2면 13.7도, 3이면 13.3도
@@ -72,6 +81,11 @@ class AngleEstimator {
   bool _envInitialized = false;
 
   bool get isReady => _session != null;
+
+  /// T160: 직전 [estimate]의 모델 추론 시간(ms, 1회 호출 — TTA 모델은 안에서 2배 연산.
+  /// [flipAverage]를 켜면 2회 합).
+  /// 전처리는 빼고 `session.run`만 잰다(폰 실측용, `angle` 기록 `inf`).
+  int? lastInferenceMs;
 
   Future<void> init() async {
     _session?.release();
@@ -163,9 +177,8 @@ class AngleEstimator {
     final uvStride = image.planes[1].bytesPerRow;
     final uvPixel = image.planes[1].bytesPerPixel ?? 1;
 
-    // 학습(`train_angle.py`)은 288 정사각 리사이즈 후 **중앙 224 크롭**을 한다.
-    // 즉 최종 입력은 화면 이미지의 중앙 224/288 = 77.8% 영역만 담는다.
-    // 이걸 빠뜨리면 화각이 넓어져 물체가 학습 때보다 작게 보인다.
+    // 학습 시야 [cropRatio]만큼 중앙을 잘라 224로 줄인다(1.0이면 화면 전체).
+    // 이걸 어긋나게 하면 화각이 달라져 물체가 학습 때와 다른 크기로 보인다.
     final cw = (dW * cropRatio).toInt();
     final ch = (dH * cropRatio).toInt();
     final ox = (dW - cw) ~/ 2;
@@ -225,13 +238,50 @@ class AngleEstimator {
   /// 화면 위쪽이 0도, 시계방향이 +. 준비되지 않았거나 포맷이 다르면 null.
   ///
   /// [rotationDegrees]는 보통 `controller.description.sensorOrientation`.
+  /// T160: [flipAverage]면 좌우반전 입력도 돌려 (원본 − 반전) / 2로 평균한다.
   double? estimate(CameraImage image, int rotationDegrees) {
+    lastInferenceMs = null;
     final session = _session;
     if (session == null) return null;
 
     final input = preprocessFrame(image, rotationDegrees);
     if (input == null) return null;
 
+    final clock = Stopwatch()..start();
+    final v = _run(session, input);
+    if (v == null) return null;
+    if (!flipAverage) {
+      lastInferenceMs = clock.elapsedMilliseconds;
+      return v * angleScale;
+    }
+    final f = _run(session, flipHorizontal(input));
+    lastInferenceMs = clock.elapsedMilliseconds;
+    if (f == null) return null;
+    return flipAveraged(v, f) * angleScale;
+  }
+
+  /// T160: 원본 출력 [plain]과 좌우반전 입력의 출력 [flipped]를 평균한다.
+  /// 반전하면 가야 할 방향이 거울상이라 부호를 되돌린다(`t159_train.py` predict).
+  @visibleForTesting
+  static double flipAveraged(double plain, double flipped) =>
+      (plain - flipped) / 2.0;
+
+  /// T160: NCHW(1x3x224x224) 텐서를 가로(W)로 뒤집는다 — `torch.flip(x, dims=[3])`과
+  /// 같다(`t159_train.py` predict). 정규화 뒤 뒤집어도 픽셀마다 같은 변환이라 결과가 같다.
+  @visibleForTesting
+  static Float32List flipHorizontal(Float32List input) {
+    final out = Float32List(input.length);
+    const n = _inputSize;
+    for (int row = 0; row < input.length ~/ n; row++) {
+      final base = row * n;
+      for (int x = 0; x < n; x++) {
+        out[base + x] = input[base + n - 1 - x];
+      }
+    }
+    return out;
+  }
+
+  double? _run(OrtSession session, Float32List input) {
     final tensor = OrtValueTensor.createTensorWithDataList(
       input,
       [1, 3, _inputSize, _inputSize],
@@ -255,7 +305,7 @@ class AngleEstimator {
     final first = raw.first;
     final v = first is List ? (first.isEmpty ? null : first.first) : first;
     if (v is! num) return null;
-    return v.toDouble() * angleScale;
+    return v.toDouble();
   }
 
   void dispose() {
