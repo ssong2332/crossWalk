@@ -667,8 +667,8 @@ class _CameraScreenState extends State<CameraScreen>
       // T130: 끝↔각도가 1초 안에 반대로 뒤집히면 직전 상태를 유지한다.
       final flip =
           _guardFlip(resolvedRaw, _smoothedPosition, _arrowStripeAngle);
-      // T146 C: 서 있으면 반대 방향 전환을 늦춘다.
-      final still = _delayStillOpposite(flip.label);
+      // T146 C: 서 있으면 반대 방향 전환을 늦춘다(T162 ②: 분류기 경로는 막기만).
+      final still = _delayStillOpposite(flip.label, fromAngle: false);
       final resolved = still.label;
       // T103: 횡단보도 위에서 줄무늬가 사라지면(none/approach) 10초 동안
       // "횡단 중"으로 붙잡는다(CrossingHold 표). 그동안 방향 안내는 멈추고
@@ -1235,7 +1235,7 @@ class _CameraScreenState extends State<CameraScreen>
       final flip = _guardFlip(next, _smoothedPosition, smoothed);
       angleFlipHeld = flip.held;
       // T146 C: 서 있으면 반대 방향 전환을 늦춘다.
-      final still = _delayStillOpposite(flip.label);
+      final still = _delayStillOpposite(flip.label, fromAngle: true);
       angleStillHeld = still.held;
       if (still.label != _guidanceLabel) relabel = still.label;
     }
@@ -1391,9 +1391,14 @@ class _CameraScreenState extends State<CameraScreen>
   double? get _stillSmoothingFactor =>
       _isStillNow ? DirectionResolver.stillSmoothingFactor : null;
 
-  ({String label, bool held}) _delayStillOpposite(String resolved) {
+  /// T162 ②: [fromAngle] = angle 경로 판정일 때만 후보·시계를 바꾼다.
+  ({String label, bool held}) _delayStillOpposite(String resolved,
+      {required bool fromAngle}) {
     final d = _stillOpposite.apply(resolved,
-        previous: _guidanceLabel, still: _isStillNow, now: DateTime.now());
+        previous: _guidanceLabel,
+        still: _isStillNow,
+        now: DateTime.now(),
+        fromAngle: fromAngle);
     if (d.held) {
       EventLog.instance.log('still.hold', {'to': resolved, 'keep': d.label});
     }
@@ -1489,8 +1494,8 @@ class _CameraScreenState extends State<CameraScreen>
       // T130: 끝↔각도 뒤집힘 막기.
       final flip = _guardFlip(next, smoothed, _arrowStripeAngle);
       posFlipHeld = flip.held;
-      // T146 C: 서 있으면 반대 방향 전환을 늦춘다.
-      final still = _delayStillOpposite(flip.label);
+      // T146 C: 서 있으면 반대 방향 전환을 늦춘다(T162 ②: 위치 경로는 막기만).
+      final still = _delayStillOpposite(flip.label, fromAngle: false);
       posStillHeld = still.held;
       if (still.label != _guidanceLabel) relabel = still.label;
     }

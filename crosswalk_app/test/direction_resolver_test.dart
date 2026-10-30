@@ -22,19 +22,19 @@ void main() {
       }
     });
 
-    test('|각도| < 8.5 이면(직전 이탈 아님) 분류기가 뭐라 했든 front', () {
+    test('|각도| < 10 이면(직전 이탈 아님) 분류기가 뭐라 했든 front', () {
       // 실기기 #29: 직진인데 "오른쪽으로 틀어짐", 각도 2 -> front.
-      // T103: 기준 15 -> 12. T160: 12 -> 8.5(T159 CV 문턱).
-      expect(t, 8.5);
+      // T103: 기준 15 -> 12. T160: 12 -> 8.5(T159 CV 문턱). T162: 8.5 -> 10.
+      expect(t, 10.0);
       for (final label in ['front', 'left', 'right']) {
-        for (final a in <double>[0, 2, -2, 5.4, -5.4, 8.4, -8.4]) {
+        for (final a in <double>[0, 2, -2, 6.9, -6.9, 9.9, -9.9]) {
           expect(DirectionResolver.resolve(label, a), 'front',
               reason: '$label/$a');
         }
       }
     });
 
-    test('각도 >= +8.5 이면 left(오른쪽으로 가라), <= -8.5 이면 right', () {
+    test('각도 >= +10 이면 left(오른쪽으로 가라), <= -10 이면 right', () {
       for (final label in ['front', 'left', 'right']) {
         expect(DirectionResolver.resolve(label, t), 'left', reason: label);
         expect(DirectionResolver.resolve(label, 40), 'left', reason: label);
@@ -238,24 +238,25 @@ void main() {
     });
   });
 
-  group('DirectionResolver.deviationLevel (T160: 약 0 / 강 2, 경계 29, 내려갈 때 26)', () {
+  group('DirectionResolver.deviationLevel (T162: 약 0 / 강 2, 경계 35, 내려갈 때 32)', () {
     int lv(double? c, [int? prev]) =>
         DirectionResolver.deviationLevel(c, previous: prev);
 
-    test('상수: 29 / 29 / 떨림 방지 3', () {
-      expect(DirectionResolver.level1Degrees, 29.0);
-      expect(DirectionResolver.level2Degrees, 29.0);
+    test('상수: 35 / 35 / 떨림 방지 3', () {
+      expect(DirectionResolver.level1Degrees, 35.0);
+      expect(DirectionResolver.level2Degrees, 35.0);
       expect(DirectionResolver.levelHysteresisDegrees, 3.0);
     });
 
-    test('올라갈 때는 29에서 바로 2(강)', () {
+    test('올라갈 때는 35에서 바로 2(강)', () {
       expect(lv(null), 0);
-      expect(lv(8.5), 0);
-      expect(lv(28.9), 0);
-      expect(lv(29), 2);
-      expect(lv(-29), 2);
+      expect(lv(10), 0);
+      expect(lv(29), 0); // T160에서는 강
+      expect(lv(34.9), 0);
+      expect(lv(35), 2);
+      expect(lv(-35), 2);
       expect(lv(-45), 2);
-      expect(lv(31, 0), 2);
+      expect(lv(36, 0), 2);
     });
 
     test('단계 1은 나오지 않는다(어떤 각도·직전 단계에서도)', () {
@@ -266,11 +267,11 @@ void main() {
       }
     });
 
-    test('내려갈 때는 26 밑으로 와야 2 → 0으로 바로', () {
-      expect(lv(26, 2), 2);
-      expect(lv(-26, 2), 2);
-      expect(lv(25.9, 2), 0);
-      expect(lv(25.9, 0), 0);
+    test('내려갈 때는 32 밑으로 와야 2 → 0으로 바로', () {
+      expect(lv(32, 2), 2);
+      expect(lv(-32, 2), 2);
+      expect(lv(31.9, 2), 0);
+      expect(lv(31.9, 0), 0);
       expect(lv(10, 2), 0);
     });
 
@@ -280,7 +281,7 @@ void main() {
       String label = 'left';
       final levels = <int>[];
       final labels = <String>[];
-      for (final a in <double>[40, 32, 27, 24, 16, 10, 6, 5]) {
+      for (final a in <double>[40, 36, 33, 30, 16, 10, 7.5, 6.5]) {
         label = DirectionResolver.resolve('left', a, previous: label);
         labels.add(label);
         if (label == 'left') {
@@ -288,16 +289,16 @@ void main() {
           levels.add(prev);
         }
       }
-      expect(levels, [2, 2, 2, 0, 0, 0, 0]);
+      expect(levels, [2, 2, 2, 0, 0, 0, 0]); // 33 >= 32라 2 유지, 7.5 >= 7 유지
       expect(labels.last, 'front');
     });
 
     test('끝에서 중앙 쪽으로 돌면 2→0→이미 틀었음으로 내려간다 (D8·D10 유형, T160)', () {
-      // 왼쪽 끝, 바깥쪽 +15°에서 중앙 쪽으로 −13°까지 돈다.
+      // 왼쪽 끝, 바깥쪽 +20°에서 중앙 쪽으로 −13°까지 돈다.
       int? prev;
       String label = 'front';
       final trace = <String>[];
-      for (final a in <double>[15, 8, 2, -2, -6, -10, -13]) {
+      for (final a in <double>[20, 13, 8, 2, -2, -6, -10, -13]) {
         label = DirectionResolver.resolve('left', a,
             edgeSide: -1, previous: label);
         final c = DirectionResolver.correctedAngle(a, -1);
@@ -309,12 +310,13 @@ void main() {
           trace.add(DirectionResolver.isEdge(label, -1) ? 'TL' : label);
         }
       }
-      expect(trace, ['L2', 'L2', 'L0', 'L0', 'L0', 'L0', 'TL']); // c 35, 28(>=26), 22…
+      // c 40, 33(>=32), 28, 22, 18, 14, 10, 7 — T162 경계 35/32.
+      expect(trace, ['L2', 'L2', 'L0', 'L0', 'L0', 'L0', 'L0', 'TL']);
     });
 
-    test('강 경계(29) 근처에서 ±3° 흔들려도 단계가 깜빡이지 않는다', () {
-      // T160: 경계가 29 하나라 떨림 방지가 없으면 0/2가 번갈아 나온다.
-      final cs = <double>[30, 28, 27.2, 29.6, 26.5, 28.8, 30.4, 27.9, 26.1, 29.2];
+    test('강 경계(35) 근처에서 ±3° 흔들려도 단계가 깜빡이지 않는다', () {
+      // T160: 경계가 하나라 떨림 방지가 없으면 0/2가 번갈아 나온다. T162: 35/32.
+      final cs = <double>[36, 34, 33.2, 35.6, 32.5, 34.8, 36.4, 33.9, 32.1, 35.2];
       int? prev;
       final levels = <int>[];
       for (final c in cs) {
@@ -347,11 +349,11 @@ void main() {
         DirectionResolver.resolve('left', a,
             edgeSide: side, previous: prev ?? 'front');
 
-    test('상수: 끝 진입 12 / 유지 9, 끝 아님 8.5 / 5.5', () {
+    test('상수: 끝 진입 12 / 유지 9, 끝 아님 10 / 7 (T162)', () {
       expect(DirectionResolver.edgeDeviationAngleDegrees, 12.0);
       expect(DirectionResolver.edgeRecoverAngleDegrees, 9.0);
-      expect(DirectionResolver.deviationAngleDegrees, 8.5);
-      expect(DirectionResolver.recoverAngleDegrees, 5.5);
+      expect(DirectionResolver.deviationAngleDegrees, 10.0);
+      expect(DirectionResolver.recoverAngleDegrees, 7.0);
     });
 
     test('반대 방향 안내는 중앙 쪽 32°부터 (왼쪽 끝 a <= −32)', () {
@@ -377,9 +379,9 @@ void main() {
       expect(r(11.1, prev: 'right', side: 1), 'front');
     });
 
-    test('끝이 아니면 8.5 / 5.5 (같은 c라도 결과가 다르다)', () {
+    test('끝이 아니면 10 / 7 (같은 c라도 결과가 다르다)', () {
       expect(DirectionResolver.resolve('front', 10, previous: 'front'), 'left');
-      expect(DirectionResolver.resolve('left', 6, previous: 'left'), 'left');
+      expect(DirectionResolver.resolve('left', 7.5, previous: 'left'), 'left');
       expect(DirectionResolver.resolve('left', -10, edgeSide: -1), 'front');
     });
   });
@@ -420,7 +422,8 @@ void main() {
 
     test('3행: 끝 + 직진 아님 → T146 그대로', () {
       expect(r(9, -1, -1.2), 'left'); // 바깥쪽 9° (c = 29)
-      expect(lv(9, -1, -1.2), 2); // T160: c = 29 → 강
+      expect(lv(9, -1, -1.2), 0); // c = 29 → T160 강, T162 약(35 밑)
+      expect(lv(16, -1, -1.2), 2); // c = 36 → 강
       expect(lv(15, -1, -1.8), 2); // 깊은 끝도 직진 아니면 단계 그대로 (c = 35)
       expect(r(-9, -1, -1.2), 'front'); // 중앙 쪽 9° (c = 11, 이미 틀었음)
       expect(r(-40, -1, -1.2), 'right'); // 지나치게 돎
@@ -536,35 +539,125 @@ void main() {
     });
   });
 
-  group('DirectionResolver 경계 떨림 방지 (T103, T160: 들어갈 때 8.5 / 유지 5.5)', () {
+  // T162 ②(오케스트레이터 확정 A): 후보를 지우거나 시계를 시작·연장하는 것은 angle 경로만.
+  group('StillOppositeDelay T162 ②: angle 경로만 센다', () {
+    final t0 = DateTime(2026, 10, 30, 14, 8, 11);
+    DateTime at(int ms) => t0.add(Duration(milliseconds: ms));
+    ({String label, bool held}) angle(StillOppositeDelay d, String r, int ms,
+            [String prev = 'left']) =>
+        d.apply(r, previous: prev, still: true, now: at(ms), fromAngle: true);
+    ({String label, bool held}) other(StillOppositeDelay d, String r, int ms,
+            [String prev = 'left']) =>
+        d.apply(r, previous: prev, still: true, now: at(ms), fromAngle: false);
+
+    StillOppositeDelay leftFirst() {
+      final d = StillOppositeDelay();
+      d.apply('left', previous: 'front', still: true, now: at(-3000));
+      return d;
+    }
+
+    test('angle 경로: front가 후보를 지운다(종전과 같음)', () {
+      final d = leftFirst();
+      expect(angle(d, 'right', 0).held, isTrue);
+      expect(angle(d, 'front', 700).held, isFalse);
+      expect(angle(d, 'right', 1000).held, isTrue);
+      expect(angle(d, 'right', 1600).held, isTrue, reason: '1000부터 다시 잼');
+      expect(angle(d, 'right', 2500).label, 'right');
+    });
+
+    test('분류기 경로: front가 와도 후보를 지우지 않는다 — 14:08:11 재현', () {
+      // 10/30: angle 경로는 right(c −30), 분류기 경로는 위치 보정으로 c −2 → front.
+      final d = leftFirst();
+      expect(angle(d, 'right', 0).held, isTrue);
+      expect(other(d, 'front', 200).label, 'front');
+      expect(angle(d, 'right', 600).held, isTrue);
+      expect(other(d, 'front', 900).label, 'front');
+      expect(angle(d, 'right', 1200).held, isTrue);
+      final r = angle(d, 'right', 1500);
+      expect(r.held, isFalse, reason: '0부터 1.5초 — 종전에는 front마다 처음부터');
+      expect(r.label, 'right');
+    });
+
+    test('위치 경로: front가 와도 후보를 지우지 않는다', () {
+      final d = leftFirst();
+      expect(angle(d, 'right', 0).held, isTrue);
+      expect(other(d, 'front', 400).label, 'front');
+      expect(angle(d, 'right', 1500).label, 'right');
+    });
+
+    test('분류기·위치 경로의 반대 판정은 막기만 하고 시계를 시작하지 않는다', () {
+      final d = leftFirst();
+      var r = other(d, 'right', 0);
+      expect(r.held, isTrue);
+      expect(r.label, 'left');
+      r = other(d, 'right', 2000);
+      expect(r.held, isTrue, reason: '분류기·위치 경로만으로는 1.5초가 차지 않는다');
+      expect(angle(d, 'right', 2100).held, isTrue, reason: 'angle 경로가 2100부터 잼');
+      expect(angle(d, 'right', 3600).label, 'right');
+    });
+
+    test('분류기·위치 경로의 같은 방향·걷는 중 판정도 후보를 지우지 않는다', () {
+      final d = leftFirst();
+      expect(angle(d, 'right', 0).held, isTrue);
+      expect(other(d, 'left', 300).label, 'left');
+      expect(
+          d
+              .apply('left',
+                  previous: 'left',
+                  still: false,
+                  now: at(600),
+                  fromAngle: false)
+              .held,
+          isFalse);
+      // 걷는 중 left가 마지막 방향이 됐지만 후보(right, 0부터)는 그대로.
+      expect(angle(d, 'right', 1500).label, 'right');
+    });
+
+    test('angle 후보가 1.5초를 넘었으면 분류기 경로 반대 판정도 바꾼다', () {
+      final d = leftFirst();
+      expect(angle(d, 'right', 0).held, isTrue);
+      final r = other(d, 'right', 1500);
+      expect(r.held, isFalse);
+      expect(r.label, 'right');
+    });
+
+    test('위를 벗어나면 어느 경로든 기억을 지운다', () {
+      final d = leftFirst();
+      angle(d, 'right', 0);
+      other(d, 'none', 100);
+      expect(other(d, 'right', 200, 'none').held, isFalse);
+    });
+  });
+
+  group('DirectionResolver 경계 떨림 방지 (T103, T162: 들어갈 때 10 / 유지 7)', () {
     const r = DirectionResolver.recoverAngleDegrees;
-    test('상수: 유지 5.5도 < 진입 8.5도 (간격 3)', () {
-      expect(r, 5.5);
+    test('상수: 유지 7도 < 진입 10도 (간격 3)', () {
+      expect(r, 7.0);
       expect(DirectionResolver.deviationAngleDegrees - r, 3.0);
     });
 
-    test('이미 left면 +5.5 이상인 동안 left 유지, 밑으로 내려가면 front', () {
-      for (final a in <double>[5.5, 7, 8.4]) {
+    test('이미 left면 +7 이상인 동안 left 유지, 밑으로 내려가면 front', () {
+      for (final a in <double>[7, 8.5, 9.9]) {
         expect(DirectionResolver.resolve('left', a, previous: 'left'), 'left',
             reason: '$a');
       }
-      expect(DirectionResolver.resolve('left', 5.4, previous: 'left'),
+      expect(DirectionResolver.resolve('left', 6.9, previous: 'left'),
           'front');
     });
 
-    test('이미 right면 -5.5 이하인 동안 right 유지', () {
-      expect(DirectionResolver.resolve('right', -7, previous: 'right'),
+    test('이미 right면 -7 이하인 동안 right 유지', () {
+      expect(DirectionResolver.resolve('right', -8.5, previous: 'right'),
           'right');
-      expect(DirectionResolver.resolve('right', -5.4, previous: 'right'),
+      expect(DirectionResolver.resolve('right', -6.9, previous: 'right'),
           'front');
     });
 
-    test('직전이 front면 5.5~8.5는 front (들어갈 때는 8.5)', () {
-      expect(DirectionResolver.resolve('front', 7, previous: 'front'),
-          'front');
-      expect(DirectionResolver.resolve('front', -7, previous: 'front'),
-          'front');
+    test('직전이 front면 7~10은 front (들어갈 때는 10)', () {
       expect(DirectionResolver.resolve('front', 8.5, previous: 'front'),
+          'front');
+      expect(DirectionResolver.resolve('front', -8.5, previous: 'front'),
+          'front');
+      expect(DirectionResolver.resolve('front', 10, previous: 'front'),
           'left');
     });
 
