@@ -659,11 +659,14 @@ class _CameraScreenState extends State<CameraScreen>
       // T98: 끝이면 위치 규칙이 각도보다 앞선다(DirectionResolver 표).
       // T146: 끝이면 보정각 c = 각도 ± 20으로 판정한다(끝 판정 [_edgeSide]).
       final previousLabel = _guidanceLabel;
+      // T164 2단계: 복귀 효과음 뒤 8초 창이면 front → 이탈 진입은 |평활각| >= 20만.
       final resolvedRaw = DirectionResolver.resolve(
           gate.label, _arrowStripeAngle,
           edgeSide: _edgeSide,
           position: _smoothedPosition,
-          previous: previousLabel);
+          previous: previousLabel,
+          recheck: _feedback.recoveryRecheck
+              .isActive(DateTime.now(), edgeSide: _edgeSide));
       // T130: 끝↔각도가 1초 안에 반대로 뒤집히면 직전 상태를 유지한다.
       final flip =
           _guardFlip(resolvedRaw, _smoothedPosition, _arrowStripeAngle);
@@ -707,9 +710,12 @@ class _CameraScreenState extends State<CameraScreen>
           DirectionResolver.isEdge(label, _edgeSide);
       if (label != CrossingHold.holdLabel) {
         // T84: 강도 판정용 각도 — 화살표와 같은 보정값을 넘긴다.
+        final alertAngle = _alertAngle(_arrowStripeAngle, _smoothedPosition,
+            flipHeld: flip.held, stillHeld: still.held);
         _feedback.alert(label, result.confidence,
-            angleDegrees: _alertAngle(_arrowStripeAngle, _smoothedPosition,
-                flipHeld: flip.held, stillHeld: still.held),
+            angleDegrees: alertAngle,
+            levelAngleDegrees:
+                DirectionResolver.stageAngle(_arrowStripeAngle, alertAngle),
             atEdge: atEdge,
             edgeSteerClass: DirectionResolver.edgeSteerClass(_edgeSide));
       } else {
@@ -1230,7 +1236,9 @@ class _CameraScreenState extends State<CameraScreen>
       final next = DirectionResolver.resolve(_guidanceLabel, smoothed,
           edgeSide: _edgeSide,
           position: _smoothedPosition,
-          previous: _guidanceLabel);
+          previous: _guidanceLabel,
+          recheck: _feedback.recoveryRecheck
+              .isActive(DateTime.now(), edgeSide: _edgeSide));
       // T130: 끝↔각도 뒤집힘 막기.
       final flip = _guardFlip(next, _smoothedPosition, smoothed);
       angleFlipHeld = flip.held;
@@ -1248,9 +1256,11 @@ class _CameraScreenState extends State<CameraScreen>
         DirectionResolver.isOnCrosswalk(_guidanceLabel) &&
         !_noCall;
     if (relabel != null || edgeChanged) {
+      final alertAngle = _alertAngle(smoothed, _smoothedPosition,
+          flipHeld: angleFlipHeld, stillHeld: angleStillHeld);
       _feedback.alert(relabel ?? _guidanceLabel, _confidence,
-          angleDegrees: _alertAngle(smoothed, _smoothedPosition,
-              flipHeld: angleFlipHeld, stillHeld: angleStillHeld),
+          angleDegrees: alertAngle,
+          levelAngleDegrees: DirectionResolver.stageAngle(smoothed, alertAngle),
           atEdge: atEdge,
           edgeSteerClass: DirectionResolver.edgeSteerClass(_edgeSide));
     }
@@ -1405,6 +1415,8 @@ class _CameraScreenState extends State<CameraScreen>
     return d;
   }
 
+  /// T164 L1: 진동 단계는 이 값이 아니라 `DirectionResolver.stageAngle(평활각, 이 값)`
+  /// (min(|평활각|, |c|))로 정한다 — 호출부에서 `levelAngleDegrees`로 함께 넘긴다.
   /// T146: alert에 넘기는 각도 — 보정각 c(각도 + 위치에 따른 끝 보정 0~±20).
   /// 뒤집힘을 막았으면 각도 그대로(T130), 서 있어서 반대 전환을 늦추는 중이면 0(단계 0 박자).
   double? _alertAngle(double? angle, double? position,
@@ -1490,7 +1502,11 @@ class _CameraScreenState extends State<CameraScreen>
     var posStillHeld = false;
     if (DirectionResolver.isOnCrosswalk(_guidanceLabel) && !_noCall) {
       final next = DirectionResolver.resolve(_guidanceLabel, _arrowStripeAngle,
-          edgeSide: side, position: smoothed, previous: _guidanceLabel);
+          edgeSide: side,
+          position: smoothed,
+          previous: _guidanceLabel,
+          recheck:
+              _feedback.recoveryRecheck.isActive(DateTime.now(), edgeSide: side));
       // T130: 끝↔각도 뒤집힘 막기.
       final flip = _guardFlip(next, smoothed, _arrowStripeAngle);
       posFlipHeld = flip.held;
@@ -1507,9 +1523,12 @@ class _CameraScreenState extends State<CameraScreen>
         DirectionResolver.isOnCrosswalk(_guidanceLabel) &&
         !_noCall;
     if (relabel != null || edgeChanged) {
+      final alertAngle = _alertAngle(_arrowStripeAngle, smoothed,
+          flipHeld: posFlipHeld, stillHeld: posStillHeld);
       _feedback.alert(relabel ?? _guidanceLabel, _confidence,
-          angleDegrees: _alertAngle(_arrowStripeAngle, smoothed,
-              flipHeld: posFlipHeld, stillHeld: posStillHeld),
+          angleDegrees: alertAngle,
+          levelAngleDegrees:
+              DirectionResolver.stageAngle(_arrowStripeAngle, alertAngle),
           atEdge: atEdge,
           edgeSteerClass: DirectionResolver.edgeSteerClass(side));
     }
