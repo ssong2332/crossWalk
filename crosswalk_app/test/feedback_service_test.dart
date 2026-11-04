@@ -1068,6 +1068,22 @@ void main() {
           hasLength(1));
     });
 
+    test('T164 L1: levelAngleDegrees가 있으면 단계는 그것으로, 로그 ang은 c 그대로',
+        () async {
+      EventLog.instance.clearForTest();
+      final now = DateTime(2026, 11, 5, 10, 0, 0);
+      final s = FeedbackService()..clock = (() => now);
+      // 평활각 25, 끝 보정으로 c 45 → 단계 0(약).
+      await s.alert('left', 0.9, angleDegrees: 45, levelAngleDegrees: 25);
+      expect(s.vibrationPolicy.lastLevel, 0);
+      final alert = EventLog.instance.earlyLines
+          .map((l) => jsonDecode(l) as Map<String, dynamic>)
+          .firstWhere((m) => m['ev'] == 'alert');
+      expect(alert['ang'], 45);
+      expect(alert['lvAng'], 25);
+      await s.dispose();
+    });
+
     test('T132: alert()는 이번 프레임 단계로 진동 간격을 정하고 기록한다', () async {
       // 테스트 호스트는 진동기가 없다(ok=false) — 단계·간격이 기록되는지만 본다.
       EventLog.instance.clearForTest();

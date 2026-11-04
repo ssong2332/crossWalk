@@ -344,6 +344,65 @@ void main() {
     });
   });
 
+  group('DirectionResolver T164 L1: 단계 각 = min(|평활각|, |c|), 방향은 c', () {
+    int lv(double? c, [int? prev]) =>
+        DirectionResolver.deviationLevel(c, previous: prev);
+
+    test('(a) 평활각 25, 왼쪽 끝 보정으로 c 45 → 단계 0, 방향은 c 부호(left)', () {
+      final c = DirectionResolver.correctedAngle(25, -1, position: -1.2)!;
+      expect(c, 45);
+      expect(DirectionResolver.resolve('front', 25, edgeSide: -1, position: -1.2),
+          'left');
+      final s = DirectionResolver.stageAngle(25, c)!;
+      expect(s, 25);
+      expect(lv(s), 0);
+      // 종전(|c|)이면 강이었다.
+      expect(lv(c), 2);
+    });
+
+    test('(a) 부호는 c를 따른다 — 평활각 −8, 끝 보정 +20 → c +12, 단계 각 +8', () {
+      final c = DirectionResolver.correctedAngle(-8, -1, position: -1.2)!;
+      expect(c, 12);
+      expect(DirectionResolver.stageAngle(-8, c), 8);
+      // 오른쪽 끝 대칭
+      expect(DirectionResolver.stageAngle(8, -12), -8);
+    });
+
+    test('(b) 평활각 38, c 38(보정 없음) → 단계 2', () {
+      final c = DirectionResolver.correctedAngle(38, 0, position: 0.2)!;
+      expect(c, 38);
+      expect(DirectionResolver.stageAngle(38, c), 38);
+      expect(lv(DirectionResolver.stageAngle(38, c)), 2);
+      expect(lv(DirectionResolver.stageAngle(-38, -38)), 2);
+    });
+
+    test('(c) 평활각 38, 보정이 반대라 c 20 → 단계 0 (보정은 내리기만)', () {
+      final c = DirectionResolver.correctedAngle(38, 0, position: 0.95)!;
+      expect(c, closeTo(20, 1e-9));
+      final s = DirectionResolver.stageAngle(38, c)!;
+      expect(s, closeTo(20, 1e-9));
+      expect(lv(s), 0);
+    });
+
+    test('(d) 하강 32 유지: 강 뒤 단계 각 33이면 2, 31이면 0', () {
+      var prev = lv(DirectionResolver.stageAngle(38, 40));
+      expect(prev, 2);
+      prev = lv(DirectionResolver.stageAngle(33, 45), prev);
+      expect(prev, 2);
+      prev = lv(DirectionResolver.stageAngle(31, 45), prev);
+      expect(prev, 0);
+      // 다시 오를 때는 35
+      expect(lv(DirectionResolver.stageAngle(34, 45), prev), 0);
+      expect(lv(DirectionResolver.stageAngle(35, 45), prev), 2);
+    });
+
+    test('c 없음 → null, 평활각 없음·c 0(서 있음 미룸) → c 그대로', () {
+      expect(DirectionResolver.stageAngle(25, null), isNull);
+      expect(DirectionResolver.stageAngle(null, 40), 40);
+      expect(DirectionResolver.stageAngle(30, 0.0), 0.0);
+    });
+  });
+
   group('DirectionResolver T160 B: 끝에서는 종전 12 / 9 (32° · 8~32° · 11°)', () {
     String r(double a, {String? prev, int side = -1}) =>
         DirectionResolver.resolve('left', a,

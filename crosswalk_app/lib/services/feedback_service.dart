@@ -1328,8 +1328,15 @@ class FeedbackService {
   // T143: [edgeSteerClass]는 끝 규칙이 중앙 쪽으로 보내는 방향
   // (`DirectionResolver.edgeSteerClass`). "이미 틀었음"(front + 끝)이면 이 방향으로
   // 보통 단계(lvl0) 박자 진동을 낸다([edgeTurnedVibrationClass]).
+  //
+  // T164 L1: [levelAngleDegrees]가 있으면 단계([deviationLevel])는 그것으로 정한다
+  // (`DirectionResolver.stageAngle` — min(|평활각|, |c|)). 없으면 [angleDegrees].
+  // 로그 'ang'은 종전대로 [angleDegrees](c)이고, 단계 각은 'lvAng'으로 남긴다.
   Future<void> alert(String detectedClass, double confidence,
-      {double? angleDegrees, bool atEdge = false, String? edgeSteerClass}) async {
+      {double? angleDegrees,
+      double? levelAngleDegrees,
+      bool atEdge = false,
+      String? edgeSteerClass}) async {
     final now = clock();
 
     // T63: 발화 여부와 무관하게 진짜 직전 클래스를 먼저 뽑아 둔다 —
@@ -1346,8 +1353,9 @@ class FeedbackService {
     // T121 F2: 구간 안내보다 **먼저** 요청한다. 같은 프레임에 "진입했습니다"(P1)가
     // 함께 나면 P1은 이탈 경고 재생 중이라 기존 대기 규칙(wait_p0, TTL 3초)을 따른다.
     // 전에는 P1을 먼저 요청해 P0가 그것을 끊어야 했고, 그 경쟁에서 P0가 삼켜졌다.
-    final message =
-        decideMessage(detectedClass, angleDegrees, now, atEdge: atEdge);
+    final message = decideMessage(
+        detectedClass, levelAngleDegrees ?? angleDegrees, now,
+        atEdge: atEdge);
     if (message != null) {
       unawaited(_speak(message,
           priority: FeedbackPriority.p0,
@@ -1467,6 +1475,7 @@ class FeedbackService {
       'cls': detectedClass,
       'conf': confidence,
       'ang': angleDegrees,
+      if (levelAngleDegrees != null) 'lvAng': levelAngleDegrees,
       'edge': atEdge,
       'msg': message,
       'phase': phaseMessage,

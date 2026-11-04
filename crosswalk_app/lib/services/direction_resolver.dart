@@ -265,6 +265,24 @@ class DirectionResolver {
         : (c < 0 ? -edgeDeviationAngleDegrees : edgeDeviationAngleDegrees);
   }
 
+  /// T164 L1(2026-11-05, 사용자 승인): 진동 단계([deviationLevel])에 넘기는 각.
+  ///   크기 = min(|평활각 a|, |alert 각 c|), 부호 = c. 위치·끝 보정은 단계를
+  ///   **내리기만** 하고 올리지 못한다. 방향·이탈 진입/복귀([resolve])는 c 그대로.
+  ///   | 입력                               | 결과              |
+  ///   | c 없음                             | null (단계 0)     |
+  ///   | a 없음 또는 c == 0(서 있음 미룸)   | c 그대로          |
+  ///   | 그 밖                              | sign(c)·min(|a|,|c|) |
+  ///   근거: `train/field_1104/report.md` §1 L1, 재생 `train/field_1104/scripts/lva.py`
+  ///   ('min' 모드와 같은 규칙) — 강 비율 A 24→17%, B 15→9%, 10/30 21→17%.
+  static double? stageAngle(double? smoothedAngleDegrees, double? alertAngle) {
+    final c = alertAngle;
+    if (c == null) return null;
+    if (smoothedAngleDegrees == null || c == 0.0) return c;
+    final a = smoothedAngleDegrees.abs();
+    if (a >= c.abs()) return c;
+    return c < 0 ? -a : a;
+  }
+
   /// T146 B: 끝 판정. −1 = 왼쪽 끝, +1 = 오른쪽 끝, 0 = 끝 아님.
   /// [previousSide]가 같은 쪽 끝이면 |p| >= [edgeExitPosition]인 동안 유지한다.
   static int edgeSide(double? position, {int previousSide = 0}) {
