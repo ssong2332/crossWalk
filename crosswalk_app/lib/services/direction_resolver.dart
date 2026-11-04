@@ -265,6 +265,16 @@ class DirectionResolver {
         : (c < 0 ? -edgeDeviationAngleDegrees : edgeDeviationAngleDegrees);
   }
 
+  /// T164 2단계(2026-11-05, 사용자 승인 — `train/field_1104/report_t165.md` 작업 2
+  /// 추천 1안): 복귀 효과음이 실제로 울린 뒤 이 시간 동안은 재이탈을 엄격하게 본다
+  /// ([RecoveryRecheck]). 재생 4기록(10/29·10/30·11/04 A·B): 오안내 31/42 제거,
+  /// 진짜 이탈 누락 0/18, 지연 5건 최대 1.6초(`train/field_1104/scripts/t165_rules.py`).
+  static const recoveryRecheckWindow = Duration(seconds: 8);
+
+  /// T164 2단계: 창 안에서 front → 이탈로 들어가는 |평활각| 문턱(위치 보정 c는 안 씀).
+  /// 22°는 지연 최대 2.2초, 25°는 진짜 누락 1건이라 20°가 경계(같은 보고서).
+  static const double recoveryEnterDegrees = 20.0;
+
   /// T164 L1(2026-11-05, 사용자 승인): 진동 단계([deviationLevel])에 넘기는 각.
   ///   크기 = min(|평활각 a|, |alert 각 c|), 부호 = c. 위치·끝 보정은 단계를
   ///   **내리기만** 하고 올리지 못한다. 방향·이탈 진입/복귀([resolve])는 c 그대로.
@@ -335,9 +345,26 @@ class DirectionResolver {
   /// 분류기 [label]과 각도 모델의 [angleDegrees], 끝 판정 [edgeSide]·위치 [position]을
   /// 합쳐 최종 상태를 낸다. T146: 보정각 c에 T103 표를 건다.
   /// [previous]는 직전 최종 상태 — 떨림 방지(T103)에 쓴다.
+  ///
+  /// T164 2단계: [recheck]가 true(복귀 효과음 뒤 창, [RecoveryRecheck])이고
+  ///   끝이 아니고 [previous]가 front면 진입만 바꾼다:
+  ///   | |평활각 a| (= [angleDegrees])        | 결과                         |
+  ///   | >= [recoveryEnterDegrees], a > 0     | left                         |
+  ///   | <= −[recoveryEnterDegrees]           | right                        |
+  ///   | 그 밖·각도 없음                       | front (보정각 c는 안 씀)     |
+  ///   이탈로 들어간 뒤(previous left/right)의 유지·복귀는 종전 규칙(c, 10/7) 그대로.
   static String resolve(String label, double? angleDegrees,
-      {int edgeSide = 0, double? position, String? previous}) {
+      {int edgeSide = 0,
+      double? position,
+      String? previous,
+      bool recheck = false}) {
     if (!isOnCrosswalk(label)) return label;
+    if (recheck && edgeSide == 0 && previous == 'front') {
+      final a = angleDegrees;
+      if (a != null && a >= recoveryEnterDegrees) return 'left';
+      if (a != null && a <= -recoveryEnterDegrees) return 'right';
+      return 'front';
+    }
     // T158 3행: 끝에서 직진(깊은 끝 아님)이면 중앙 쪽 명령 없이 front(+ 끝).
     if (_edgeStraightFront(angleDegrees, edgeSide, position)) return 'front';
     final c = correctedAngle(angleDegrees, edgeSide, position: position);
@@ -396,6 +423,48 @@ class DirectionResolver {
 ///   | 같은 방향 / 마지막 방향 없음 / 걷는 중   | 그대로 내보냄, 방향 기억, **후보 유지**       |
 ///   | 반대 + 서 있음, angle 후보가 [hold] 넘음 | 바꿈(angle 경로가 이미 채운 시계)            |
 ///   | 반대 + 서 있음, 그 밖                   | **막음**(직전 상태 유지) — 시계는 건드리지 않음 |
+/// T164 2단계(2026-11-05, 사용자 승인): 복귀 효과음 뒤 재이탈 확인 창.
+///
+/// 사용자: "효과음은 직진이라는 뜻 — 효과음 뒤에는 최대한 이탈 알림이 없도록".
+/// 판정표 (`train/field_1104/report_t165.md` 작업 2 추천 1안, 시간은 인자로 주입):
+///   | # | 조건                                                    | 결과                       |
+///   | 1 | 효과음이 실제로 울림(`chime` ok) — [onChime]            | 창 열기, t_r = 그 시각     |
+///   | 5 | 보류 뒤 버려짐(drop) / 실패(ok false)                   | 열지 않음(부르지 않는다)   |
+///   | 6 | 창 안에서 새 효과음                                     | t_r을 새 시각으로          |
+///   | 4 | now − t_r >= [window] / 끝(edgeSide != 0) / [close]     | 창 닫음(끝이 풀려도 안 엶) |
+///   창이 열려 있는 동안 [DirectionResolver.resolve]의 recheck가 true다(진입 20°, a만).
+///   서 있을 때 [StillOppositeDelay]는 resolve 뒤에 그대로 걸린다(#7, 둘 다 적용).
+class RecoveryRecheck {
+  RecoveryRecheck({this.window = DirectionResolver.recoveryRecheckWindow});
+
+  final Duration window;
+  DateTime? _openedAt;
+
+  /// 효과음이 실제로 울린 시각. 창을 열거나 다시 잡는다.
+  void onChime(DateTime at) => _openedAt = at;
+
+  /// 창을 닫는다(횡단보도를 벗어남 등).
+  void close() => _openedAt = null;
+
+  /// 이번 판정에 창을 적용하는가. 끝이거나 시간이 지났으면 닫고 false.
+  bool isActive(DateTime now, {required int edgeSide}) {
+    if (_openedAt == null) return false;
+    if (edgeSide != 0 || now.difference(_openedAt!) >= window) {
+      _openedAt = null;
+      return false;
+    }
+    return true;
+  }
+
+  /// 기록용: 남은 ms(닫혀 있거나 지났으면 null). 상태를 바꾸지 않는다.
+  int? remainingMs(DateTime now) {
+    final t = _openedAt;
+    if (t == null) return null;
+    final left = window.inMilliseconds - now.difference(t).inMilliseconds;
+    return left > 0 ? left : null;
+  }
+}
+
 class StillOppositeDelay {
   StillOppositeDelay({this.hold = DirectionResolver.stillOppositeHold});
 

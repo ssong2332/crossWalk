@@ -1346,6 +1346,8 @@ class FeedbackService {
 
     // T130: 대기 중인 진입 안내는 횡단보도 위를 벗어나면 취소한다.
     cancelPendingEntryOnState(detectedClass);
+    // T164 2단계 #4: 횡단보도를 벗어나면(none/approach/crossed) 재이탈 확인 창을 닫는다.
+    if (!DirectionResolver.isOnCrosswalk(detectedClass)) recoveryRecheck.close();
 
     // 음성 — 이탈 경고는 P0다. 무음 예산·최소 간격에서 면제되며, 재생 중인
     // 하위 등급 안내를 끊는다. T84: 강도는 각도로 판정한다(confidence는
@@ -1476,6 +1478,8 @@ class FeedbackService {
       'conf': confidence,
       'ang': angleDegrees,
       if (levelAngleDegrees != null) 'lvAng': levelAngleDegrees,
+      // T164 2단계: 재이탈 확인 창 남은 ms(닫혀 있으면 null).
+      'rcWin': recoveryRecheck.remainingMs(now),
       'edge': atEdge,
       'msg': message,
       'phase': phaseMessage,
@@ -1635,6 +1639,10 @@ class FeedbackService {
   @visibleForTesting
   Future<void> Function()? chimePlayer = _playPlatformChime;
 
+  /// T164 2단계: 복귀 효과음 뒤 재이탈 확인 창([RecoveryRecheck]). 효과음이 울리면
+  /// 여기서 열고, 화면(`camera_screen`)이 판정마다 `isActive`로 읽는다.
+  final RecoveryRecheck recoveryRecheck = RecoveryRecheck();
+
   static const _chimeChannel =
       MethodChannel('io.github.ssong2332.walkguide/chime');
 
@@ -1711,6 +1719,8 @@ class FeedbackService {
     try {
       await player();
       EventLog.instance.log('chime', {'why': 'recover', ...extra, 'ok': true});
+      // T164 2단계: 실제로 울린 효과음만 재이탈 확인 창을 연다(drop·실패는 안 엶).
+      recoveryRecheck.onChime(clock());
     } on PlatformException catch (e) {
       EventLog.instance.log(
           'chime', {'why': 'recover', ...extra, 'ok': false, 'fail': e.code});

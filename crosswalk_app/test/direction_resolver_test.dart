@@ -403,6 +403,101 @@ void main() {
     });
   });
 
+  group('T164 2단계: 복귀 효과음 뒤 재이탈 확인 (8초, |평활각| 20)', () {
+    final tr = DateTime(2026, 11, 5, 12);
+    DateTime at(int ms) => tr.add(Duration(milliseconds: ms));
+
+    test('상수: 8초 / 20°', () {
+      expect(DirectionResolver.recoveryRecheckWindow, const Duration(seconds: 8));
+      expect(DirectionResolver.recoveryEnterDegrees, 20.0);
+    });
+
+    test('(a) 효과음 뒤 3초, a 12·c 22 → front 유지', () {
+      final w = RecoveryRecheck()..onChime(tr);
+      final rc = w.isActive(at(3000), edgeSide: 0);
+      expect(rc, isTrue);
+      // 위치 보정 +10(p −0.75) → c 22. 창 밖이면 left였다.
+      expect(DirectionResolver.correctedAngle(12, 0, position: -0.75), 22);
+      expect(
+          DirectionResolver.resolve('front', 12,
+              position: -0.75, previous: 'front'),
+          'left');
+      expect(
+          DirectionResolver.resolve('front', 12,
+              position: -0.75, previous: 'front', recheck: rc),
+          'front');
+    });
+
+    test('(b) 효과음 뒤 3초, a 24 → 이탈 진입 (부호 = a)', () {
+      final w = RecoveryRecheck()..onChime(tr);
+      final rc = w.isActive(at(3000), edgeSide: 0);
+      expect(DirectionResolver.resolve('front', 24, previous: 'front', recheck: rc),
+          'left');
+      expect(DirectionResolver.resolve('front', -24, previous: 'front', recheck: rc),
+          'right');
+      // 위치 보정이 반대여도(c = 24 − 10 = 14) a로 판정
+      expect(
+          DirectionResolver.resolve('front', 24,
+              position: 0.75, previous: 'front', recheck: rc),
+          'left');
+      expect(DirectionResolver.resolve('front', 19.9, previous: 'front', recheck: rc),
+          'front');
+      expect(DirectionResolver.resolve('front', null, previous: 'front', recheck: rc),
+          'front');
+    });
+
+    test('(c) 효과음 뒤 9초, a 12 → 지금 규칙대로 이탈', () {
+      final w = RecoveryRecheck()..onChime(tr);
+      final rc = w.isActive(at(9000), edgeSide: 0);
+      expect(rc, isFalse);
+      expect(DirectionResolver.resolve('front', 12, previous: 'front', recheck: rc),
+          'left');
+      // 8초 정각에 닫힌다
+      final w2 = RecoveryRecheck()..onChime(tr);
+      expect(w2.isActive(at(7999), edgeSide: 0), isTrue);
+      expect(w2.isActive(at(8000), edgeSide: 0), isFalse);
+    });
+
+    test('(d) 효과음을 부르지 않으면(drop) 창 없음', () {
+      final w = RecoveryRecheck();
+      expect(w.isActive(at(1000), edgeSide: 0), isFalse);
+      expect(w.remainingMs(at(1000)), isNull);
+    });
+
+    test('(e) 창 안에서 끝 진입 → 창 닫힘(끝이 풀려도 다시 열리지 않음)', () {
+      final w = RecoveryRecheck()..onChime(tr);
+      expect(w.isActive(at(1000), edgeSide: 0), isTrue);
+      expect(w.isActive(at(2000), edgeSide: -1), isFalse);
+      expect(w.isActive(at(3000), edgeSide: 0), isFalse);
+      expect(w.remainingMs(at(3000)), isNull);
+    });
+
+    test('창 안에서 끝이면 resolve도 지금 규칙(끝 12/9, c)', () {
+      // recheck가 true로 넘어와도 edgeSide != 0이면 무시 — a 10(직진 아님), c 30 → left.
+      // (a < 9면 T158 끝 직진 front라 이 확인에 맞지 않는다.)
+      expect(
+          DirectionResolver.resolve('front', 10,
+              edgeSide: -1, position: -1.2, previous: 'front', recheck: true),
+          'left');
+    });
+
+    test('#3 이탈로 들어간 뒤 유지·복귀는 지금 규칙(c, 유지 7)', () {
+      expect(DirectionResolver.resolve('left', 8, previous: 'left', recheck: true),
+          'left');
+      expect(DirectionResolver.resolve('left', 6, previous: 'left', recheck: true),
+          'front');
+    });
+
+    test('#6 창 안 새 효과음 → t_r 다시, close() → 닫힘', () {
+      final w = RecoveryRecheck()..onChime(tr);
+      w.onChime(at(6000));
+      expect(w.isActive(at(13000), edgeSide: 0), isTrue);
+      expect(w.remainingMs(at(13000)), 1000);
+      w.close();
+      expect(w.isActive(at(13100), edgeSide: 0), isFalse);
+    });
+  });
+
   group('DirectionResolver T160 B: 끝에서는 종전 12 / 9 (32° · 8~32° · 11°)', () {
     String r(double a, {String? prev, int side = -1}) =>
         DirectionResolver.resolve('left', a,

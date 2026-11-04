@@ -2209,6 +2209,25 @@ void main() {
         expect(chimes().last, containsPair('drop', 'redeviated'));
       });
 
+      test('T164 (d): 버려진 효과음(drop) → 재이탈 확인 창 없음', () async {
+        sched.advanceTo(t0.add(const Duration(milliseconds: 2300)));
+        expect(chimes().last, containsPair('drop', 'timeout'));
+        expect(s.recoveryRecheck.remainingMs(sched.now), isNull);
+        expect(s.recoveryRecheck.isActive(sched.now, edgeSide: 0), isFalse);
+      });
+
+      test('T164: 보류 뒤 실제로 울리면(ok) 그 시각부터 8초 창', () async {
+        sched.advanceTo(t0.add(const Duration(milliseconds: 820)));
+        await s.alert('front', 0.9);
+        s.finishSpeechGeneration(gen);
+        await Future<void>.delayed(Duration.zero);
+        expect(played, 1);
+        expect(s.recoveryRecheck.remainingMs(sched.now), 8000);
+        sched.advanceTo(t0.add(const Duration(milliseconds: 3820)));
+        expect(s.recoveryRecheck.isActive(sched.now, edgeSide: 0), isTrue);
+        expect(s.recoveryRecheck.remainingMs(sched.now), 5000);
+      });
+
       test('상한(2초) 초과 → 취소(drop=timeout), 뒤늦게 TTS가 끝나도 안 울림',
           () async {
         sched.advanceTo(t0.add(const Duration(milliseconds: 2300)));
@@ -2236,6 +2255,33 @@ void main() {
         sched.advanceTo(t0.add(const Duration(seconds: 5)));
         expect(chimes(), hasLength(1), reason: 'defer 줄만');
       });
+    });
+
+    test('T164: 울린 효과음이 창을 열고, alert 줄에 rcWin, 횡단보도를 벗어나면 닫힘',
+        () async {
+      EventLog.instance.clearForTest();
+      var now = DateTime(2026, 11, 5, 12);
+      final s = FeedbackService()
+        ..clock = (() => now)
+        ..chimePlayer = () async {};
+      await s.alert('left', 0.9, angleDegrees: mild);
+      s.isSpeaking.value = false;
+      expect(s.recoveryRecheck.remainingMs(now), isNull);
+      now = now.add(const Duration(milliseconds: 500));
+      await s.alert('front', 0.9);
+      await Future<void>.delayed(Duration.zero);
+      expect(chimes().last, containsPair('ok', true));
+      now = now.add(const Duration(milliseconds: 1000));
+      await s.alert('front', 0.9);
+      final alerts = EventLog.instance.earlyLines
+          .map((l) => jsonDecode(l) as Map<String, dynamic>)
+          .where((m) => m['ev'] == 'alert')
+          .toList();
+      expect(alerts.first['rcWin'], isNull);
+      expect(alerts.last['rcWin'], 7000);
+      await s.alert('crossed', 0.9);
+      expect(s.recoveryRecheck.remainingMs(now), isNull);
+      await s.dispose();
     });
 
     test('이탈 없이 직진이 이어지면 딩 없음', () async {

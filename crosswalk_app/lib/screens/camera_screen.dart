@@ -659,11 +659,14 @@ class _CameraScreenState extends State<CameraScreen>
       // T98: 끝이면 위치 규칙이 각도보다 앞선다(DirectionResolver 표).
       // T146: 끝이면 보정각 c = 각도 ± 20으로 판정한다(끝 판정 [_edgeSide]).
       final previousLabel = _guidanceLabel;
+      // T164 2단계: 복귀 효과음 뒤 8초 창이면 front → 이탈 진입은 |평활각| >= 20만.
       final resolvedRaw = DirectionResolver.resolve(
           gate.label, _arrowStripeAngle,
           edgeSide: _edgeSide,
           position: _smoothedPosition,
-          previous: previousLabel);
+          previous: previousLabel,
+          recheck: _feedback.recoveryRecheck
+              .isActive(DateTime.now(), edgeSide: _edgeSide));
       // T130: 끝↔각도가 1초 안에 반대로 뒤집히면 직전 상태를 유지한다.
       final flip =
           _guardFlip(resolvedRaw, _smoothedPosition, _arrowStripeAngle);
@@ -1233,7 +1236,9 @@ class _CameraScreenState extends State<CameraScreen>
       final next = DirectionResolver.resolve(_guidanceLabel, smoothed,
           edgeSide: _edgeSide,
           position: _smoothedPosition,
-          previous: _guidanceLabel);
+          previous: _guidanceLabel,
+          recheck: _feedback.recoveryRecheck
+              .isActive(DateTime.now(), edgeSide: _edgeSide));
       // T130: 끝↔각도 뒤집힘 막기.
       final flip = _guardFlip(next, _smoothedPosition, smoothed);
       angleFlipHeld = flip.held;
@@ -1497,7 +1502,11 @@ class _CameraScreenState extends State<CameraScreen>
     var posStillHeld = false;
     if (DirectionResolver.isOnCrosswalk(_guidanceLabel) && !_noCall) {
       final next = DirectionResolver.resolve(_guidanceLabel, _arrowStripeAngle,
-          edgeSide: side, position: smoothed, previous: _guidanceLabel);
+          edgeSide: side,
+          position: smoothed,
+          previous: _guidanceLabel,
+          recheck:
+              _feedback.recoveryRecheck.isActive(DateTime.now(), edgeSide: side));
       // T130: 끝↔각도 뒤집힘 막기.
       final flip = _guardFlip(next, smoothed, _arrowStripeAngle);
       posFlipHeld = flip.held;
