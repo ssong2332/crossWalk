@@ -716,6 +716,7 @@ class _CameraScreenState extends State<CameraScreen>
             angleDegrees: alertAngle,
             levelAngleDegrees:
                 DirectionResolver.stageAngle(_arrowStripeAngle, alertAngle),
+            smoothedAngleDegrees: _arrowStripeAngle,
             atEdge: atEdge,
             edgeSteerClass: DirectionResolver.edgeSteerClass(_edgeSide));
       } else {
@@ -1261,6 +1262,7 @@ class _CameraScreenState extends State<CameraScreen>
       _feedback.alert(relabel ?? _guidanceLabel, _confidence,
           angleDegrees: alertAngle,
           levelAngleDegrees: DirectionResolver.stageAngle(smoothed, alertAngle),
+          smoothedAngleDegrees: smoothed,
           atEdge: atEdge,
           edgeSteerClass: DirectionResolver.edgeSteerClass(_edgeSide));
     }
@@ -1529,6 +1531,7 @@ class _CameraScreenState extends State<CameraScreen>
           angleDegrees: alertAngle,
           levelAngleDegrees:
               DirectionResolver.stageAngle(_arrowStripeAngle, alertAngle),
+          smoothedAngleDegrees: _arrowStripeAngle,
           atEdge: atEdge,
           edgeSteerClass: DirectionResolver.edgeSteerClass(side));
     }
