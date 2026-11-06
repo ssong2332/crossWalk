@@ -1340,7 +1340,8 @@ class FeedbackService {
       double? levelAngleDegrees,
       double? smoothedAngleDegrees,
       bool atEdge = false,
-      String? edgeSteerClass}) async {
+      String? edgeSteerClass,
+      String? edgeOff}) async {
     final now = clock();
     _lastSmoothedAngle = smoothedAngleDegrees;
 
@@ -1494,6 +1495,8 @@ class FeedbackService {
       // T164 2단계: 재이탈 확인 창 남은 ms(닫혀 있으면 null).
       'rcWin': recoveryRecheck.remainingMs(now),
       'edge': atEdge,
+      // T174: 끝 위치였지만 끝 규칙을 껐으면 이유('state' 상태 밖 / 'entry' 진입 1.5초 안).
+      if (edgeOff != null) 'edgeOff': edgeOff,
       'msg': message,
       'phase': phaseMessage,
       'recover': recoveryMessage,

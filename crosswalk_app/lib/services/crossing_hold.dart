@@ -79,6 +79,9 @@ class CrossingHold {
   /// T140: 최종 상태가 위로 들어온 시각(위 ↔ hold 동안 유지). 위·hold가 아니면 null.
   DateTime? _onSince;
 
+  /// T174: [_onSince] 읽기 전용(끝 규칙의 '진입 후 경과' 기준).
+  DateTime? get onSince => _onSince;
+
   /// T140: [releasedByGround]일 때 위 지속(위로 들어온 뒤 해제까지). 그 밖에는 null.
   Duration? get releasedOnDuration => _releasedOnDuration;
   Duration? _releasedOnDuration;
