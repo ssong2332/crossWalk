@@ -1332,12 +1332,17 @@ class FeedbackService {
   // T164 L1: [levelAngleDegrees]가 있으면 단계([deviationLevel])는 그것으로 정한다
   // (`DirectionResolver.stageAngle` — min(|평활각|, |c|)). 없으면 [angleDegrees].
   // 로그 'ang'은 종전대로 [angleDegrees](c)이고, 단계 각은 'lvAng'으로 남긴다.
+  //
+  // T167 A: [smoothedAngleDegrees]는 평활각 a(위치·끝 보정 없음). 이탈 상태에서 a가
+  // 이미 중앙 쪽이면 진동을 쉰다([isTurnedToCentre], `vib.skip`).
   Future<void> alert(String detectedClass, double confidence,
       {double? angleDegrees,
       double? levelAngleDegrees,
+      double? smoothedAngleDegrees,
       bool atEdge = false,
       String? edgeSteerClass}) async {
     final now = clock();
+    _lastSmoothedAngle = smoothedAngleDegrees;
 
     // T63: 발화 여부와 무관하게 진짜 직전 클래스를 먼저 뽑아 둔다 —
     // 아래에서 _lastRawClass를 덮어쓰기 전에 읽어야 전이를 감지할 수 있다.
@@ -1470,6 +1475,14 @@ class FeedbackService {
     final pattern = vibrationPolicy.decidePattern(
         vibClass, now, _vibrationDurationMs,
         level: vibLevel);
+    // T167 A: 이탈 상태(left/right)의 방향 진동인데 a가 이미 중앙 쪽이면 쉰다.
+    // 끝 '이미 틀었음'(front + 끝, [edgeTurnedVibrationClass])·하강 유지(T157 P1, front)는
+    // 이탈 상태가 아니라서 대상이 아니다. 진동 정책의 박자(마지막 진동 시각)는 낸 것처럼
+    // 이어 간다 — 다시 바깥쪽을 보면 같은 간격으로 이어서 낸다.
+    final turnedSkip = pattern != null &&
+        edgeTurnedVib == null &&
+        vibClass == detectedClass &&
+        isTurnedToCentre(detectedClass, smoothedAngleDegrees);
 
     // T106: 경고 입력과 이번에 낸 것(음성 문장 여부·진동 여부). 말이 안 나간
     // 이유(쿨다운)도 이 줄과 'say' 줄을 함께 보면 알 수 있다.
@@ -1485,7 +1498,8 @@ class FeedbackService {
       'phase': phaseMessage,
       'recover': recoveryMessage,
       'edgeTurned': edgeTurnedMessage,
-      'vib': pattern != null,
+      'vib': pattern != null && !turnedSkip,
+      if (turnedSkip) 'vibSkip': 'turned',
       if (edgeTurnedVib != null) 'vibAs': edgeTurnedVib,
     });
 
@@ -1505,6 +1519,10 @@ class FeedbackService {
     }
 
     if (pattern == null) return;
+    if (turnedSkip) {
+      _logVibSkip(detectedClass, smoothedAngleDegrees, src: null);
+      return;
+    }
 
     final kind = vibClass == 'front' ? 'recover' : vibClass;
     // T139: 이탈에서 직진으로 돌아온 순간 짧은 '딩'을 더한다(확인 진동은 그대로).
@@ -1560,7 +1578,41 @@ class FeedbackService {
         level: level);
     final last = vibrationPolicy.lastVibratedAt;
     if (last != null) directionTimer.schedule(cls, level, last, now);
-    if (pattern != null) unawaited(_vibrate(cls, pattern, src: 'timer'));
+    if (pattern == null) return;
+    // T167 A: 반복 진동도 같다 — 지금 상태가 같은 방향 이탈이고 a가 중앙 쪽이면 쉰다.
+    if (_lastRawClass == cls && isTurnedToCentre(cls, _lastSmoothedAngle)) {
+      _logVibSkip(cls, _lastSmoothedAngle, src: 'timer');
+      return;
+    }
+    unawaited(_vibrate(cls, pattern, src: 'timer'));
+  }
+
+  /// T167 A: 마지막 alert의 평활각 a(반복 타이머가 쓴다).
+  double? _lastSmoothedAngle;
+
+  /// T167 A(2026-11-06, 사용자 승인 — `train/field_1106/report.md` §4 재생 (2)):
+  /// 이탈 방향 [cls]인데 평활각 a가 이미 중앙 쪽이거나 그 너머인가.
+  ///   | cls   | a          | 결과 |
+  ///   | left  | a <= 0     | true (진동 쉼) |
+  ///   | right | a >= 0     | true |
+  ///   | 그 밖·a 없음 | —   | false (지금처럼 진동) |
+  /// 부호는 `DirectionResolver.resolve`와 같다(a > 0 → left).
+  /// 재생: 11/06 L1488 2회·L6449 3회·L6975 2회 = 7회 제거, 진짜 이탈 진동 손실 0.
+  static bool isTurnedToCentre(String cls, double? a) {
+    if (a == null) return false;
+    if (cls == 'left') return a <= 0;
+    if (cls == 'right') return a >= 0;
+    return false;
+  }
+
+  void _logVibSkip(String kind, double? a, {String? src}) {
+    EventLog.instance.log('vib.skip', {
+      'kind': kind,
+      'why': 'turned',
+      'a': a,
+      'lvl': vibrationPolicy.lastLevel,
+      if (src != null) 'src': src,
+    });
   }
 
   /// T142: 같은 방향 반복 진동을 바로 멈춘다 — 상태가 이탈이 아니게 됨(`state`),

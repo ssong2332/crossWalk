@@ -2109,6 +2109,108 @@ void main() {
     });
   });
 
+  // T167 A: 이탈 상태에서 평활각 a가 이미 중앙 쪽이면 진동을 쉰다(vib.skip).
+  group('T167 A 이미 중앙 쪽으로 돌았으면 진동 쉬기', () {
+    final t0 = DateTime(2026, 11, 6, 13);
+    late _FakeSched sched;
+    late FeedbackService s;
+    setUp(() {
+      EventLog.instance.clearForTest();
+      sched = _FakeSched(t0);
+      s = FeedbackService()
+        ..clock = (() => sched.now)
+        ..timerFactory = sched.create;
+    });
+    tearDown(() async => s.dispose());
+
+    List<Map<String, dynamic>> lines(String ev) => EventLog.instance.earlyLines
+        .map((l) => jsonDecode(l) as Map<String, dynamic>)
+        .where((m) => m['ev'] == ev)
+        .toList();
+    Future<void> at(int ms, String cls,
+        {double? c, double? a, bool atEdge = false, String? steer}) async {
+      sched.advanceTo(t0.add(Duration(milliseconds: ms)));
+      await s.alert(cls, 0.9,
+          angleDegrees: c,
+          smoothedAngleDegrees: a,
+          atEdge: atEdge,
+          edgeSteerClass: steer);
+    }
+
+    test('판정표: left a <= 0, right a >= 0이면 true, a 없으면 false', () {
+      expect(FeedbackService.isTurnedToCentre('left', -1), isTrue);
+      expect(FeedbackService.isTurnedToCentre('left', 0), isTrue);
+      expect(FeedbackService.isTurnedToCentre('left', 12), isFalse);
+      expect(FeedbackService.isTurnedToCentre('right', 1), isTrue);
+      expect(FeedbackService.isTurnedToCentre('right', -12), isFalse);
+      expect(FeedbackService.isTurnedToCentre('left', null), isFalse);
+      expect(FeedbackService.isTurnedToCentre('front', -5), isFalse);
+    });
+
+    test('left 상태, a −1 → 진동 없음(vib.skip), 음성은 그대로', () async {
+      // 끝 보정으로 c 19(왼쪽 끝 이탈 상태), 평활각은 이미 중앙 쪽.
+      await at(0, 'left', c: 19, a: -1);
+      expect(lines('vib'), isEmpty);
+      final skip = lines('vib.skip').single;
+      expect(skip['kind'], 'left');
+      expect(skip['a'], -1);
+      expect(skip['why'], 'turned');
+      final alert = lines('alert').single;
+      expect(alert['vib'], isFalse);
+      expect(alert['vibSkip'], 'turned');
+      expect(alert['msg'], isNotNull, reason: '음성은 그대로');
+    });
+
+    test('left 상태, a +12 → 진동', () async {
+      await at(0, 'left', c: 12, a: 12);
+      expect(lines('vib').single['kind'], 'left');
+      expect(lines('vib.skip'), isEmpty);
+    });
+
+    test('right 상태: a +1 → 쉼, a −12 → 진동', () async {
+      await at(0, 'right', c: -19, a: 1);
+      expect(lines('vib'), isEmpty);
+      expect(lines('vib.skip').single['kind'], 'right');
+      final s2 = FeedbackService()..clock = (() => sched.now);
+      EventLog.instance.clearForTest();
+      await s2.alert('right', 0.9, angleDegrees: -12, smoothedAngleDegrees: -12);
+      expect(lines('vib').single['kind'], 'right');
+      await s2.dispose();
+    });
+
+    test('a 없음 → 지금처럼 진동', () async {
+      await at(0, 'left', c: 20);
+      expect(lines('vib').single['kind'], 'left');
+    });
+
+    test('반복 타이머도 a가 중앙 쪽이면 쉬고(src=timer), 다시 바깥쪽이면 낸다', () async {
+      await at(0, 'left', c: 12, a: 12); // 진동(0ms)
+      await at(272, 'left', c: 12, a: -1);
+      await at(544, 'left', c: 12, a: -1);
+      sched.advanceTo(t0.add(const Duration(milliseconds: 650)));
+      await Future<void>.delayed(Duration.zero);
+      expect(lines('vib'), hasLength(1));
+      expect(lines('vib.skip').single['src'], 'timer');
+      await at(816, 'left', c: 12, a: 12);
+      await at(1088, 'left', c: 12, a: 12);
+      sched.advanceTo(t0.add(const Duration(milliseconds: 1250)));
+      await Future<void>.delayed(Duration.zero);
+      final vib = lines('vib');
+      expect(vib, hasLength(2));
+      expect(vib.last['src'], 'timer');
+    });
+
+    test('끝 "이미 틀었음"(front + 끝) 진동은 대상이 아니다 — a가 중앙 쪽이어도 낸다',
+        () async {
+      // 왼쪽 끝에서 이탈 → 중앙 쪽으로 돌아 front + 끝.
+      await at(0, 'left', c: 25, a: 5, atEdge: true, steer: 'left');
+      await at(700, 'front', c: 0, a: -20, atEdge: true, steer: 'left');
+      final skips = lines('vib.skip');
+      expect(skips, isEmpty);
+      expect(lines('alert').last['vibAs'], 'left');
+    });
+  });
+
   // T139: 이탈에서 직진으로 돌아온 순간 '딩'(복귀 확인 진동은 그대로).
   group('복귀 확인음 (T139)', () {
     List<Map<String, dynamic>> chimes() => EventLog.instance.earlyLines
