@@ -1,3 +1,4 @@
+import 'package:crosswalk_app/services/crossing_hold.dart';
 import 'package:crosswalk_app/services/direction_resolver.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -936,6 +937,113 @@ void main() {
           previous: 'front', position: 1.01, angleDegrees: 6, now: at(1550));
       expect(d.held, isFalse);
       expect(d.label, 'right');
+    });
+  });
+
+  // T174: 끝 규칙은 상태가 front/left/right/hold이고 진입 1.5초 뒤에만.
+  group('T174 횡단보도 진입 직후·밖에서는 끝 판정 안 하기', () {
+    final t0 = DateTime(2026, 11, 6, 14);
+    DateTime at(int ms) => t0.add(Duration(milliseconds: ms));
+    // 실제 흐름: approach → front 전이를 CrossingHold가 기록한다(onSince).
+    CrossingHold entered() =>
+        CrossingHold()..apply('approach', 'front', t0);
+    final side = DirectionResolver.edgeSide(-1.3); // 왼쪽 끝(|p| 1.3)
+
+    test('전제: |p| 1.3은 끝(−1), 진입 시각은 approach → front 프레임', () {
+      expect(side, -1);
+      expect(entered().onSince, t0);
+    });
+
+    test('진입 1.0초 뒤 |p| 1.3 → 끝 아님(entry), 일반 문턱 10으로 판정', () {
+      final h = entered();
+      final g = DirectionResolver.gateEdgeSide(side,
+          state: 'front', onSince: h.onSince, now: at(1000));
+      expect(g.side, 0);
+      expect(g.off, 'entry');
+      expect(DirectionResolver.isEdge('front', g.side), isFalse);
+      expect(DirectionResolver.edgeSteerClass(g.side), isNull);
+      // a −5: 위치 보정 경사는 그대로(+20) → c 15 >= 10 → 각도 경로로 left.
+      expect(
+          DirectionResolver.resolve('front', -5,
+              edgeSide: g.side, position: -1.3, previous: 'front'),
+          'left');
+      // a −11: c 9 < 10 → front(끝이었으면 T158 끝 직진 front, 문턱 12).
+      expect(
+          DirectionResolver.resolve('front', -11,
+              edgeSide: g.side, position: -1.3, previous: 'front'),
+          'front');
+    });
+
+    test('진입 2.0초 뒤 |p| 1.3 → 끝', () {
+      final h = entered();
+      final g = DirectionResolver.gateEdgeSide(side,
+          state: 'front', onSince: h.onSince, now: at(2000));
+      expect(g.side, -1);
+      expect(g.off, isNull);
+      expect(DirectionResolver.isEdge('front', g.side), isTrue);
+    });
+
+    test('경계: 1.499초 → 끝 아님, 1.5초 → 끝', () {
+      expect(
+          DirectionResolver.gateEdgeSide(side,
+                  state: 'left', onSince: t0, now: at(1499))
+              .side,
+          0);
+      expect(
+          DirectionResolver.gateEdgeSide(side,
+                  state: 'left', onSince: t0, now: at(1500))
+              .side,
+          -1);
+    });
+
+    test('상태 approach에서 |p| 1.3 → 끝 아님(state)', () {
+      final g = DirectionResolver.gateEdgeSide(side,
+          state: 'approach', onSince: t0, now: at(5000));
+      expect(g.side, 0);
+      expect(g.off, 'state');
+    });
+
+    test('crossed 뒤 → 끝 아님(state), 다시 위로 오면 진입 시각을 새로 잡음', () {
+      final h = entered();
+      expect(h.apply('front', 'crossed', at(10000)), 'crossed');
+      expect(h.onSince, isNull);
+      final g = DirectionResolver.gateEdgeSide(side,
+          state: 'crossed', onSince: h.onSince, now: at(11000));
+      expect(g.side, 0);
+      expect(g.off, 'state');
+      h.apply('crossed', 'front', at(12000));
+      expect(h.onSince, at(12000));
+      expect(
+          DirectionResolver.gateEdgeSide(side,
+                  state: 'front', onSince: h.onSince, now: at(13000))
+              .off,
+          'entry');
+    });
+
+    test('hold 상태는 끝 규칙 유지, hold → front는 진입 시각을 그대로 둠', () {
+      final h = entered();
+      expect(h.apply('front', 'none', at(3000)), CrossingHold.holdLabel);
+      expect(
+          DirectionResolver.gateEdgeSide(side,
+                  state: CrossingHold.holdLabel,
+                  onSince: h.onSince,
+                  now: at(3000))
+              .side,
+          -1);
+      expect(h.apply(CrossingHold.holdLabel, 'front', at(4000)), 'front');
+      expect(h.onSince, t0);
+    });
+
+    test('진입 시각이 없으면(앱 시작 직후) 끝 아님(entry), 끝이 아니면 off 없음', () {
+      expect(
+          DirectionResolver.gateEdgeSide(side,
+                  state: 'front', onSince: null, now: at(9000))
+              .off,
+          'entry');
+      final g = DirectionResolver.gateEdgeSide(0,
+          state: 'approach', onSince: null, now: at(0));
+      expect(g.side, 0);
+      expect(g.off, isNull);
     });
   });
 }

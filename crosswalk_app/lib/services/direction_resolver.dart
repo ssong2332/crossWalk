@@ -324,6 +324,35 @@ class DirectionResolver {
     return angleDegrees + shift;
   }
 
+  /// T174: 끝 규칙을 켜는 최소 '위' 경과(진입 후). 근거 `report_t171.md` 추천 B.
+  static const edgeEntryDelay = Duration(milliseconds: 1500);
+
+  /// T174: 끝 규칙을 켤 수 있는 상태(직전 최종 상태). 'hold'는 `CrossingHold.holdLabel`.
+  static const edgeStates = {'front', 'left', 'right', 'hold'};
+
+  /// T174: 끝 판정 [edgeSide]를 실제로 쓸지 정한다(그 밖에는 0 = 끝 아님).
+  ///
+  /// | # | 조건 (위에서부터)                                | side | off     |
+  /// |---|--------------------------------------------------|------|---------|
+  /// | 1 | [edgeSide] == 0                                  | 0    | null    |
+  /// | 2 | [state]가 [edgeStates] 밖(none/approach/crossed 등) | 0    | 'state' |
+  /// | 3 | [onSince] 없음, 또는 now − onSince < [edgeEntryDelay] | 0    | 'entry' |
+  /// | 4 | 그 밖                                             | [edgeSide] | null |
+  ///
+  /// [onSince]는 최종 상태가 위로 들어온 시각(`CrossingHold.onSince`, hold 동안 유지).
+  /// 끝이 아니면 위치 보정 경사([edgeShiftDegrees])는 그대로이고 문턱은 일반 10/7이다.
+  static ({int side, String? off}) gateEdgeSide(int edgeSide,
+      {required String state,
+      required DateTime? onSince,
+      required DateTime now}) {
+    if (edgeSide == 0) return (side: 0, off: null);
+    if (!edgeStates.contains(state)) return (side: 0, off: 'state');
+    if (onSince == null || now.difference(onSince) < edgeEntryDelay) {
+      return (side: 0, off: 'entry');
+    }
+    return (side: edgeSide, off: null);
+  }
+
   /// T143: 끝에서 중앙 쪽으로 보내는 상태(왼쪽 끝 → left "오른쪽으로",
   /// 오른쪽 끝 → right "왼쪽으로"). 끝이 아니면 null. "이미 틀었음"의 진동 방향에 쓴다.
   static String? edgeSteerClass(int edgeSide) =>

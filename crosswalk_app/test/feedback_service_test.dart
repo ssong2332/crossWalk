@@ -2137,6 +2137,19 @@ void main() {
           edgeSteerClass: steer);
     }
 
+    test('T174: 끝 규칙을 껐으면 alert 줄에 edgeOff, 아니면 없음', () async {
+      await s.alert('front', 0.9, angleDegrees: 3, edgeOff: 'entry');
+      sched.advanceTo(t0.add(const Duration(seconds: 1)));
+      await s.alert('left', 0.9, angleDegrees: 15, edgeOff: 'state');
+      sched.advanceTo(t0.add(const Duration(seconds: 2)));
+      await s.alert('left', 0.9, angleDegrees: 15);
+      final a = lines('alert');
+      expect(a[0]['edgeOff'], 'entry');
+      expect(a[0]['edge'], isFalse);
+      expect(a[1]['edgeOff'], 'state');
+      expect(a[2].containsKey('edgeOff'), isFalse);
+    });
+
     test('판정표: left a <= 0, right a >= 0이면 true, a 없으면 false', () {
       expect(FeedbackService.isTurnedToCentre('left', -1), isTrue);
       expect(FeedbackService.isTurnedToCentre('left', 0), isTrue);
