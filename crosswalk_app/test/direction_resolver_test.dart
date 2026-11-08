@@ -1046,4 +1046,90 @@ void main() {
       expect(g.off, isNull);
     });
   });
+
+  // T176: 끝 규칙을 끈 동안(진입 1.5초 안·상태 밖) 위치 보정(0~±20)도 끈다.
+  group('T176 진입 직후 끝 차단 동안 위치 보정도 끄기', () {
+    final t0 = DateTime(2026, 11, 8, 15);
+    DateTime at(int ms) => t0.add(Duration(milliseconds: ms));
+    CrossingHold entered() =>
+        CrossingHold()..apply('approach', 'front', t0);
+
+    /// camera_screen과 같은 순서: 끝 판정 → 차단 → 보정 위치 → resolve.
+    String run(double p, double a, int ms,
+        {String state = 'front', String previous = 'front'}) {
+      final g = DirectionResolver.gateEdgeSide(DirectionResolver.edgeSide(p),
+          state: state, onSince: entered().onSince, now: at(ms));
+      return DirectionResolver.resolve('front', a,
+          edgeSide: g.side,
+          position: DirectionResolver.shiftPosition(p, g.off),
+          previous: previous);
+    }
+
+    test('shiftPosition 표: off 없으면 위치 그대로, entry/state면 null', () {
+      expect(DirectionResolver.shiftPosition(-1.3, null), -1.3);
+      expect(DirectionResolver.shiftPosition(-1.3, 'entry'), isNull);
+      expect(DirectionResolver.shiftPosition(1.1, 'state'), isNull);
+      expect(DirectionResolver.shiftPosition(null, null), isNull);
+    });
+
+    test('진입 1.0초 안 |p| >= 1, |a| < 10 → 이탈 아님(front)', () {
+      // 종전(T174): c = a ± 20 → 이탈. T176: c = a.
+      for (final p in [-1.0, -1.3, -2.0, 1.0, 1.3, 2.0]) {
+        for (final a in [-9.0, -5.0, 0.0, 5.0, 9.0]) {
+          expect(run(p, a, 1000), 'front', reason: 'p=$p a=$a');
+        }
+      }
+    });
+
+    test('진입 1.0초 안 보정각·단계각도 a 그대로', () {
+      final g = DirectionResolver.gateEdgeSide(DirectionResolver.edgeSide(-1.3),
+          state: 'front', onSince: t0, now: at(1000));
+      expect(g.off, 'entry');
+      final pos = DirectionResolver.shiftPosition(-1.3, g.off);
+      expect(DirectionResolver.correctedAngle(-5, g.side, position: pos), -5);
+      expect(DirectionResolver.levelAngle(-5, g.side, position: pos), -5);
+    });
+
+    test('진입 1.0초 안이라도 |a| >= 10이면 각도만으로 이탈(종전 일반 문턱)', () {
+      expect(run(-1.3, 12, 1000), 'left');
+      expect(run(1.3, -12, 1000), 'right');
+    });
+
+    test('상태 밖(state)도 보정 없음', () {
+      final g = DirectionResolver.gateEdgeSide(DirectionResolver.edgeSide(-1.3),
+          state: 'approach', onSince: t0, now: at(5000));
+      expect(g.off, 'state');
+      expect(
+          DirectionResolver.correctedAngle(-5, g.side,
+              position: DirectionResolver.shiftPosition(-1.3, g.off)),
+          -5);
+    });
+
+    test('1.5초 뒤 같은 입력 → 종전 동작(끝 규칙·보정 그대로)', () {
+      for (final p in [-1.3, 1.3]) {
+        for (final a in [-9.0, -5.0, 0.0, 5.0, 9.0]) {
+          final g = DirectionResolver.gateEdgeSide(
+              DirectionResolver.edgeSide(p),
+              state: 'front',
+              onSince: t0,
+              now: at(2000));
+          expect(g.off, isNull);
+          final before = DirectionResolver.resolve('front', a,
+              edgeSide: g.side, position: p, previous: 'front');
+          expect(run(p, a, 2000), before, reason: 'p=$p a=$a');
+        }
+      }
+      // 예: 왼쪽 끝 a +9 → 끝 직진 아님(|a| >= 9), c 29 >= 12 → left(끝 안내).
+      // 같은 입력이 진입 1.0초 안이면 c 9 < 10 → front.
+      expect(run(-1.3, 9, 2000), 'left');
+      expect(run(-1.3, 9, 1000), 'front');
+    });
+
+    test('끝 아님(|p| 0.5~1.0 경사)은 off 없음 → 보정 그대로(이번 변경 밖)', () {
+      final g = DirectionResolver.gateEdgeSide(DirectionResolver.edgeSide(-0.9),
+          state: 'front', onSince: t0, now: at(1000));
+      expect(g.off, isNull);
+      expect(DirectionResolver.shiftPosition(-0.9, g.off), -0.9);
+    });
+  });
 }

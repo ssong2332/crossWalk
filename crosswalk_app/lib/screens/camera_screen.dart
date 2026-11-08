@@ -661,11 +661,14 @@ class _CameraScreenState extends State<CameraScreen>
       final previousLabel = _guidanceLabel;
       // T174: 끝 규칙은 상태가 위·hold이고 진입 1.5초 뒤에만(그 밖에는 끝 아님).
       final edge = _gatedEdge(_edgeSide, previousLabel);
+      // T176: 끝 규칙을 껐으면(edge.off) 위치 보정(0~±20)도 끈다.
+      final shiftPos =
+          DirectionResolver.shiftPosition(_smoothedPosition, edge.off);
       // T164 2단계: 복귀 효과음 뒤 8초 창이면 front → 이탈 진입은 |평활각| >= 20만.
       final resolvedRaw = DirectionResolver.resolve(
           gate.label, _arrowStripeAngle,
           edgeSide: edge.side,
-          position: _smoothedPosition,
+          position: shiftPos,
           previous: previousLabel,
           recheck: _feedback.recoveryRecheck
               .isActive(DateTime.now(), edgeSide: edge.side));
@@ -712,7 +715,7 @@ class _CameraScreenState extends State<CameraScreen>
           DirectionResolver.isEdge(label, edge.side);
       if (label != CrossingHold.holdLabel) {
         // T84: 강도 판정용 각도 — 화살표와 같은 보정값을 넘긴다.
-        final alertAngle = _alertAngle(_arrowStripeAngle, _smoothedPosition,
+        final alertAngle = _alertAngle(_arrowStripeAngle, shiftPos,
             edgeSide: edge.side, flipHeld: flip.held, stillHeld: still.held);
         _feedback.alert(label, result.confidence,
             angleDegrees: alertAngle,
@@ -1238,10 +1241,13 @@ class _CameraScreenState extends State<CameraScreen>
     var angleStillHeld = false;
     // T174: 끝 규칙은 상태가 위·hold이고 진입 1.5초 뒤에만.
     final angleEdge = _gatedEdge(_edgeSide, _guidanceLabel);
+    // T176: 끝 규칙을 껐으면 위치 보정도 끈다.
+    final angleShiftPos =
+        DirectionResolver.shiftPosition(_smoothedPosition, angleEdge.off);
     if (DirectionResolver.isOnCrosswalk(_guidanceLabel) && !_noCall) {
       final next = DirectionResolver.resolve(_guidanceLabel, smoothed,
           edgeSide: angleEdge.side,
-          position: _smoothedPosition,
+          position: angleShiftPos,
           previous: _guidanceLabel,
           recheck: _feedback.recoveryRecheck
               .isActive(DateTime.now(), edgeSide: angleEdge.side));
@@ -1262,7 +1268,7 @@ class _CameraScreenState extends State<CameraScreen>
         DirectionResolver.isOnCrosswalk(_guidanceLabel) &&
         !_noCall;
     if (relabel != null || edgeChanged) {
-      final alertAngle = _alertAngle(smoothed, _smoothedPosition,
+      final alertAngle = _alertAngle(smoothed, angleShiftPos,
           edgeSide: angleEdge.side,
           flipHeld: angleFlipHeld,
           stillHeld: angleStillHeld);
@@ -1517,13 +1523,15 @@ class _CameraScreenState extends State<CameraScreen>
     // T174: 끝 규칙은 상태가 위·hold이고 진입 1.5초 뒤에만. 떨림 방지 기억(_edgeSide)은
     // 그대로 두고 쓰는 쪽에서만 끈다.
     final posEdge = _gatedEdge(side, _guidanceLabel);
+    // T176: 끝 규칙을 껐으면 위치 보정도 끈다.
+    final posShiftPos = DirectionResolver.shiftPosition(smoothed, posEdge.off);
     String? relabel;
     var posFlipHeld = false;
     var posStillHeld = false;
     if (DirectionResolver.isOnCrosswalk(_guidanceLabel) && !_noCall) {
       final next = DirectionResolver.resolve(_guidanceLabel, _arrowStripeAngle,
           edgeSide: posEdge.side,
-          position: smoothed,
+          position: posShiftPos,
           previous: _guidanceLabel,
           recheck: _feedback.recoveryRecheck
               .isActive(DateTime.now(), edgeSide: posEdge.side));
@@ -1543,7 +1551,7 @@ class _CameraScreenState extends State<CameraScreen>
         DirectionResolver.isOnCrosswalk(_guidanceLabel) &&
         !_noCall;
     if (relabel != null || edgeChanged) {
-      final alertAngle = _alertAngle(_arrowStripeAngle, smoothed,
+      final alertAngle = _alertAngle(_arrowStripeAngle, posShiftPos,
           edgeSide: posEdge.side,
           flipHeld: posFlipHeld,
           stillHeld: posStillHeld);
