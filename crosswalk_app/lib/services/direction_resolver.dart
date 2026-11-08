@@ -353,6 +353,19 @@ class DirectionResolver {
     return (side: edgeSide, off: null);
   }
 
+  /// T176(2026-11-08, 사용자 승인 '차단 동안 보정도 끄기', `train/field_1108/report.md`
+  /// A절·G1): 끝 규칙을 껐으면([gateEdgeSide]의 off가 'entry'/'state') 위치 보정
+  /// ([edgeShiftDegrees], 0~±20)도 끈다 — [resolve]·[levelAngle]에 넘길 위치.
+  ///
+  /// | edgeOff            | 반환      | 보정각 c          |
+  /// |--------------------|-----------|-------------------|
+  /// | null (끝 규칙 켬·끝 아님) | [position] | 종전 그대로 a + 보정 |
+  /// | 'entry' / 'state'  | null      | a (보정 없음)     |
+  ///
+  /// 기록: alert 줄의 기존 `edgeOff` 필드가 있으면 그 판정은 보정 없이 낸 것이다.
+  static double? shiftPosition(double? position, String? edgeOff) =>
+      edgeOff == null ? position : null;
+
   /// T143: 끝에서 중앙 쪽으로 보내는 상태(왼쪽 끝 → left "오른쪽으로",
   /// 오른쪽 끝 → right "왼쪽으로"). 끝이 아니면 null. "이미 틀었음"의 진동 방향에 쓴다.
   static String? edgeSteerClass(int edgeSide) =>
