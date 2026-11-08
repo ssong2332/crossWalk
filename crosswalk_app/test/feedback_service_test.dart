@@ -1714,6 +1714,89 @@ void main() {
     });
   });
 
+  // T178(사용자 승인 C안): 서 있는 동안 같은 쪽 끝 확인 문구는 첫 1번만.
+  group('T178 서 있을 때 끝 문구 1회', () {
+    final base = DateTime(2026, 11, 8, 15, 23, 40);
+    DateTime at(int ms) => base.add(Duration(milliseconds: ms));
+
+    void stand(FeedbackService s, int fromMs, int toMs) {
+      for (var ms = fromMs; ms <= toMs; ms += 66) {
+        s.addAccelerometer(0, 0, 9.81, at(ms));
+      }
+    }
+
+    void walk(FeedbackService s, int fromMs, int toMs) {
+      for (var ms = fromMs; ms <= toMs; ms += 66) {
+        s.addAccelerometer(
+            0, 0, ((ms - fromMs) ~/ 66).isEven ? 12.0 : 7.6, at(ms));
+      }
+    }
+
+    /// 끝에서 이탈(edge 쪽)로 나갔다가 front로 다시 들어온다.
+    String? reenter(FeedbackService s, int ms, String side) {
+      s.decideEdgeTurnedMessage(side, at(ms - 500),
+          atEdge: true, edgeSteerClass: side);
+      return s.decideEdgeTurnedMessage('front', at(ms),
+          atEdge: true, edgeSteerClass: side);
+    }
+
+    List<Map<String, dynamic>> stillEdgeCancels() =>
+        EventLog.instance.earlyLines
+            .map((l) => jsonDecode(l) as Map<String, dynamic>)
+            .where((m) => m['ev'] == 'say.cancel' && m['why'] == 'still_edge')
+            .toList();
+
+    test('서 있는 동안 같은 쪽 재진입은 침묵(say.cancel why=still_edge)', () {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      stand(s, 0, 30000);
+      expect(s.isStillAt(at(30000)), isTrue);
+      expect(reenter(s, 30000, 'left'), '왼쪽 끝입니다', reason: '정지 중 첫 1번');
+      // 3초 쿨다운이 지나도 같은 쪽은 다시 말하지 않는다.
+      stand(s, 30066, 40000);
+      expect(reenter(s, 35000, 'left'), isNull);
+      expect(reenter(s, 40000, 'left'), isNull);
+      final c = stillEdgeCancels();
+      expect(c, hasLength(2));
+      expect(c.first['text'], '왼쪽 끝입니다');
+    });
+
+    test('서 있는 동안 반대쪽 끝으로 바뀌면 말한다', () {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      stand(s, 0, 40000);
+      expect(reenter(s, 30000, 'left'), '왼쪽 끝입니다');
+      expect(reenter(s, 35000, 'right'), '오른쪽 끝입니다');
+      expect(stillEdgeCancels(), isEmpty);
+    });
+
+    test('서 있음이 풀리면 원래대로 다시 말한다', () {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      stand(s, 0, 30000);
+      expect(reenter(s, 30000, 'left'), '왼쪽 끝입니다');
+      walk(s, 30066, 34000);
+      expect(s.isStillAt(at(34000)), isFalse);
+      expect(reenter(s, 34000, 'left'), '왼쪽 끝입니다');
+      // 걷는 중에는 3초 쿨다운만(종전과 같다).
+      walk(s, 34066, 38000);
+      expect(reenter(s, 38000, 'left'), '왼쪽 끝입니다');
+      expect(stillEdgeCancels(), isEmpty);
+    });
+
+    test('정지 전에 말했어도 정지 뒤 첫 1번은 말한다', () {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      walk(s, 0, 2000);
+      expect(reenter(s, 2000, 'left'), '왼쪽 끝입니다');
+      stand(s, 2066, 30000);
+      expect(s.isStillAt(at(30000)), isTrue);
+      expect(reenter(s, 30000, 'left'), '왼쪽 끝입니다');
+      stand(s, 30066, 34000);
+      expect(reenter(s, 34000, 'left'), isNull);
+    });
+  });
+
   group('T157 A 서 있을 때 진입 미룸', () {
     void stand(FeedbackService s, DateTime base, int fromMs, int toMs) {
       for (var ms = fromMs; ms <= toMs; ms += 66) {

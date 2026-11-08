@@ -103,6 +103,8 @@ class FeedbackService {
     final changed = stillness.add(x, y, z, now);
     _logMotion(now);
     if (!changed) return;
+    // T178: 서 있음이 바뀌면(시작·끝) 정지 중 끝 확인 문구 1회 기록을 비운다.
+    _stillEdgeSaid = null;
     _noteStillSpan(stillness.isStill, now);
     final mot = stillness.motion;
     EventLog.instance.log('still', {
@@ -337,6 +339,10 @@ class FeedbackService {
   // T102: 직전 alert()가 "끝 + 이미 중앙 쪽으로 틀었음(front)"이었는가.
   bool _lastEdgeTurned = false;
   DateTime? _lastEdgeTurnedAt;
+
+  // T178(사용자 승인 C안, 2026-11-08): 이번 정지 구간에서 이미 낸 끝 확인 문구의 쪽
+  // ('left'/'right'). 서 있음이 바뀌면([addAccelerometer]) 비운다.
+  String? _stillEdgeSaid;
 
   // T108 Q1(사용자 확정 2026-10-12): 회복 안내("직진하세요"/"그대로 가세요")는
   // 바로 말하지 않고 보류했다가, front가 [recoveryHold] 동안 유지되면 말한다.
@@ -829,11 +835,26 @@ class FeedbackService {
       return null;
     }
     if (edgeSteerClass != 'left' && edgeSteerClass != 'right') return null;
-    _lastEdgeTurnedAt = now;
     final strings = AppStrings.of(_language);
-    return edgeSteerClass == 'left'
+    final message = edgeSteerClass == 'left'
         ? strings.leftEdgeTurnedMessage
         : strings.rightEdgeTurnedMessage;
+    // T178(사용자 승인 C안): 서 있는 동안 같은 쪽 끝 문구는 첫 1번만. 11/08 A
+    // 15:23:43~15:24:51 연석 신호 대기 68초에 각도 떨림으로 front↔끝이 10번 바뀌어
+    // '왼쪽 끝입니다'가 8번 나왔다(`train/field_1108/report_t177.md` 2절).
+    // 반대쪽으로 바뀌면 말한다. 서 있음이 풀리면 원래대로. 진동·상태는 그대로.
+    if (stillness.isStillAt(now)) {
+      if (_stillEdgeSaid == edgeSteerClass) {
+        EventLog.instance
+            .log('say.cancel', {'text': message, 'why': 'still_edge'});
+        return null;
+      }
+      _stillEdgeSaid = edgeSteerClass;
+    } else {
+      _stillEdgeSaid = null;
+    }
+    _lastEdgeTurnedAt = now;
+    return message;
   }
 
   /// T143(사용자 승인 2026-10-27): "이미 틀었음"(끝 + 중앙 쪽으로 틀어 front)일 때
@@ -1443,12 +1464,14 @@ class FeedbackService {
           // 흔들림 — 말하지 않았으므로 쿨다운도 되돌려, 곧 진짜로 회복하면 안내한다.
           if (_heldRecoveryIsEdge) {
             _lastEdgeTurnedAt = null;
+            _stillEdgeSaid = null; // T178: 말하지 않았으므로 정지 중 1회도 되돌린다.
           } else {
             _lastRecoveryAt = null;
           }
           _clearHeldRecovery();
           EventLog.instance.log('say.cancel', {'text': held, 'why': 'flicker'});
         case HeldRecoveryVerdict.expire:
+          if (_heldRecoveryIsEdge) _stillEdgeSaid = null; // T178: 말하지 않음.
           _clearHeldRecovery();
           EventLog.instance.log('say.ttl', {'text': held, 'p': 0});
       }
