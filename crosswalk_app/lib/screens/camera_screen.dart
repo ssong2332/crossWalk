@@ -71,6 +71,13 @@ String? edgeTurnedHeadline(
 bool isEdgeTurnedDisplay(String fieldState, bool atEdge) =>
     fieldState == 'front' && atEdge;
 
+/// T180: 분류기 첫 결과 전의 `_guidanceLabel` 초기값(무판정). 위(front·left·right)·
+/// approach·none 어느 것도 아니라서, 첫 분류 결과 전에 온 각도·위치 결과로는
+/// 이탈 판정(음성·진동)을 하지 않고, 첫 분류가 none·approach여도 hold가 시작되지
+/// 않는다. 화면 상태(`_fieldState`)는 종전대로 front로 보인다.
+@visibleForTesting
+const String unjudgedGuidanceLabel = 'unjudged';
+
 class CameraScreen extends StatefulWidget {
   // T40: language is now detected once in OnboardingScreen (which runs
   // before this screen) and passed forward via [initialLanguage], so the
@@ -222,7 +229,10 @@ class _CameraScreenState extends State<CameraScreen>
 
   // 마지막으로 받은 분류 라벨. `_fieldState`가 오류/로딩/무판정이 아닐 때
   // 이 값을 그대로 쓴다.
-  String _guidanceLabel = 'front';
+  // T180: 초기값은 'front'가 아니라 무판정(`unjudgedGuidanceLabel`) — 'front'였을 때
+  // 첫 분류 결과보다 각도가 먼저 오면 시작 1.7~2.9초에 이탈 음성·진동이 나고,
+  // 이어진 첫 분류 none으로 hold가 걸렸다(11/06·11/08·11/09 기록).
+  String _guidanceLabel = unjudgedGuidanceLabel;
 
   // T63: 좌/우 가장자리 펄스 애니메이션. left/right 상태일 때만 반복
   // 재생하고, 그 외에는 멈춘다 (동기화는 build()의 _syncPulseAnimation에서).
@@ -1949,6 +1959,8 @@ class _CameraScreenState extends State<CameraScreen>
     if (_hasError) return 'error';
     if (_isLoading) return 'loading';
     if (_noCall) return 'nocall';
+    // T180: 첫 분류 결과 전 화면은 종전과 같이 front로 보인다.
+    if (_guidanceLabel == unjudgedGuidanceLabel) return 'front';
     return _guidanceLabel;
   }
 
