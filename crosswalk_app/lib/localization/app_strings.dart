@@ -262,6 +262,8 @@ class AppStrings {
   final String sharePickCurrent;
   final String sharePickBuild;
   final String sharePickFrameUnit;
+  // T182: 고른 프레임 합이 framePartSize(500)장을 넘을 때 보내기 위 안내.
+  final String sharePickTooMany;
 
   // T40: OnboardingScreen — integrates T19 (chest-mount posture guidance)
   // + T36 (first-launch legal safety disclaimer) into one first-run
@@ -446,6 +448,7 @@ class AppStrings {
     required this.sharePickCurrent,
     required this.sharePickBuild,
     required this.sharePickFrameUnit,
+    required this.sharePickTooMany,
     required this.onboardingEyebrow,
     required this.onboardingTitle,
     required this.onboardingPostureHeading,
@@ -616,6 +619,7 @@ class AppStrings {
     sharePickCurrent: '기록 중',
     sharePickBuild: '빌드',
     sharePickFrameUnit: '장',
+    sharePickTooMany: '한 번에 500장 이하로 보내세요',
     onboardingEyebrow: '시작하기 전에',
     onboardingTitle: '안전 이용 안내',
     onboardingPostureHeading: '가슴거치 착용 방법',
@@ -813,6 +817,7 @@ class AppStrings {
     sharePickCurrent: 'Recording',
     sharePickBuild: 'Build',
     sharePickFrameUnit: ' frames',
+    sharePickTooMany: 'Send 500 frames or fewer at a time',
     onboardingEyebrow: 'Before you start',
     onboardingTitle: 'Safety Guide',
     onboardingPostureHeading: 'How to Wear the Chest Mount',

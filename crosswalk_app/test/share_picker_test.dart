@@ -122,6 +122,124 @@ void main() {
       expect(items[0].start, DateTime(2026, 10, 22, 8));
     });
 
+    group('T182 큰 묶음 나누기', () {
+      // 묶음 폴더에 n장(1바이트씩)을 이름순으로 만든다.
+      List<File> makeFrames(Directory dir, int n) => [
+            for (var i = 0; i < n; i++)
+              File('${dir.path}${sep}f_${1762770000000 + i}.jpg')
+                ..writeAsBytesSync(const [0])
+          ];
+
+      Directory session(String name) =>
+          Directory('${tmp.path}${sep}frames$sep$name')
+            ..createSync(recursive: true);
+
+      test('1,719장 → 500/500/500/219 네 줄, 이름순, 열쇠는 조각 첫 파일', () async {
+        final s = session('20261110_191206');
+        final files = makeFrames(s, 1719);
+        final items = await frameItems({s.path: files}, await registry.load(),
+            relative: registry.relative);
+        expect(items.map((i) => i.files.length), [500, 500, 500, 219]);
+        expect(items.map((i) => i.part), [1, 2, 3, 4]);
+        expect(items.map((i) => i.parts), [4, 4, 4, 4]);
+        expect(items.map((i) => i.path), [
+          files[0].path,
+          files[500].path,
+          files[1000].path,
+          files[1500].path
+        ]);
+        expect(items[3].files.last.path, files.last.path);
+        expect(items.map((i) => i.bytes), [500, 500, 500, 219]);
+        expect(
+            items.every((i) => i.start == DateTime(2026, 11, 10, 19, 12, 6)),
+            isTrue);
+        expect(items.any((i) => i.sent), isFalse);
+        // 다시 열어도 같은 열쇠
+        final again = await frameItems({s.path: files}, await registry.load(),
+            relative: registry.relative);
+        expect(again.map((i) => i.path), items.map((i) => i.path));
+      });
+
+      test('조각을 보내면 그 조각만 보냄 — 다시 열어도 유지, 기억 정리에도 남는다',
+          () async {
+        final s = session('20261110_191206');
+        final files = makeFrames(s, 1719);
+        Future<List<ShareItem>> load() async => frameItems(
+            {s.path: files}, await registry.load(),
+            relative: registry.relative);
+        final items = await load();
+        await registry.markSent([items[1].path]);
+        // 다른 경로를 적을 때 정리(지워진 경로 빼기)가 돌아도 조각 열쇠는 남는다
+        await registry.markSent([files[1700].path]);
+        expect((await load()).map((i) => i.sent), [false, true, false, false]);
+      });
+
+      test('T182 전에 묶음 통째로 보냄 → 모든 조각이 보냄(호환)', () async {
+        final s = session('20261110_191206');
+        final files = makeFrames(s, 1719);
+        await registry.markSent([s.path]);
+        final items = await frameItems({s.path: files}, await registry.load(),
+            relative: registry.relative);
+        expect(items.map((i) => i.sent), [true, true, true, true]);
+      });
+
+      test('500장 이하 묶음은 지금과 같은 한 줄(열쇠 = 묶음 폴더)', () async {
+        final s = session('20261110_080000');
+        final files = makeFrames(s, 500);
+        final items = await frameItems({s.path: files}, await registry.load(),
+            relative: registry.relative);
+        expect(items.single.path, s.path);
+        expect(items.single.files.length, 500);
+        expect(items.single.part, isNull);
+        expect(items.single.parts, isNull);
+      });
+
+      test('새 묶음부터, 묶음 안에서는 1번 조각부터', () async {
+        final old = session('20261110_080000');
+        final big = session('20261110_191206');
+        final items = await frameItems({
+          old.path: makeFrames(old, 3),
+          big.path: makeFrames(big, 501),
+        }, await registry.load(), relative: registry.relative);
+        expect(items.map((i) => '${i.files.length}/${i.part}'),
+            ['500/1', '1/2', '3/null']);
+      });
+
+      test('저장 중인 묶음이 늘어나면 마지막 조각만 바뀐다', () async {
+        final s = session('20261110_191206');
+        final files = makeFrames(s, 1200);
+        final before = await frameItems(
+            {s.path: files.sublist(0, 1100)}, await registry.load(),
+            relative: registry.relative);
+        final after = await frameItems({s.path: files}, await registry.load(),
+            relative: registry.relative);
+        expect(after.map((i) => i.path), before.map((i) => i.path));
+        expect(before.map((i) => i.files.length), [500, 500, 100]);
+        expect(after.map((i) => i.files.length), [500, 500, 200]);
+      });
+
+      test('정리로 앞 파일이 지워지면 밀린 조각은 안 보냄, 지워진 열쇠는 빠진다',
+          () async {
+        final s = session('20261110_191206');
+        final files = makeFrames(s, 1719);
+        final first = await frameItems({s.path: files}, await registry.load(),
+            relative: registry.relative);
+        await registry.markSent([first[0].path, first[1].path]);
+        for (final f in files.sublist(0, 100)) {
+          f.deleteSync();
+        }
+        final items = await frameItems(
+            {s.path: files.sublist(100)}, await registry.load(),
+            relative: registry.relative);
+        expect(items.map((i) => i.files.length), [500, 500, 500, 119]);
+        expect(items.any((i) => i.sent), isFalse);
+        await registry.markSent([items[0].path]);
+        final kept = await registry.load();
+        expect(kept, isNot(contains(await registry.relative(first[0].path))));
+        expect(kept, contains(await registry.relative(items[0].path)));
+      });
+    });
+
     group('pickAndShare', () {
       late File a, b;
       setUp(() {
@@ -297,6 +415,67 @@ void main() {
           (_) {},
           frames: true);
       expect(find.text('3장 · 3KB'), findsOneWidget);
+    });
+
+    group('T182 나눈 조각', () {
+      List<ShareItem> parts({bool firstSent = false}) => [
+            for (var p = 1; p <= 4; p++)
+              ShareItem(
+                  path: 'k$p',
+                  files: [
+                    for (var i = 0; i < (p < 4 ? 500 : 219); i++) File('$p-$i')
+                  ],
+                  bytes: 48 * 1024 * 1024,
+                  start: DateTime(2026, 11, 10, 19, 12, 6),
+                  sent: firstSent && p == 1,
+                  part: p,
+                  parts: 4),
+          ];
+
+      testWidgets('줄 제목에 (1/4)를 붙이고 장수·크기를 보인다', (tester) async {
+        await open(tester, parts(), (_) {}, frames: true);
+        expect(find.text('2026-11-10 19:12:06 (1/4)'), findsOneWidget);
+        expect(find.text('2026-11-10 19:12:06 (4/4)'), findsOneWidget);
+        expect(find.text('500장 · 48.0MB'), findsNWidgets(3));
+        expect(find.text('219장 · 48.0MB'), findsOneWidget);
+      });
+
+      testWidgets('고른 파일이 500장을 넘으면 안내를 보이고 보내기를 막는다', (tester) async {
+        Set<String>? result = {'unset'};
+        await open(tester, parts(firstSent: true), (r) => result = r,
+            frames: true);
+        // 기본 체크는 안 보낸 2~4 → 1,219장
+        expect(find.text('보내기 (3)'), findsOneWidget);
+        expect(find.text('한 번에 500장 이하로 보내세요'), findsOneWidget);
+        await tester.tap(find.text('보내기 (3)'));
+        await tester.pumpAndSettle();
+        expect(result, {'unset'});
+        // 3·4를 빼면 500장 → 보낼 수 있다
+        await tester.tap(find.text('2026-11-10 19:12:06 (3/4)'));
+        await tester.tap(find.text('2026-11-10 19:12:06 (4/4)'));
+        await tester.pump();
+        expect(find.text('한 번에 500장 이하로 보내세요'), findsNothing);
+        await tester.tap(find.text('보내기 (1)'));
+        await tester.pumpAndSettle();
+        expect(result, {'k2'});
+      });
+
+      testWidgets('기록 고르기에는 500장 제한을 걸지 않는다', (tester) async {
+        Set<String>? result;
+        await open(
+            tester,
+            [
+              ShareItem(
+                  path: 'log',
+                  files: [for (var i = 0; i < 501; i++) File('l$i')],
+                  bytes: 1)
+            ],
+            (r) => result = r);
+        expect(find.text('한 번에 500장 이하로 보내세요'), findsNothing);
+        await tester.tap(find.text('보내기 (1)'));
+        await tester.pumpAndSettle();
+        expect(result, {'log'});
+      });
     });
   });
 }
