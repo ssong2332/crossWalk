@@ -17,9 +17,12 @@ class ShareItem {
     this.build,
     this.sent = false,
     this.current = false,
+    this.part,
+    this.parts,
   });
 
   /// 보냄 기억의 열쇠 — 기록은 파일 경로, 프레임은 묶음 폴더 경로.
+  /// T182: [framePartSize]장보다 큰 묶음을 나눈 조각은 그 조각 첫 파일 경로.
   final String path;
   final List<File> files;
   final int bytes;
@@ -35,6 +38,10 @@ class ShareItem {
 
   /// 지금 쓰고 있는 기록 파일인가(보낸 뒤에도 늘어날 수 있다).
   final bool current;
+
+  /// T182: 큰 묶음을 나눈 조각이면 몇 번째(1부터)·전체 몇 조각. 아니면 null.
+  final int? part;
+  final int? parts;
 
   String get name => path.split(Platform.pathSeparator).last;
 }
@@ -175,28 +182,67 @@ Future<List<ShareItem>> logItems(List<File> files, Set<String> sent,
   return out;
 }
 
-/// 프레임 묶음(폴더 경로 → 파일) → 줄(새 것부터). 빈 묶음은 뺀다.
+/// T182: 한 번에 공유 창으로 넘기는 프레임 장수 상한. 이보다 큰 묶음은 이
+/// 장수씩 나눈 조각 줄로 보이고, 고른 파일 합이 이를 넘으면 보내기를 막는다.
+/// (11/10 실기기: 1,719장 묶음은 공유 창이 열리지 않았고 520장은 바로 보내졌다.)
+const framePartSize = 500;
+
+Future<int> _bytesOf(List<File> files) async {
+  var bytes = 0;
+  for (final f in files) {
+    try {
+      bytes += await f.length();
+    } catch (_) {}
+  }
+  return bytes;
+}
+
+/// 프레임 묶음(폴더 경로 → 파일) → 줄(새 묶음부터). 빈 묶음은 뺀다.
+///
+/// T182: [framePartSize]장보다 큰 묶음은 파일 이름순(= 시간순)으로
+/// [framePartSize]장씩 나눈 조각 줄로 만든다(묶음 안에서는 1번 조각부터).
+/// 조각의 보냄 열쇠는 그 조각 첫 파일 경로 — 다시 열어도 같고, 저장 중인
+/// 묶음이 늘어나도 마지막 조각만 바뀐다. 정리(회전)로 앞 파일이 지워져
+/// 경계가 밀리면 새 경계의 조각은 '안 보냄'으로 보인다(보냄으로 잘못 보이지
+/// 않는 쪽). 첫 파일이 지워진 열쇠는 [SentRegistry.markSent]가 다음에 뺀다.
+/// 묶음 폴더 경로가 보냄으로 기억된 묶음(T182 전에 통째로 보낸 것)은 모든
+/// 조각이 '보냄'.
 Future<List<ShareItem>> frameItems(
     Map<String, List<File>> sessions, Set<String> sent,
     {required Future<String> Function(String path) relative}) async {
+  final keys = sessions.keys.toList()..sort((a, b) => b.compareTo(a));
   final out = <ShareItem>[];
-  for (final e in sessions.entries) {
-    if (e.value.isEmpty) continue;
-    var bytes = 0;
-    for (final f in e.value) {
-      try {
-        bytes += await f.length();
-      } catch (_) {}
+  for (final key in keys) {
+    final files = sessions[key]!;
+    if (files.isEmpty) continue;
+    final start = parseStamp(key.split(Platform.pathSeparator).last);
+    final wholeSent = sent.contains(await relative(key));
+    if (files.length <= framePartSize) {
+      out.add(ShareItem(
+        path: key,
+        files: files,
+        bytes: await _bytesOf(files),
+        start: start,
+        sent: wholeSent,
+      ));
+      continue;
     }
-    out.add(ShareItem(
-      path: e.key,
-      files: e.value,
-      bytes: bytes,
-      start: parseStamp(e.key.split(Platform.pathSeparator).last),
-      sent: sent.contains(await relative(e.key)),
-    ));
+    final parts = (files.length + framePartSize - 1) ~/ framePartSize;
+    for (var i = 0; i < parts; i++) {
+      final chunk = files.sublist(i * framePartSize,
+          ((i + 1) * framePartSize).clamp(0, files.length));
+      final path = chunk.first.path;
+      out.add(ShareItem(
+        path: path,
+        files: chunk,
+        bytes: await _bytesOf(chunk),
+        start: start,
+        sent: wholeSent || sent.contains(await relative(path)),
+        part: i + 1,
+        parts: parts,
+      ));
+    }
   }
-  out.sort((a, b) => b.path.compareTo(a.path));
   return out;
 }
 

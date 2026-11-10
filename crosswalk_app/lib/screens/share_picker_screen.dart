@@ -62,12 +62,21 @@ class _SharePickerScreenState extends State<SharePickerScreen> {
     return parts.join(' · ');
   }
 
+  /// T182: 나눈 조각이면 시각 뒤에 "(1/4)".
+  static String _title(ShareItem item) =>
+      item.parts == null || item.parts! <= 1
+          ? _stamp(item.start)
+          : '${_stamp(item.start)} (${item.part}/${item.parts})';
+
   static String? _short(String? sha) =>
       sha == null ? null : (sha.length > 7 ? sha.substring(0, 7) : sha);
 
   @override
   Widget build(BuildContext context) {
     final count = _selected.length;
+    // T182: 프레임은 고른 파일 합이 framePartSize장을 넘으면 보내기를 막는다.
+    final tooMany = widget.frames &&
+        filesFor(widget.items, _selected).length > framePartSize;
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -89,7 +98,7 @@ class _SharePickerScreenState extends State<SharePickerScreen> {
               }),
               activeColor: _colorAccent,
               checkColor: _colorAccentOnText,
-              title: Text(_stamp(item.start),
+              title: Text(_title(item),
                   style: const TextStyle(color: Colors.white)),
               subtitle: Text(_subtitle(item),
                   style: const TextStyle(color: Colors.white54, fontSize: 12)),
@@ -99,17 +108,32 @@ class _SharePickerScreenState extends State<SharePickerScreen> {
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: FilledButton.icon(
-            onPressed: count == 0
-                ? null
-                : () => Navigator.of(context).pop(Set<String>.of(_selected)),
-            icon: const Icon(Icons.share_outlined, size: 18),
-            label: Text('${widget.strings.sharePickSend} ($count)'),
-            style: FilledButton.styleFrom(
-              backgroundColor: _colorAccent,
-              foregroundColor: _colorAccentOnText,
-              minimumSize: const Size(48, 48),
-            ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (tooMany)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(widget.strings.sharePickTooMany,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                          color: Colors.orangeAccent, fontSize: 14)),
+                ),
+              FilledButton.icon(
+                onPressed: count == 0 || tooMany
+                    ? null
+                    : () =>
+                        Navigator.of(context).pop(Set<String>.of(_selected)),
+                icon: const Icon(Icons.share_outlined, size: 18),
+                label: Text('${widget.strings.sharePickSend} ($count)'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _colorAccent,
+                  foregroundColor: _colorAccentOnText,
+                  minimumSize: const Size(48, 48),
+                ),
+              ),
+            ],
           ),
         ),
       ),
