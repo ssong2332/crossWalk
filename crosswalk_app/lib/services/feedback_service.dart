@@ -105,6 +105,7 @@ class FeedbackService {
     if (!changed) return;
     // T178: 서 있음이 바뀌면(시작·끝) 정지 중 끝 확인 문구 1회 기록을 비운다.
     _stillEdgeSaid = null;
+    _stillEdgeDevSaid = null; // T183 G4: 같은 방식으로 비운다.
     _noteStillSpan(stillness.isStill, now);
     final mot = stillness.motion;
     EventLog.instance.log('still', {
@@ -343,6 +344,11 @@ class FeedbackService {
   // T178(사용자 승인 C안, 2026-11-08): 이번 정지 구간에서 이미 낸 끝 확인 문구의 쪽
   // ('left'/'right'). 서 있음이 바뀌면([addAccelerometer]) 비운다.
   String? _stillEdgeSaid;
+
+  // T183 G4(사용자 승인, 2026-11-10): 이번 정지 구간에서 이미 말한 이탈+끝 문구
+  // ('…가장자리입니다', 빠른형 제외)의 이탈 쪽('left'/'right'). 서 있음이 바뀌면
+  // ([addAccelerometer]) 비운다.
+  String? _stillEdgeDevSaid;
 
   // T108 Q1(사용자 확정 2026-10-12): 회복 안내("직진하세요"/"그대로 가세요")는
   // 바로 말하지 않고 보류했다가, front가 [recoveryHold] 동안 유지되면 말한다.
@@ -632,6 +638,30 @@ class FeedbackService {
       return null;
     }
 
+    // T183 G4(사용자 승인, 2026-11-10): 서 있는 동안 같은 쪽 이탈+끝 문구
+    // ('…가장자리입니다')는 첫 1번만. 11/10 P 19:34:42 오른쪽 끝 정지 66초에 좌우
+    // 왕복(오른쪽 끝 이탈 ↔ 왼쪽 이탈)이라 위 같은 방향 취소에 걸리지 않고 4번
+    // 나왔다(`train/field_1110/report.md` G4). T178 끝 문구와 같은 방식 — 반대쪽은
+    // 말하고, 서 있음이 풀리면 원래대로. 빠른형('오른쪽! 가장자리')은 대상 아님.
+    // 진동은 그대로. 말하지 않았으므로 마지막 경고(_lastAlert*)는 바꾸지 않는다.
+    if (atEdge && !rapid) {
+      if (stillness.isStillAt(now)) {
+        if (_stillEdgeDevSaid == detectedClass) {
+          if (_bundleLogText != message ||
+              now.difference(_bundleLogAt!).inSeconds >= _cooldownSeconds) {
+            _bundleLogAt = now;
+            _bundleLogText = message;
+            EventLog.instance
+                .log('say.cancel', {'text': message, 'why': 'still_edge_dev'});
+          }
+          return null;
+        }
+        _stillEdgeDevSaid = detectedClass;
+      } else {
+        _stillEdgeDevSaid = null;
+      }
+    }
+
     _lastAlertTime = now;
     _lastAlertClass = detectedClass;
     _lastAlertLevel = level;
@@ -799,6 +829,19 @@ class FeedbackService {
         detectedClass == 'front' &&
         !atEdge;
     if (!recovered) return null;
+
+    // T183 G3(사용자 승인, 2026-11-10): 서 있으면 '직진하세요'를 말하지 않는다.
+    // 11/10 P 19:37:12~19:38:10 서서 몸을 좌우로 돌리자 중앙을 넘을 때마다
+    // '직진하세요'가 나와 58초에 10번이었다(`train/field_1110/report.md` G3).
+    // 확인 진동·효과음은 그대로(alert()의 진동 경로). 말하지 않았으므로 3초
+    // 쿨다운도 잡지 않는다. 걷는 중은 종전과 같다.
+    if (stillness.isStillAt(now)) {
+      EventLog.instance.log('say.cancel', {
+        'text': AppStrings.of(_language).recoveredMessage,
+        'why': 'still_recover',
+      });
+      return null;
+    }
 
     if (_lastRecoveryAt != null &&
         now.difference(_lastRecoveryAt!).inSeconds < _cooldownSeconds) {

@@ -1797,6 +1797,181 @@ void main() {
     });
   });
 
+  // T183(사용자 승인 G4·G3, 2026-11-10): 서 있을 때 '가장자리입니다' 같은 쪽 1번,
+  // '직진하세요' 생략. 걷는 중은 종전과 같다.
+  group('T183 서 있을 때 가장자리·직진 음성', () {
+    final base = DateTime(2026, 11, 10, 19, 34, 40);
+    DateTime at(int ms) => base.add(Duration(milliseconds: ms));
+    const rightEdge = '왼쪽으로 가세요. 가장자리입니다';
+    const leftEdge = '오른쪽으로 가세요. 가장자리입니다';
+    const leftMild = '오른쪽으로 가세요';
+    const rightMild = '왼쪽으로 가세요';
+    const straight = '직진하세요';
+
+    void stand(FeedbackService s, int fromMs, int toMs) {
+      for (var ms = fromMs; ms <= toMs; ms += 66) {
+        s.addAccelerometer(0, 0, 9.81, at(ms));
+      }
+    }
+
+    void walk(FeedbackService s, int fromMs, int toMs) {
+      for (var ms = fromMs; ms <= toMs; ms += 66) {
+        s.addAccelerometer(
+            0, 0, ((ms - fromMs) ~/ 66).isEven ? 12.0 : 7.6, at(ms));
+      }
+    }
+
+    List<Map<String, dynamic>> cancels(String why) => EventLog.instance
+        .earlyLines
+        .map((l) => jsonDecode(l) as Map<String, dynamic>)
+        .where((m) => m['ev'] == 'say.cancel' && m['why'] == why)
+        .toList();
+
+    /// 11/10 P 19:34:42 G4 모양 한 바퀴(12초): 오른쪽 끝 이탈 → front 1초 →
+    /// 왼쪽 이탈 → front 1초. 각 판정의 decideMessage 결과를 돌려준다.
+    List<String?> g4Lap(FeedbackService s, int startMs) => [
+          s.decideMessage('right', -20, at(startMs), atEdge: true),
+          s.decideMessage('front', 0, at(startMs + 2000)),
+          s.decideMessage('front', 0, at(startMs + 3000)),
+          s.decideMessage('left', 15, at(startMs + 6000)),
+          s.decideMessage('front', 0, at(startMs + 8000)),
+          s.decideMessage('front', 0, at(startMs + 9000)),
+        ].where((m) => m != null).toList();
+
+    setUp(EventLog.instance.clearForTest);
+
+    test('G4: 서 있는 동안 좌우 왕복해도 같은 쪽 가장자리 문구는 1번(why=still_edge_dev)',
+        () {
+      final s = FeedbackService();
+      stand(s, 0, 60000);
+      expect(s.isStillAt(at(60000)), isTrue);
+      final said = <String?>[];
+      for (var lap = 0; lap < 4; lap++) {
+        said.addAll(g4Lap(s, 12000 + lap * 12000));
+      }
+      expect(said.where((m) => m == rightEdge), hasLength(1),
+          reason: '11/10 기록은 66초에 4번');
+      // 반대쪽(일반 이탈)은 이번 범위가 아니라 종전대로 말한다.
+      expect(said.where((m) => m == leftMild), hasLength(4));
+      final c = cancels('still_edge_dev');
+      expect(c, hasLength(3));
+      expect(c.first['text'], rightEdge);
+    });
+
+    test('G4: 서 있는 동안 반대쪽 가장자리로 바뀌면 말한다', () {
+      final s = FeedbackService();
+      stand(s, 0, 30000);
+      expect(s.decideMessage('right', -20, at(20000), atEdge: true), rightEdge);
+      expect(s.decideMessage('left', 20, at(22000), atEdge: true), leftEdge);
+      expect(cancels('still_edge_dev'), isEmpty);
+    });
+
+    test('G4: 서 있음이 풀리면 같은 쪽 가장자리 문구를 다시 말한다', () {
+      final s = FeedbackService();
+      stand(s, 0, 30000);
+      expect(g4Lap(s, 12000), [rightEdge, leftMild]);
+      walk(s, 30066, 34000);
+      expect(s.isStillAt(at(34000)), isFalse);
+      expect(s.decideMessage('right', -20, at(34000), atEdge: true), rightEdge);
+      expect(cancels('still_edge_dev'), isEmpty);
+    });
+
+    test('G4: 정지 전에 말했어도 정지 뒤 첫 1번은 말한다', () {
+      final s = FeedbackService();
+      walk(s, 0, 2000);
+      expect(s.decideMessage('right', -20, at(2000), atEdge: true), rightEdge);
+      s.decideMessage('left', 15, at(2500));
+      stand(s, 2066, 32000);
+      expect(s.decideMessage('right', -20, at(30000), atEdge: true), rightEdge);
+      s.decideMessage('left', 15, at(31000));
+      expect(s.decideMessage('right', -20, at(32000), atEdge: true), isNull);
+    });
+
+    test('G4 걷는 중 회귀 없음: 같은 왕복이면 매번 말한다', () {
+      final s = FeedbackService();
+      walk(s, 0, 60000);
+      expect(s.isStillAt(at(60000)), isFalse);
+      final said = <String?>[];
+      for (var lap = 0; lap < 4; lap++) {
+        said.addAll(g4Lap(s, 12000 + lap * 12000));
+      }
+      expect(said.where((m) => m == rightEdge), hasLength(4));
+      expect(said.where((m) => m == leftMild), hasLength(4));
+      expect(cancels('still_edge_dev'), isEmpty);
+    });
+
+    test('G3: 서 있으면 직진하세요를 말하지 않는다(why=still_recover), 이탈 음성은 그대로',
+        () {
+      final s = FeedbackService();
+      stand(s, 0, 70000);
+      final said = <String?>[];
+      var prev = 'front';
+      // 11/10 P 19:37:12~19:38:10 모양: 왼쪽 ↔ 오른쪽을 중앙(front)을 거쳐 왕복.
+      for (var k = 0; k < 10; k++) {
+        final side = k.isEven ? 'left' : 'right';
+        final ms = 10000 + k * 6000;
+        said.add(s.decideMessage(side, side == 'left' ? 15 : -15, at(ms)));
+        said.add(s.decideRecoveryMessage(prev, side, at(ms)));
+        prev = side;
+        said.add(s.decideMessage('front', 0, at(ms + 3000)));
+        said.add(s.decideRecoveryMessage(prev, 'front', at(ms + 3000)));
+        prev = 'front';
+      }
+      expect(said.where((m) => m == straight), isEmpty);
+      expect(said.where((m) => m == leftMild || m == rightMild), hasLength(10),
+          reason: '좌우 이탈 음성은 이번 범위가 아니라 그대로');
+      final c = cancels('still_recover');
+      expect(c, hasLength(10));
+      expect(c.first['text'], straight);
+    });
+
+    test('G3: 서 있음이 풀리면 직진하세요를 다시 말한다(쿨다운도 잡히지 않았다)', () {
+      final s = FeedbackService();
+      stand(s, 0, 20000);
+      expect(s.decideRecoveryMessage('left', 'front', at(20000)), isNull);
+      walk(s, 20066, 21000);
+      expect(s.isStillAt(at(21000)), isFalse);
+      expect(s.decideRecoveryMessage('left', 'front', at(21000)), straight,
+          reason: '정지 중 취소는 3초 쿨다운을 잡지 않는다');
+    });
+
+    test('G3 걷는 중 회귀 없음: 직진하세요와 3초 쿨다운은 종전과 같다', () {
+      final s = FeedbackService();
+      walk(s, 0, 30000);
+      expect(s.decideRecoveryMessage('left', 'front', at(10000)), straight);
+      expect(s.decideRecoveryMessage('right', 'front', at(12000)), isNull,
+          reason: '3초 쿨다운');
+      expect(s.decideRecoveryMessage('right', 'front', at(13000)), straight);
+      expect(cancels('still_recover'), isEmpty);
+    });
+
+    test('G3: 서 있을 때도 확인 진동·효과음은 그대로 낸다(alert)', () async {
+      final sched = _FakeSched(at(0));
+      final s = FeedbackService()
+        ..clock = (() => sched.now)
+        ..chimePlayer = (() async {})
+        ..timerFactory = sched.create;
+      stand(s, 0, 23000); // 표본이 1초 넘게 끊기면 서 있음이 아니다(staleAfter).
+      sched.advanceTo(at(20000));
+      await s.alert('left', 0.9, angleDegrees: 15);
+      sched.advanceTo(at(23000));
+      await s.alert('front', 0.9, angleDegrees: 0);
+      final alerts = EventLog.instance.earlyLines
+          .map((l) => jsonDecode(l) as Map<String, dynamic>)
+          .where((m) => m['ev'] == 'alert')
+          .toList();
+      expect(alerts.last['recover'], isNull);
+      expect(alerts.last['vib'], isTrue);
+      expect(
+          EventLog.instance.earlyLines
+              .map((l) => jsonDecode(l) as Map<String, dynamic>)
+              .where((m) => m['ev'] == 'chime'),
+          isNotEmpty);
+      expect(cancels('still_recover'), hasLength(1));
+      s.dispose();
+    });
+  });
+
   group('T157 A 서 있을 때 진입 미룸', () {
     void stand(FeedbackService s, DateTime base, int fromMs, int toMs) {
       for (var ms = fromMs; ms <= toMs; ms += 66) {
