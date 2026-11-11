@@ -1462,6 +1462,17 @@ class FeedbackService {
       // T157 B: 진입 순간 대기 슬롯의 '앞에 횡단보도'는 이미 늦은 말이다 — 지우고 진입을
       // 넣는다(10/29 16:19:56, 기록 줄 5296·5327·5335: 진입 slot_full 뒤 위에서 '앞에 횡단보도').
       final strings = AppStrings.of(_language);
+      // T187(사용자 승인 2026-11-11): 대기 중인 '건넜습니다'는 새 '앞에 횡단보도'·
+      // '진입'이 나오면 지난 횡단의 늦은 말이다 — 지우고 새 안내를 넣는다
+      // (11/11 17:54:50 대기 -> 17:54:54 진입 0.5초 뒤 재생, 앞에 횡단보도·진입은
+      // slot_full로 버려짐, `logs/log_20261111_175418.jsonl` 줄 509·555·566·580).
+      if ((phaseMessage == strings.approachAheadMessage ||
+              phaseMessage == strings.enteredCrosswalkMessage) &&
+          audioPolicy.pendingMessage == strings.crossedCrosswalkMessage) {
+        audioPolicy.clearPending();
+        EventLog.instance.log('say.cancel',
+            {'text': strings.crossedCrosswalkMessage, 'why': 'stale_crossed'});
+      }
       if (phaseMessage == strings.enteredCrosswalkMessage &&
           audioPolicy.pendingMessage == strings.approachAheadMessage) {
         audioPolicy.clearPending();

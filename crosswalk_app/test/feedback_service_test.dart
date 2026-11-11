@@ -2128,12 +2128,125 @@ void main() {
       final s = FeedbackService();
       await s.alert('none', 0.9);
       s.audioPolicy.markStarted(FeedbackPriority.p1, message: '앞에 횡단보도');
-      s.audioPolicy.putPending(
-          FeedbackPriority.p1, '횡단보도를 건넜습니다.', DateTime.now());
+      // T187: 대기 중인 '건넜습니다'는 이제 진입이 지운다 — 이 테스트는 그와 무관한
+      // 다른 안내(멈춤 블록)로 'T157 B는 앞에 횡단보도만 지운다'를 확인한다.
+      s.audioPolicy
+          .putPending(FeedbackPriority.p1, '멈춤 블록입니다', DateTime.now());
       await s.alert('front', 0.9, angleDegrees: 0);
-      expect(s.audioPolicy.pendingMessage, '횡단보도를 건넜습니다.');
+      expect(s.audioPolicy.pendingMessage, '멈춤 블록입니다');
       expect(lines('say.cancel'), isEmpty);
       await s.dispose();
+    });
+  });
+
+  group('T187 대기 중인 건넜습니다를 새 횡단이 지움', () {
+    const crossed = '횡단보도를 건넜습니다.';
+    const approach = '앞에 횡단보도';
+    const entry = '횡단보도 진입.';
+
+    List<Map<String, dynamic>> lines(String ev) => EventLog.instance.earlyLines
+        .map((l) => jsonDecode(l) as Map<String, dynamic>)
+        .where((m) => m['ev'] == ev)
+        .toList();
+
+    /// 방금 P0(예: '차도입니다')가 끝났다 — 최소 간격(1.5초) 안이라 P1은 gap_p1로 대기.
+    void p0JustEnded(FeedbackService s) {
+      final now = DateTime.now();
+      s.audioPolicy.markStarted(FeedbackPriority.p0, message: '차도입니다');
+      s.audioPolicy.markFinished(FeedbackPriority.p0,
+          now.subtract(const Duration(seconds: 1)), now);
+    }
+
+    // 최소 간격 1.5초 + 여유 뒤 대기 슬롯이 꺼내진다(실제 타이머).
+    Future<void> waitDrain() =>
+        Future<void>.delayed(const Duration(milliseconds: 1800));
+
+    test('11/11 17:54 순서: 건넜습니다 대기 -> approach -> 진입이면 진입을 말하고 건넜습니다는 버린다',
+        () async {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      // 실패해도 대기 타이머가 다음 테스트 기록에 섞이지 않게 정리한다.
+      addTearDown(s.dispose);
+      await s.alert('front', 0.9, angleDegrees: 0);
+      p0JustEnded(s);
+      // 위 -> crossed: '건넜습니다'가 최소 간격 때문에 대기(17:54:50.27 gap_p1).
+      await s.alert('crossed', 0.9);
+      expect(s.audioPolicy.pendingMessage, crossed);
+      expect(
+          lines('say').last,
+          allOf(containsPair('text', crossed), containsPair('act', 'queue'),
+              containsPair('why', 'gap_p1')));
+      await s.alert('none', 0.9);
+      // 그사이 다시 P0가 재생·종료(17:54:51.37 '차도입니다') — 아직 대기 중.
+      p0JustEnded(s);
+      expect(s.audioPolicy.pendingMessage, crossed);
+      // none -> approach (17:54:53.06): 종전에는 slot_full로 버려졌다.
+      await s.alert('approach', 0.9);
+      expect(
+          lines('say.cancel').single,
+          allOf(containsPair('text', crossed),
+              containsPair('why', 'stale_crossed')));
+      expect(s.audioPolicy.pendingMessage, approach);
+      // approach -> front (17:54:53.51): 진입이 앞에 횡단보도를 대신한다(T157 B).
+      await s.alert('front', 0.9, angleDegrees: 0);
+      expect(s.audioPolicy.pendingMessage, entry);
+      expect(lines('say').where((m) => m['why'] == 'slot_full'), isEmpty);
+
+      await waitDrain();
+      final spoken = lines('say')
+          .where((m) => m['act'] == 'speakNow')
+          .map((m) => m['text'])
+          .toList();
+      expect(spoken, contains(entry));
+      expect(spoken, isNot(contains(crossed)));
+    });
+
+    test('approach만 와도 대기 중인 건넜습니다를 버리고 앞에 횡단보도를 넣는다', () async {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      // 실패해도 대기 타이머가 다음 테스트 기록에 섞이지 않게 정리한다.
+      addTearDown(s.dispose);
+      await s.alert('none', 0.9);
+      // P0 재생 중이라 P1은 대기(wait_p0).
+      s.audioPolicy.markStarted(FeedbackPriority.p0, message: '차도입니다');
+      s.audioPolicy.putPending(FeedbackPriority.p1, crossed, DateTime.now());
+      await s.alert('approach', 0.9);
+      expect(s.audioPolicy.pendingMessage, approach);
+      expect(lines('say.cancel').single, containsPair('why', 'stale_crossed'));
+      expect(lines('say').where((m) => m['why'] == 'slot_full'), isEmpty);
+    });
+
+    test('정상 건넘(새 횡단 없음): 대기한 건넜습니다는 종전대로 말한다', () async {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      // 실패해도 대기 타이머가 다음 테스트 기록에 섞이지 않게 정리한다.
+      addTearDown(s.dispose);
+      await s.alert('front', 0.9, angleDegrees: 0);
+      p0JustEnded(s);
+      await s.alert('crossed', 0.9);
+      expect(s.audioPolicy.pendingMessage, crossed);
+      await s.alert('crossed', 0.9);
+      await s.alert('none', 0.9);
+      expect(s.audioPolicy.pendingMessage, crossed);
+      await waitDrain();
+      expect(lines('say.cancel'), isEmpty);
+      expect(
+          lines('say').where(
+              (m) => m['text'] == crossed && m['act'] == 'speakNow'),
+          hasLength(1));
+    });
+
+    test('재생 중인 건넜습니다는 끊지 않는다(대기 슬롯만 본다)', () async {
+      EventLog.instance.clearForTest();
+      final s = FeedbackService();
+      // 실패해도 대기 타이머가 다음 테스트 기록에 섞이지 않게 정리한다.
+      addTearDown(s.dispose);
+      await s.alert('none', 0.9);
+      s.audioPolicy.markStarted(FeedbackPriority.p1, message: crossed);
+      await s.alert('approach', 0.9);
+      expect(s.audioPolicy.activeMessage, crossed);
+      expect(lines('say.cancel'), isEmpty);
+      expect(s.audioPolicy.pendingMessage, approach);
     });
   });
 
