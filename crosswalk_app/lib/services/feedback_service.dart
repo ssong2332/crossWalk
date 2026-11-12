@@ -320,10 +320,65 @@ class FeedbackService {
           ? still.inMilliseconds / onDuration.inMilliseconds
           : 0.0;
       if (walk < groundCrossedMinWalk) said = false;
+      // T190: 서서 기다리다 해제됐으면(거짓 '건넜습니다') 말하지 않는다.
+      if (said) {
+        final no = noWalkCrossed(now.subtract(onDuration), now);
+        if (no != null) {
+          said = false;
+          EventLog.instance.log('say.cancel', {
+            'text': AppStrings.of(_language).crossedCrosswalkMessage,
+            'why': 'no_walk_crossed',
+            ...no,
+          });
+        }
+      }
     }
     _crossedOnGroundRelease = said;
     return said;
   }
+
+  /// T190(2026-11-12): 위 지속 [from]~[now] 동안 연석에서 서서 기다렸을 뿐이면
+  /// 발밑 인도 해제의 "건넜습니다"를 막는다. 판정표(T157 걸음 6초를 통과한 뒤):
+  ///   | 해제 순간                                                       | 결과            |
+  ///   | 서 있음(still 구간이 열려 있음)                                  | 막음 (`still`)  |
+  ///   | [noWalkCrossedWait] 이상 선 구간이 있고, 그 마지막 구간이 끝난 뒤 |                 |
+  ///   |   [noWalkCrossedAfterWait]보다 짧음                             | 막음 (`wait`)   |
+  ///   | 그 밖                                                          | 지금처럼 말함    |
+  /// 근거(`train/t190_report.md`): 11/12 거짓 3건(13:54:09 해제 때 2.9초째 서 있음,
+  /// 13:58:15 29.8초 대기 뒤 5.3초, 14:03:39 10.1초 대기 뒤 2.6초)과 11/06 거짓 2건.
+  /// 실제 횡단 76건은 그대로다 — 가장 가까운 것은 대기 8.7초(11/09 12:49:01, 대기로
+  /// 안 셈)와 13.0초 대기 뒤 6.8초(11/06 13:14:18).
+  /// 막으면 `{rule, ...}`(기록용), 아니면 null.
+  @visibleForTesting
+  Map<String, Object>? noWalkCrossed(DateTime from, DateTime now) {
+    if (_stillSpans.isNotEmpty && _stillSpans.last.$2 == null) {
+      return {
+        'rule': 'still',
+        'still_ms': now.difference(_stillSpans.last.$1).inMilliseconds,
+      };
+    }
+    (DateTime, DateTime)? lastWait;
+    for (final (a, b) in _stillSpans) {
+      if (b == null || !b.isAfter(from) || b.isAfter(now)) continue;
+      final start = a.isAfter(from) ? a : from;
+      if (b.difference(start) >= noWalkCrossedWait) lastWait = (start, b);
+    }
+    if (lastWait == null) return null;
+    final after = now.difference(lastWait.$2);
+    if (after >= noWalkCrossedAfterWait) return null;
+    return {
+      'rule': 'wait',
+      'wait_ms': lastWait.$2.difference(lastWait.$1).inMilliseconds,
+      'after_ms': after.inMilliseconds,
+    };
+  }
+
+  /// T190: '기다림'으로 볼 정지 구간 길이. 실제 횡단 중 가장 긴 비대기 정지 8.7초와
+  /// 거짓 사례의 가장 짧은 대기 10.1초 사이(still은 서고 약 3초 뒤 켜진다).
+  static const noWalkCrossedWait = Duration(milliseconds: 9500);
+
+  /// T190: 기다림이 끝난 뒤 해제까지 최소 시간 — T157 걸음 기준과 같은 6초.
+  static const noWalkCrossedAfterWait = Duration(seconds: 6);
 
   /// T118 보완: 일찍 푼 뒤 crossed를 "건넜습니다"로 볼 마지막 시각 —
   /// hold 시작 + 10초와 해제 + 5초 중 늦은 쪽.
