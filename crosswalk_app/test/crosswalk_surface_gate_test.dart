@@ -60,48 +60,47 @@ void main() {
     expect(r.samples, 5);
   });
 
-  test('5행(T186: 8%): 8% 바로 아래(0.079)도 none', () {
+  test('5행(T167: 5%): 5% 바로 아래(0.049)도 none', () {
     final g = CrosswalkSurfaceGate();
-    final last = feed(g, [0.079, 0.005]);
+    final last = feed(g, [0.049, 0.005]);
     expect(g.apply('approach', enabled: true, now: at(last)).label, 'none');
   });
 
-  test('4행(T186: 8%): 켜짐 + 횡단보도 비율 >= 8% → approach 유지', () {
+  test('4행(T167: 5%): 켜짐 + 횡단보도 비율 >= 5% → approach 유지', () {
     final g = CrosswalkSurfaceGate();
-    final last = feed(g, [0.08]);
+    final last = feed(g, [0.05]);
     final r = g.apply('approach', enabled: true, now: at(last));
     expect(r.label, 'approach');
     expect(r.verdict, 'keep');
   });
 
-  test('T186: 기준 8% — 11/11 18:00:30 연석 cw 0.061은 none(drop), 0.09는 유지', () {
-    expect(CrosswalkSurfaceGate.minRatio, 0.08);
-    // 11/11 기록: 직전 cw 0.001 → 0.061 (train/field_1111/report.md 7-3).
+  test('T167 B: 기준 5% — cw 0.03 5회 연속 → none(drop), 0.06 → approach 유지', () {
+    expect(CrosswalkSurfaceGate.minRatio, 0.05);
     final g = CrosswalkSurfaceGate();
-    var last = feed(g, [0.001, 0.001, 0.001, 0.001, 0.061]);
+    var last = feed(g, [0.03, 0.03, 0.03, 0.03, 0.03]);
     var r = g.apply('approach', enabled: true, now: at(last));
     expect(r.label, 'none');
     expect(r.verdict, 'drop');
-    expect(r.maxRatio, 0.061);
     expect(r.samples, 5);
     final g2 = CrosswalkSurfaceGate();
-    last = feed(g2, [0.09, 0.09, 0.09, 0.09, 0.09]);
+    last = feed(g2, [0.06, 0.06, 0.06, 0.06, 0.06]);
     r = g2.apply('approach', enabled: true, now: at(last));
     expect(r.label, 'approach');
     expect(r.verdict, 'keep');
   });
 
-  test('T167 → T186: 5~8% 사이(0.05, 0.06, 0.079)는 이제 none', () {
-    for (final cw in [0.05, 0.06, 0.079]) {
+  test('T189: 11/12 진짜 횡단보도 cw(0.052·0.060·0.065·0.071·0.0796)는 approach 유지', () {
+    // T186(8%)이 막았던 값들 (train/field_1112/report.md 3절).
+    for (final cw in [0.052, 0.060, 0.065, 0.071, 0.0796]) {
       final g = CrosswalkSurfaceGate();
-      final last = feed(g, [cw, cw, cw, cw, cw]);
+      final last = feed(g, [0.001, 0.001, 0.001, 0.001, cw]);
       final r = g.apply('approach', enabled: true, now: at(last));
-      expect(r.label, 'none', reason: '$cw');
-      expect(r.verdict, 'drop', reason: '$cw');
+      expect(r.label, 'approach', reason: '$cw');
+      expect(r.verdict, 'keep', reason: '$cw');
     }
   });
 
-  test('4행: 최근 5개 중 하나만 >= 8%여도 유지 (최대값)', () {
+  test('4행: 최근 5개 중 하나만 >= 5%여도 유지 (최대값)', () {
     final g = CrosswalkSurfaceGate();
     final last = feed(g, [0, 0.3, 0, 0, 0]);
     final r = g.apply('approach', enabled: true, now: at(last));
