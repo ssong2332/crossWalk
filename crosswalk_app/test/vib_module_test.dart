@@ -289,9 +289,19 @@ void main() {
     });
 
     test('노면: 차도는 양쪽 모터 PATTERN', () async {
-      final s = FeedbackService()..attachVibModule(c);
+      // T191: 차도는 3초 보류 뒤 진동한다 — 보류 타이머를 잡아 직접 부른다.
+      void Function()? due;
+      final s = FeedbackService()
+        ..attachVibModule(c)
+        ..timerFactory = (d, cb) {
+          if (d == FeedbackService.roadDeferHold) due = cb;
+          return Timer(const Duration(days: 1), () {});
+        };
       await c.start();
       await s.surfaceAlert([SurfaceEvent.road]);
+      expect(_lines('ble.cmd'), isEmpty, reason: '보류 중');
+      due!();
+      await pumpEventQueue();
       final cmd = _lines('ble.cmd').single;
       expect(cmd['op'], VibModuleProtocol.opPattern);
       expect(cmd['side'], VibModuleProtocol.sideBoth);
