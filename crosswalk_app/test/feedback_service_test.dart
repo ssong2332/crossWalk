@@ -3429,7 +3429,9 @@ void main() {
       await toApproach(s);
       await s.alert('left', 0.9, angleDegrees: mild);
       await tester.pump(const Duration(milliseconds: 500));
-      await s.surfaceAlert([SurfaceEvent.road]);
+      // T191: surfaceAlert는 차도를 3초 보류하고 위(left)면 취소한다 — 차도(danger)
+      // 끊기 규칙은 보류가 끝나 말하는 단계(sayRoad)로 확인한다.
+      await s.sayRoad(ko.surfaceRoadMessage, 125);
       await tester.pump(const Duration(milliseconds: 150));
       expect(fake.speaking, ko.surfaceRoadMessage);
       expect(logged('say').where((m) => m['why'] == 'p0_cut'), isEmpty);
@@ -3496,7 +3498,8 @@ void main() {
       await toApproach(s);
       await s.alert('front', 0.9);
       await tester.pump(const Duration(milliseconds: 300));
-      await s.surfaceAlert([SurfaceEvent.road]);
+      // T191: 위(front)에서는 surfaceAlert 차도가 취소된다 — 말하는 단계로 확인한다.
+      await s.sayRoad(ko.surfaceRoadMessage, 125);
       await tester.pump(const Duration(milliseconds: 150));
       expect(fake.speaking, ko.surfaceRoadMessage);
       expect(logged('say.defer'), isEmpty);
@@ -3668,6 +3671,169 @@ void main() {
       final first = ends.firstWhere((m) => m['text'] == leftMild);
       expect(first.containsKey('rate'), isFalse, reason: '속도를 안 바꾼 발화는 기록 그대로');
       await _disposeIn(tester, s);
+    });
+  });
+
+  // T191(사용자 선택 (가), 2026-11-12): '차도입니다'를 3초 보류하고, 그사이
+  // approach·위가 되면 취소한다(11/12 `logs/crosswalk log 2bccfa2.txt`).
+  group('T191 차도 보류', () {
+    const road = '차도입니다';
+    final base = DateTime(2026, 11, 12, 13, 55, 23, 600);
+    DateTime at(int ms) => base.add(Duration(milliseconds: ms));
+    List<Map<String, dynamic>> lines(String ev) => EventLog.instance.earlyLines
+        .map((l) => jsonDecode(l) as Map<String, dynamic>)
+        .where((m) => m['ev'] == ev)
+        .toList();
+    Iterable<Map<String, dynamic>> roadSays() =>
+        lines('say').where((m) => m['text'] == road);
+
+    late _FakeSched sched;
+    late FeedbackService s;
+    setUp(() {
+      EventLog.instance.clearForTest();
+      sched = _FakeSched(at(0));
+      s = FeedbackService()
+        ..clock = (() => sched.now)
+        ..timerFactory = sched.create;
+    });
+    tearDown(() => s.dispose());
+
+    test('기본값은 3초', () {
+      expect(FeedbackService.roadDeferHold, const Duration(seconds: 3));
+    });
+
+    test('판정표: approach·위만 취소, none·crossed·hold는 아님', () {
+      for (final c in ['approach', 'front', 'left', 'right']) {
+        expect(FeedbackService.cancelsHeldRoad(c), isTrue, reason: c);
+      }
+      for (final c in ['none', 'crossed', 'hold', '']) {
+        expect(FeedbackService.cancelsHeldRoad(c), isFalse, reason: c);
+      }
+    });
+
+    test('바로 말하지 않고, 3초 동안 횡단보도가 안 나오면 말하고 진동한다', () async {
+      await s.alert('none', 0.9);
+      await s.surfaceAlert([SurfaceEvent.road]);
+      expect(roadSays(), isEmpty);
+      expect(lines('vib'), isEmpty);
+      expect(lines('say.defer').single,
+          allOf(containsPair('text', road), containsPair('why', 'road_wait')));
+      expect(s.holdsRoad, isTrue);
+      sched.advanceTo(at(2999));
+      await pumpEventQueue();
+      expect(roadSays(), isEmpty);
+      sched.advanceTo(at(3000));
+      await pumpEventQueue();
+      expect(roadSays().single,
+          allOf(containsPair('p', 0), containsPair('act', 'speakNow')));
+      expect(lines('vib').single['kind'], 'road');
+      expect(lines('say.cancel'), isEmpty);
+      expect(s.holdsRoad, isFalse);
+    });
+
+    test('13:55:23.6 순서: 2.3초 뒤 approach면 취소하고 앞에 횡단보도만 남는다', () async {
+      await s.alert('none', 0.9);
+      await s.surfaceAlert([SurfaceEvent.road]);
+      sched.advanceTo(at(2313));
+      await s.alert('approach', 0.9);
+      expect(
+          lines('say.cancel').single,
+          allOf(containsPair('text', road),
+              containsPair('why', 'road_before_cw'),
+              containsPair('to', 'approach'),
+              containsPair('dt', 2313)));
+      sched.advanceTo(at(6000));
+      await pumpEventQueue();
+      expect(roadSays(), isEmpty);
+      expect(lines('vib').where((m) => m['kind'] == 'road'), isEmpty);
+      expect(lines('say').map((m) => m['text']), contains('앞에 횡단보도'));
+    });
+
+    test('none에서 바로 위(진입)가 되어도 취소한다', () async {
+      await s.alert('none', 0.9);
+      await s.surfaceAlert([SurfaceEvent.road]);
+      sched.advanceTo(at(2011));
+      await s.alert('right', 0.9, angleDegrees: -10);
+      expect(lines('say.cancel').single,
+          allOf(containsPair('why', 'road_before_cw'), containsPair('to', 'right')));
+      sched.advanceTo(at(6000));
+      await pumpEventQueue();
+      expect(roadSays(), isEmpty);
+    });
+
+    test('none·crossed는 취소하지 않는다', () async {
+      await s.alert('crossed', 0.9);
+      await s.surfaceAlert([SurfaceEvent.road]);
+      sched.advanceTo(at(1000));
+      await s.alert('none', 0.9);
+      sched.advanceTo(at(3000));
+      await pumpEventQueue();
+      expect(roadSays(), hasLength(1));
+      expect(lines('say.cancel'), isEmpty);
+    });
+
+    test('보류 중 또 차도가 오면 먼저 것의 시각을 지킨다(road_dup)', () async {
+      await s.alert('none', 0.9);
+      await s.surfaceAlert([SurfaceEvent.road]);
+      sched.advanceTo(at(1000));
+      await s.surfaceAlert([SurfaceEvent.road]);
+      expect(lines('say.defer').map((m) => m['why']), ['road_wait', 'road_dup']);
+      sched.advanceTo(at(3000));
+      await pumpEventQueue();
+      expect(roadSays(), hasLength(1));
+      sched.advanceTo(at(6000));
+      await pumpEventQueue();
+      expect(roadSays(), hasLength(1), reason: '두 번째는 따로 예약하지 않는다');
+    });
+
+    test('차도와 선형 블록 위가 함께 나면 지금은 진동 없음, 3초 뒤 차도 진동만', () async {
+      await s.alert('none', 0.9);
+      await s.surfaceAlert([SurfaceEvent.road, SurfaceEvent.linearOn]);
+      expect(lines('vib'), isEmpty);
+      sched.advanceTo(at(3000));
+      await pumpEventQueue();
+      expect(lines('vib').map((m) => m['kind']), ['road']);
+    });
+
+    test('11/12 기록 12건 재생: 앞선 차도 6건 중 3건 취소, 진짜 차도는 3초 늦게', () async {
+      // `logs/crosswalk log 2bccfa2.txt`: surf.ev road -> 다음 approach·위 state까지(ms).
+      // null = 다음 횡단보도 상태까지 8초 넘음(R3 35.1s, R4 8.0s, R6 49.2s,
+      // R9 33.1s, R10 13.0s, R11 48.1s).
+      const gaps = <String, int?>{
+        'R1': 5184, 'R2': 2011, 'R3': null, 'R4': 7991, 'R5': 2313,
+        'R6': null, 'R7': 2361, 'R8': 3707, 'R9': null, 'R10': 13000,
+        'R11': null, 'R12': 3738,
+      };
+      final cancelled = <String>[];
+      final spokenAfter = <String, int>{};
+      for (final e in gaps.entries) {
+        EventLog.instance.clearForTest();
+        final sc = _FakeSched(at(0));
+        final f = FeedbackService()
+          ..clock = (() => sc.now)
+          ..timerFactory = sc.create;
+        await f.alert('none', 0.9);
+        await f.surfaceAlert([SurfaceEvent.road]);
+        final g = e.value;
+        if (g != null && g < 8000) {
+          sc.advanceTo(at(g - 1));
+          await pumpEventQueue();
+          if (roadSays().isNotEmpty) spokenAfter[e.key] = 3000;
+          sc.advanceTo(at(g));
+          await f.alert('approach', 0.9);
+        }
+        sc.advanceTo(at(8000));
+        await pumpEventQueue();
+        if (lines('say.cancel').any((m) => m['why'] == 'road_before_cw')) {
+          cancelled.add(e.key);
+        } else {
+          expect(roadSays(), hasLength(1), reason: e.key);
+          spokenAfter[e.key] = 3000;
+        }
+        await f.dispose();
+      }
+      expect(cancelled, ['R2', 'R5', 'R7']);
+      expect(spokenAfter.keys, hasLength(9));
     });
   });
 }

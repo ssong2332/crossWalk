@@ -1416,6 +1416,8 @@ class FeedbackService {
 
     // T130: 대기 중인 진입 안내는 횡단보도 위를 벗어나면 취소한다.
     cancelPendingEntryOnState(detectedClass);
+    // T191: 보류 중인 '차도입니다'는 approach·위가 되면 취소한다(구간 안내보다 먼저).
+    cancelHeldRoadOnState(detectedClass);
     // T164 2단계 #4: 횡단보도를 벗어나면(none/approach/crossed) 재이탈 확인 창을 닫는다.
     if (!DirectionResolver.isOnCrosswalk(detectedClass)) recoveryRecheck.close();
 
@@ -1878,13 +1880,14 @@ class FeedbackService {
     if (muted.isNotEmpty) {
       EventLog.instance.log('surf.mute', {'names': muted});
     }
+    // T191: 차도는 음성·진동을 함께 [roadDeferHold] 동안 보류한다([_holdRoad]).
+    // 같은 판정의 선형 블록 위 진동은 종전처럼 차도 진동이 대신한다(지금은 내지 않음).
+    final hasRoad = events.contains(SurfaceEvent.road);
     for (final e in events) {
       if (SurfaceGuide.isMuted(e)) continue;
       switch (e) {
         case SurfaceEvent.road:
-          unawaited(_speak(strings.surfaceRoadMessage,
-              priority: FeedbackPriority.p0, rank: P0Rank.danger));
-          pattern = surfaceRoadPattern(shortMs);
+          _holdRoad(strings.surfaceRoadMessage, shortMs);
         case SurfaceEvent.dotBlock:
           if (holdsDotBlock(_lastRawClass ?? '')) {
             _holdDotBlock(strings.surfaceDotBlockMessage, DateTime.now());
@@ -1902,11 +1905,98 @@ class FeedbackService {
           unawaited(_speak(strings.surfaceLinearLostMessage,
               priority: FeedbackPriority.p2));
         case SurfaceEvent.linearOn:
-          pattern ??= <int>[0, shortMs];
+          if (!hasRoad) pattern ??= <int>[0, shortMs];
       }
     }
     if (pattern == null) return;
-    final kind = events.contains(SurfaceEvent.road) ? 'road' : 'line_on';
+    await _surfaceVibrate('line_on', pattern);
+  }
+
+  /// T191(사용자 선택 (가), 2026-11-12): '차도입니다'(음성 + 짧게 3번 진동)를 이만큼
+  /// 보류한다. 그사이 분류 상태가 approach·위(front/left/right)가 되면 — 곧
+  /// '앞에 횡단보도'·'횡단보도 진입'이 나온다 — 말하지 않고 `say.cancel`
+  /// why=road_before_cw를 남긴다([cancelHeldRoadOnState]).
+  ///
+  /// 근거(11/12 실기기, 빌드 2bccfa2, `logs/crosswalk log 2bccfa2.txt`,
+  /// `train/field_1112/report.md` 6절): '차도입니다' 12번 중 6번이 횡단보도 상태
+  /// 전환 5.18·2.01·2.31·2.36·3.71·3.74초 전에 나왔다. 2초는 0번, 3초는 3번
+  /// (2.01·2.31·2.36), 4초는 5번을 취소한다. 3초는 진짜 차도 안내도 3초 늦춘다
+  /// (1m/s 보행이면 약 3m — 추정). 사용자가 고른 1~2초에 가장 가까우면서 효과가 있는 값.
+  static const roadDeferHold = Duration(seconds: 3);
+  Timer? _roadTimer;
+  DateTime? _heldRoadAt;
+  String _heldRoadMessage = '';
+  int _heldRoadShortMs = 0;
+
+  /// T191: 보류 중인 '차도입니다'가 있는가.
+  @visibleForTesting
+  bool get holdsRoad => _heldRoadAt != null;
+
+  /// T191: 이 분류 상태가 되면 보류 중인 차도를 취소한다 — approach·위.
+  @visibleForTesting
+  static bool cancelsHeldRoad(String detectedClass) =>
+      detectedClass == 'approach' ||
+      DirectionResolver.isOnCrosswalk(detectedClass);
+
+  void _holdRoad(String message, int shortMs) {
+    // 이미 보류 중이면 먼저 것의 시각을 지킨다(새로 늦추지 않는다).
+    if (_heldRoadAt != null) {
+      EventLog.instance.log('say.defer', {'text': message, 'why': 'road_dup'});
+      return;
+    }
+    _heldRoadAt = clock();
+    _heldRoadMessage = message;
+    _heldRoadShortMs = shortMs;
+    EventLog.instance.log('say.defer', {'text': message, 'why': 'road_wait'});
+    _roadTimer = (timerFactory ?? Timer.new)(
+        roadDeferHold, () => unawaited(_releaseHeldRoad()));
+  }
+
+  /// T191: 보류 중인 차도를 [detectedClass]가 approach·위면 취소한다. 취소했으면 true.
+  @visibleForTesting
+  bool cancelHeldRoadOnState(String detectedClass) {
+    final at = _heldRoadAt;
+    if (at == null || !cancelsHeldRoad(detectedClass)) return false;
+    final dt = clock().difference(at).inMilliseconds;
+    final message = _heldRoadMessage;
+    _clearHeldRoad();
+    EventLog.instance.log('say.cancel', {
+      'text': message,
+      'why': 'road_before_cw',
+      'to': detectedClass,
+      'dt': dt,
+    });
+    return true;
+  }
+
+  void _clearHeldRoad() {
+    _heldRoadAt = null;
+    _roadTimer?.cancel();
+    _roadTimer = null;
+  }
+
+  Future<void> _releaseHeldRoad() async {
+    if (_heldRoadAt == null) return;
+    // 타이머 직전 프레임에 상태가 바뀌었을 수 있다 — 한 번 더 본다.
+    if (cancelHeldRoadOnState(_lastRawClass ?? '')) return;
+    final message = _heldRoadMessage;
+    final shortMs = _heldRoadShortMs;
+    _clearHeldRoad();
+    await sayRoad(message, shortMs);
+  }
+
+  /// T191: 보류가 끝난 차도 안내를 지금 말하고 진동한다(T104 종전 경로 그대로).
+  /// 테스트는 T132 차도(danger) 끊기 규칙을 이것으로 확인한다.
+  @visibleForTesting
+  Future<void> sayRoad(String message, int shortMs) async {
+    // requestedAt을 넘기지 않는다 — P0 TTL(1초)이 보류 시간을 만료로 세지 않게.
+    unawaited(_speak(message,
+        priority: FeedbackPriority.p0, rank: P0Rank.danger));
+    await _surfaceVibrate('road', surfaceRoadPattern(shortMs));
+  }
+
+  /// 노면 안내 진동 한 번(T104·T153). [kind]는 road·line_on.
+  Future<void> _surfaceVibrate(String kind, List<int> pattern) async {
     // T153: 차도·선형 블록 위는 양쪽 모터. 폰을 함께 내지 않으면 끝.
     final out = _sendToVibModule(kind, pattern);
     if (out == 'ble' && !vibModuleWithPhone) {
@@ -1992,6 +2082,7 @@ class FeedbackService {
     _drainTimer?.cancel();
     _dotBlockTimer?.cancel();
     _insertHoldTimer?.cancel();
+    _clearHeldRoad();
     if (_chimeDeferredAt != null) _clearDeferredChime();
     isSpeaking.value = false;
     isVibrating.value = false;
