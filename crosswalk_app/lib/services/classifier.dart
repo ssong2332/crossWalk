@@ -210,6 +210,8 @@ class Classifier {
   ClassificationResult? processFrame(CameraImage cameraImage,
       {int rotationDegrees = 0}) {
     if (!shouldProcessFrame()) return null;
+    final session = _session;
+    if (session == null) return null;
 
     final input = _preprocessCamera(cameraImage, rotationDegrees);
     if (input == null) return null;
@@ -219,11 +221,16 @@ class Classifier {
       [1, 3, _inputSize, _inputSize],
     );
     final runOptions = OrtRunOptions();
-    final outputs = _session!.run(runOptions, {'input': inputTensor});
-    inputTensor.release();
-    runOptions.release();
+    final List<OrtValue?> outputs;
+    try {
+      outputs = session.run(runOptions, {'input': inputTensor});
+    } finally {
+      // T192: 예외가 나도 네이티브 자원은 반드시 해제한다(angle_estimator와 같은 모양).
+      inputTensor.release();
+      runOptions.release();
+    }
 
-    if (outputs == null || outputs.isEmpty) return null;
+    if (outputs.isEmpty) return null;
 
     final outputTensor = outputs.first as OrtValueTensor;
     final rawOutput = outputTensor.value as List;

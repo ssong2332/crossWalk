@@ -712,6 +712,27 @@ void main() {
       expect(zoomProbeText(0.6, null, 1), '줌 - · 후면 1');
     });
   });
+
+  // T192: 프레임 본문 예외 한 번으로 이후 모든 프레임을 건너뛰던 문제.
+  group('FrameGate (T192)', () {
+    test('본문이 예외를 던져도 기록하고 다음 프레임을 처리한다', () {
+      final gate = FrameGate();
+      final errors = <Object>[];
+      var runs = 0;
+      gate.run(() => throw StateError('boom'), errors.add);
+      expect(errors.single, isA<StateError>());
+      expect(gate.busy, isFalse);
+      gate.run(() => runs++, errors.add);
+      expect(runs, 1, reason: '예외 뒤 프레임도 처리돼야 한다');
+    });
+
+    test('처리 중에 온 프레임은 건너뛴다', () {
+      final gate = FrameGate();
+      var inner = 0;
+      gate.run(() => gate.run(() => inner++, (_) {}), (_) {});
+      expect(inner, 0);
+    });
+  });
 }
 
 /// `Canvas.translate` 호출만 기록하는 대역 캔버스.

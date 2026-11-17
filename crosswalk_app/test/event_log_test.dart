@@ -1,5 +1,6 @@
 // T106: 개발용 사건 기록(`EventLog`) — 형식·회전·파일 쓰기·켜고 끄기.
 // path_provider 없이 임시 폴더를 주입해 실제 파일로 확인한다(dart:io).
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -119,6 +120,48 @@ void main() {
 
       final events = readLines(files.single).map((m) => m['ev']).toList();
       expect(events, ['log.start', 'log.off', 'log.on', 'shown']);
+    });
+
+    // T192: 주기·64KB flush와 종료 때 flushSync가 섞여도 줄이 사라지거나
+    // 깨지거나 두 번 남지 않는다(쓰기가 동기 하나뿐이라 겹치지 않음).
+    test('flush·flushSync를 섞어도 모든 줄이 정확히 한 번 남는다', () async {
+      final log = EventLog(baseDir: () async => tmp);
+      await log.start();
+      final pad = 'x' * 500; // 줄 몇백 개마다 64KB flush가 log() 안에서 돈다
+      for (var i = 0; i < 600; i++) {
+        log.log('n', {'i': i, 'pad': pad});
+        if (i % 7 == 0) unawaited(log.flush());
+        if (i % 11 == 0) log.flushSync();
+      }
+      log.flushSync();
+      await log.close();
+
+      final ns = readLines((await log.files()).single)
+          .where((m) => m['ev'] == 'n')
+          .map((m) => m['i'])
+          .toList();
+      expect(ns, List.generate(600, (i) => i));
+      expect(log.writeErrors, 0);
+    });
+
+    test('쓰기가 실패하면 그 조각만 잃고, 다음 flush에서 파일을 다시 열어 이어 쓴다', () async {
+      final log = EventLog(baseDir: () async => tmp);
+      await log.start();
+      log.log('before');
+      await log.flush();
+      log.breakFileForTest();
+      log.log('lost');
+      await log.flush(); // 닫힌 핸들 → 실패, 핸들 버림
+      expect(log.writeErrors, 1);
+      log.log('after');
+      await log.flush(); // 다시 연다
+      log.flushSync();
+      await log.close();
+
+      final events =
+          readLines((await log.files()).single).map((m) => m['ev']).toList();
+      expect(events, ['log.start', 'before', 'after']);
+      expect(log.writeErrors, 1);
     });
 
     test('시작할 때 상한을 넘는 옛 파일을 지운다', () async {
