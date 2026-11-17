@@ -48,7 +48,7 @@ class EventLog {
 
   final List<String> _early = <String>[];
   final StringBuffer _buf = StringBuffer();
-  bool _writing = false;
+  RandomAccessFile? _raf;
   bool _starting = false;
   Timer? _timer;
 
@@ -115,33 +115,39 @@ class EventLog {
     }
   }
 
-  /// 모인 기록을 파일 끝에 붙인다. 이미 쓰는 중이면 다음 주기로 미룬다.
-  Future<void> flush() async {
+  /// 모인 기록을 파일 끝에 붙인다(주기·64KB). fsync는 하지 않는다.
+  Future<void> flush() async => _write(fsync: false);
+
+  /// 앱이 화면에서 내려갈 때 쓴다 — 프로세스가 곧 끝나도 기록이 남게(fsync까지).
+  void flushSync() => _write(fsync: true);
+
+  // T192: 쓰는 경로는 여기 하나(동기). 비동기 쓰기와 겹치면 Dart의 append가(열 때
+  // 끝으로 이동) 서로 덮어써 줄이 깨졌다. 파일은 한 번 열어 두어 열기·닫기 고정비를
+  // 피하고, 실패하면 핸들을 닫아 다음 쓰기에서 다시 연다(실패한 조각은 버린다).
+  void _write({required bool fsync}) {
     final file = _file;
-    if (file == null || _writing || _buf.isEmpty) return;
-    final chunk = _buf.toString();
-    _buf.clear();
-    _writing = true;
+    if (file == null) return;
     try {
-      await file.writeAsString(chunk, mode: FileMode.append, flush: true);
+      if (_buf.isNotEmpty) {
+        final chunk = _buf.toString();
+        _buf.clear();
+        (_raf ??= file.openSync(mode: FileMode.append)).writeStringSync(chunk);
+      }
+      if (fsync) _raf?.flushSync();
     } catch (e) {
       writeErrors++;
       debugPrint('[T106] 기록 쓰기 실패: $e');
-    } finally {
-      _writing = false;
+      _closeFile();
     }
   }
 
-  /// 앱이 화면에서 내려갈 때 쓴다 — 프로세스가 곧 끝나도 기록이 남게.
-  void flushSync() {
-    final file = _file;
-    if (file == null || _writing || _buf.isEmpty) return;
-    final chunk = _buf.toString();
-    _buf.clear();
+  void _closeFile() {
+    final raf = _raf;
+    _raf = null;
     try {
-      file.writeAsStringSync(chunk, mode: FileMode.append, flush: true);
-    } catch (e) {
-      writeErrors++;
+      raf?.closeSync();
+    } catch (_) {
+      // 이미 닫혔거나 망가진 핸들 — 다음 쓰기에서 다시 연다
     }
   }
 
@@ -154,7 +160,8 @@ class EventLog {
     } else {
       log('log.off');
       _enabled = false;
-      unawaited(flush());
+      flushSync();
+      _closeFile();
     }
   }
 
@@ -172,9 +179,6 @@ class EventLog {
 
   /// 공유 직전: 지금까지 모인 기록까지 파일에 쓰고 목록을 돌려준다.
   Future<List<File>> filesForExport() async {
-    for (var i = 0; i < 40 && _writing; i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-    }
     await flush();
     return files();
   }
@@ -182,7 +186,8 @@ class EventLog {
   Future<void> close() async {
     _timer?.cancel();
     _timer = null;
-    await flush();
+    flushSync();
+    _closeFile();
   }
 
   Future<void> _rotate(Directory dir) async {
@@ -255,6 +260,10 @@ class EventLog {
   /// 시작 전 버퍼(테스트에서 기록 지점을 확인할 때 쓴다).
   @visibleForTesting
   List<String> get earlyLines => List.unmodifiable(_early);
+
+  /// T192: 쓰기 실패 흉내 — 열린 핸들을 몰래 닫아 다음 쓰기가 throw하게 한다.
+  @visibleForTesting
+  void breakFileForTest() => _raf?.closeSync();
 
   @visibleForTesting
   void clearForTest() {

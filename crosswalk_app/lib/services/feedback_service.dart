@@ -1181,8 +1181,9 @@ class FeedbackService {
     // (실기기에서 변경·복귀 지연을 재기 위해).
     final wantRate = rate ?? _speechRate;
     int? rateMs;
-    await _tts.stop();
     try {
+      // T192: stop이 throw해도 finally가 돌아 재생 중 상태가 남지 않게 try 안에서 부른다.
+      await _tts.stop();
       // T121 F1: stop을 기다리는 동안 더 새 발화가 시작됐으면 speak를 보내지 않는다.
       // 보내면 플랫폼 순서가 stop·stop·speak(이것)·speak(새것)이 되고, 플러그인은
       // 재생 중에 온 speak(새것)를 재생 없이 성공으로 돌려준다(flutter_tts-4.2.5

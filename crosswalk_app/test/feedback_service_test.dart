@@ -3177,6 +3177,26 @@ void main() {
       await _disposeIn(tester, s);
     });
 
+    // T192: stop이 throw해도 finally가 돌아 재생 중 상태가 풀리고 다음 안내가 나간다.
+    testWidgets('T192: TTS stop이 throw해도 다음 이탈 경고가 재생된다', (tester) async {
+      EventLog.instance.clearForTest();
+      final fake = install();
+      final s = FeedbackService();
+      await toApproach(s);
+      fake.stopThrows = 1;
+      await s.alert('front', 0.9); // 진입 안내 — stop이 throw
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(fake.played, isEmpty);
+      expect(logged('say.end').single['res'], 'error');
+      expect(s.isSpeaking.value, isFalse, reason: '재생 중 상태가 남으면 안 된다');
+      expect(s.audioPolicy.activePriority, isNull);
+      await s.alert('left', 0.9, angleDegrees: mild);
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(fake.played, [leftMild]);
+      await tester.pump(const Duration(seconds: 5));
+      await _disposeIn(tester, s);
+    });
+
     // T130 A: 대기 중인 진입 안내는 상한 3초, 횡단보도 위를 벗어나면 취소.
     testWidgets('T130: 이탈 경고 뒤에서 대기하는 진입 안내의 상한은 3초', (tester) async {
       EventLog.instance.clearForTest();
@@ -3857,12 +3877,18 @@ class _FakeTts {
   // T124: setSpeechRate로 받은 속도(순서대로).
   final rates = <double>[];
   final ignored = <String>[];
+  int stopThrows = 0;
   Completer<int>? _pending;
   Timer? _done;
 
   Future<Object?> handle(MethodCall call) async {
     switch (call.method) {
       case 'stop':
+        // T192: 엔진 오류 흉내 — 남은 횟수만큼 stop이 throw한다.
+        if (stopThrows > 0) {
+          stopThrows--;
+          throw PlatformException(code: 'stop', message: 'fake stop error');
+        }
         // 플랫폼은 stop을 받는 즉시 적용하고, 응답만 늦게 돌아온다.
         _finish(0);
         await Future<void>.delayed(stopLatency);

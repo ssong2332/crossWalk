@@ -78,6 +78,25 @@ bool isEdgeTurnedDisplay(String fieldState, bool atEdge) =>
 @visibleForTesting
 const String unjudgedGuidanceLabel = 'unjudged';
 
+/// T192: 프레임을 한 번에 하나만 처리한다. 본문이 예외를 던져도 [busy]를 풀어
+/// 다음 프레임을 받는다(전에는 한 번의 예외로 이후 모든 프레임을 건너뛰었다).
+@visibleForTesting
+class FrameGate {
+  bool busy = false;
+
+  void run(void Function() body, void Function(Object e) onError) {
+    if (busy) return;
+    busy = true;
+    try {
+      body();
+    } catch (e) {
+      onError(e);
+    } finally {
+      busy = false;
+    }
+  }
+}
+
 class CameraScreen extends StatefulWidget {
   // T40: language is now detected once in OnboardingScreen (which runs
   // before this screen) and passed forward via [initialLanguage], so the
@@ -148,7 +167,7 @@ class _CameraScreenState extends State<CameraScreen>
   DateTime? _lastResultAt;
   bool _noCall = false;
   Timer? _noCallTicker;
-  bool _isProcessing = false;
+  final _frameGate = FrameGate();
   bool _hasError = false;
   bool _isInitializing = false;
   bool _permissionPermanentlyDenied = false;
@@ -304,6 +323,7 @@ class _CameraScreenState extends State<CameraScreen>
   Future<void> _initCamera() async {
     if (_isInitializing) return;
     _isInitializing = true;
+    _frameGate.busy = false;
 
     try {
       // T67: 카메라가 새로 뜨면 이전 세션의 각도는 더 이상 유효하지 않다
@@ -571,10 +591,12 @@ class _CameraScreenState extends State<CameraScreen>
     }
   }
 
-  void _onFrame(CameraImage image) {
-    if (_isProcessing) return;
-    _isProcessing = true;
+  // T192: 본문에서 예외가 한 번 나도 다음 프레임을 계속 받는다(경고가 멈추지 않게).
+  void _onFrame(CameraImage image) => _frameGate.run(
+      () => _processFrame(image),
+      (e) => EventLog.instance.log('error', {'where': 'frame', 'msg': '$e'}));
 
+  void _processFrame(CameraImage image) {
     // B안 ①(a): 이미지 스트림의 실제 해상도는 카메라를 열 때마다 첫 프레임에서 한 번.
     if (!_streamSizeLogged) {
       _streamSizeLogged = true;
@@ -757,8 +779,6 @@ class _CameraScreenState extends State<CameraScreen>
     _updatePositionEstimate(image);
     _updateSurfaceGuidance(image);
     _logStateIfChanged();
-
-    _isProcessing = false;
   }
 
   // T106: 화면 상태(`_fieldState`)가 바뀔 때만 한 줄 남긴다.
