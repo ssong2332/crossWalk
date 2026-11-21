@@ -37,6 +37,11 @@ static const uint8_t PWM_BITS = 8;
 // 듀티 상한: 모터 정격 3V(DVM1027) / 리튬 만충 약 4.2V ≈ 0.71 → 0.75 × 255 ≈ 191 (추정).
 // 배터리 전압이 내려가면 실제 세기도 약해진다(전압 보정 없음).
 static const uint32_t MAX_DUTY = 191;
+// 양쪽(모터 6개)을 한꺼번에 켜면 시동 전류가 겹쳐 500mAh 배터리 전압이 무너져 모터가 못 돈다(2026-11-22 실측).
+// 양쪽 진동은 왼쪽을 먼저 켜고 이 시간 뒤에 오른쪽을 같은 길이로 켠다(vib::Player). 0이면 동시에 켠다.
+// 모터 6개일 때는 100ms가 필요했지만, 4개(좌2·우2)로 줄인 뒤에는 짧은 양쪽 신호(60~80ms)가 겹치지 않아 같이 안 울려서 0으로 했다.
+// 4개를 동시에 켜서 모터가 못 돌면 20~30ms로 올린다(추정).
+static const uint32_t STAGGER_MS = 0;
 
 static BLECharacteristic* gStatus = nullptr;
 static BLEServer* gServer = nullptr;
@@ -116,6 +121,7 @@ static void startAdvertising() {
 }
 
 void setup() {
+  gPlayer.setStagger(STAGGER_MS);
   pinMode(PIN_L_IN2, OUTPUT);
   pinMode(PIN_R_IN2, OUTPUT);
   digitalWrite(PIN_L_IN2, LOW);

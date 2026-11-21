@@ -96,6 +96,39 @@ static void testWrap() {
   CHECK(p.update(0x00000010u) == 0);          // 272ms
 }
 
+static void testStagger() {
+  Player p;
+  p.setStagger(100);
+  Command c;
+  // 양쪽 150ms: 왼쪽 0~150, 오른쪽 100~250
+  const uint8_t pulse[] = {0x01, 3, 15, 255, 1};
+  parse(pulse, sizeof(pulse), c);
+  p.startCommand(c, 0);
+  CHECK(p.update(0) == SIDE_LEFT);
+  CHECK(p.update(99) == SIDE_LEFT);
+  CHECK(p.update(100) == SIDE_BOTH);
+  CHECK(p.update(149) == SIDE_BOTH);
+  CHECK(p.update(150) == SIDE_RIGHT);
+  CHECK(p.update(249) == SIDE_RIGHT);
+  CHECK(p.update(250) == 0 && !p.active());
+
+  // 짧은 60ms도 오른쪽이 같은 길이로 나간다(왼쪽이 끝난 뒤 시작해도 잘리지 않는다).
+  const uint8_t shortPulse[] = {0x01, 3, 6, 255, 2};
+  parse(shortPulse, sizeof(shortPulse), c);
+  p.startCommand(c, 1000);
+  CHECK(p.update(1030) == SIDE_LEFT);
+  CHECK(p.update(1060) == 0);
+  CHECK(p.update(1100) == SIDE_RIGHT);
+  CHECK(p.update(1159) == SIDE_RIGHT);
+  CHECK(p.update(1160) == 0 && !p.active());
+
+  // 한쪽 명령에는 시차가 없다.
+  const uint8_t rightOnly[] = {0x01, 2, 15, 255, 3};
+  parse(rightOnly, sizeof(rightOnly), c);
+  p.startCommand(c, 0);
+  CHECK(p.update(0) == SIDE_RIGHT);
+}
+
 static void testWatchdog() {
   Watchdog w;
   CHECK(!w.expiredOnce(100000));  // 한 번도 받지 않았으면 알리지 않는다
@@ -118,6 +151,7 @@ int main() {
   testParse();
   testPlayer();
   testWrap();
+  testStagger();
   testWatchdog();
   testDuty();
   std::printf("검사 %d개, 실패 %d개\n", checks, failures);
