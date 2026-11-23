@@ -441,7 +441,13 @@ class FeedbackService {
   bool _heldRecoveryIsEdge = false;
 
   /// 회복 안내를 말하기 전 front가 유지돼야 하는 시간(추정값, 실기기로 조정).
-  static const recoveryHold = Duration(milliseconds: 700);
+  /// T194 B(사용자 승인 2026-11-23): 0.7초 → 1.0초. 복귀 진동·딩(alert)과 묶음 해제
+  /// ([decideMessage])도 같은 값을 쓴다 — 빠르게 돌 때 가운데를 잠깐 지나는 front(1초 미만)는
+  /// 복귀가 아니다(재생: 11/22·11/18 거짓 직진 27개 중 19개 막음, `train/t194/fast_turn_replay.py`).
+  static const recoveryHold = Duration(milliseconds: 1000);
+
+  /// T194 B: 끝 '이미 틀었음' 안내([decideEdgeTurnedMessage])의 보류는 종전 0.7초 그대로.
+  static const edgeTurnedHold = Duration(milliseconds: 700);
 
   /// 유지 확인 뒤 이탈 경고가 재생 중이면 기다리는 최대 시간(추정값).
   static const recoveryMaxWait = Duration(seconds: 2);
@@ -1017,17 +1023,20 @@ class FeedbackService {
   /// | front      | < [recoveryHold]                  | —                 | wait   |
   /// | front      | >= [recoveryHold]                 | 예                | wait   |
   /// | front      | >= [recoveryHold]                 | 아니오            | speak  |
+  /// [edge](끝 '이미 틀었음')면 [recoveryHold] 대신 [edgeTurnedHold](T194 B).
   @visibleForTesting
   HeldRecoveryVerdict decideHeldRecovery(
     String detectedClass,
     DateTime heldAt,
     DateTime now, {
     required bool deviationPlaying,
+    bool edge = false,
   }) {
     if (detectedClass != 'front') return HeldRecoveryVerdict.cancel;
     final held = now.difference(heldAt);
-    if (held > recoveryHold + recoveryMaxWait) return HeldRecoveryVerdict.expire;
-    if (held < recoveryHold || deviationPlaying) return HeldRecoveryVerdict.wait;
+    final hold = edge ? edgeTurnedHold : recoveryHold;
+    if (held > hold + recoveryMaxWait) return HeldRecoveryVerdict.expire;
+    if (held < hold || deviationPlaying) return HeldRecoveryVerdict.wait;
     return HeldRecoveryVerdict.speak;
   }
 
@@ -1591,7 +1600,8 @@ class FeedbackService {
     final heldAt = _heldRecoveryAt;
     if (held != null && heldAt != null) {
       final verdict =
-          decideHeldRecovery(detectedClass, heldAt, now, deviationPlaying: deviationPlaying);
+          decideHeldRecovery(detectedClass, heldAt, now,
+              deviationPlaying: deviationPlaying, edge: _heldRecoveryIsEdge);
       switch (verdict) {
         case HeldRecoveryVerdict.wait:
           break;
@@ -1635,9 +1645,17 @@ class FeedbackService {
     } else {
       levelDwell.reset();
     }
-    final pattern = vibrationPolicy.decidePattern(
-        vibClass, now, _vibrationDurationMs,
-        level: vibLevel);
+    // T194 B: 좌/우에서 front로 돌아온 복귀 진동·딩은 front가 [recoveryHold] 이어진 뒤에만
+    // 낸다(그 전에 좌/우가 다시 나오면 복귀 없이 이탈 유지). 진동 정책은 부르지 않아
+    // 이탈 상태로 남는다. `_frontSince`는 위 [decideMessage]가 묶음 해제에 쓰는 같은 시각.
+    final lastVib = vibrationPolicy.lastClass;
+    final frontHold = vibClass == 'front' &&
+        (lastVib == 'left' || lastVib == 'right') &&
+        (_frontSince == null || now.difference(_frontSince!) < recoveryHold);
+    final pattern = frontHold
+        ? null
+        : vibrationPolicy.decidePattern(vibClass, now, _vibrationDurationMs,
+            level: vibLevel);
     // T167 A: 이탈 상태(left/right)의 방향 진동인데 a가 이미 중앙 쪽이면 쉰다.
     // 끝 '이미 틀었음'(front + 끝, [edgeTurnedVibrationClass])·하강 유지(T157 P1, front)는
     // 이탈 상태가 아니라서 대상이 아니다. 진동 정책의 박자(마지막 진동 시각)는 낸 것처럼
@@ -1672,6 +1690,7 @@ class FeedbackService {
       'vib': pattern != null && !turnedSkip && !stillSkip,
       if (turnedSkip) 'vibSkip': 'turned',
       if (stillSkip) 'vibSkip': 'still',
+      if (frontHold) 'vibHold': 'front',
       if (edgeTurnedVib != null) 'vibAs': edgeTurnedVib,
     });
 

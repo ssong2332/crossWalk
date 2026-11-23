@@ -1229,18 +1229,32 @@ void main() {
     final t0 = DateTime(2026, 10, 12, 12, 0, 0);
     Duration ms(int v) => Duration(milliseconds: v);
 
-    test('front가 0.7초 안 됐으면 기다린다', () {
-      expect(
-          FeedbackService().decideHeldRecovery('front', t0, t0.add(ms(500)),
-              deviationPlaying: false),
-          HeldRecoveryVerdict.wait);
+    test('front가 1.0초 안 됐으면 기다린다 (T194 B: 0.7 → 1.0)', () {
+      for (final v in [500, 700, 999]) {
+        expect(
+            FeedbackService().decideHeldRecovery('front', t0, t0.add(ms(v)),
+                deviationPlaying: false),
+            HeldRecoveryVerdict.wait,
+            reason: '$v');
+      }
     });
 
-    test('front가 0.7초 유지되고 이탈 경고가 없으면 말한다', () {
+    test('front가 1.0초 유지되고 이탈 경고가 없으면 말한다', () {
       expect(
-          FeedbackService().decideHeldRecovery('front', t0, t0.add(ms(700)),
+          FeedbackService().decideHeldRecovery('front', t0, t0.add(ms(1000)),
               deviationPlaying: false),
           HeldRecoveryVerdict.speak);
+    });
+
+    test('T194 B: 끝 이미 틀었음(edge) 안내는 종전 0.7초 그대로', () {
+      expect(
+          FeedbackService().decideHeldRecovery('front', t0, t0.add(ms(700)),
+              deviationPlaying: false, edge: true),
+          HeldRecoveryVerdict.speak);
+      expect(
+          FeedbackService().decideHeldRecovery('front', t0, t0.add(ms(2800)),
+              deviationPlaying: true, edge: true),
+          HeldRecoveryVerdict.expire);
     });
 
     test('이탈 경고가 재생 중이면 끊지 않고 기다린다', () {
@@ -1250,9 +1264,9 @@ void main() {
           HeldRecoveryVerdict.wait);
     });
 
-    test('기다리다 2.7초가 넘으면 버린다', () {
+    test('기다리다 3.0초가 넘으면 버린다', () {
       expect(
-          FeedbackService().decideHeldRecovery('front', t0, t0.add(ms(2800)),
+          FeedbackService().decideHeldRecovery('front', t0, t0.add(ms(3100)),
               deviationPlaying: true),
           HeldRecoveryVerdict.expire);
     });
@@ -1530,13 +1544,13 @@ void main() {
       expect(s.decideMessage('right', mild, at(2000)), rightMild);
     });
 
-    test('서 있어도 회복(front 0.7초 이상) 뒤 새 이탈은 첫 경고로 말한다', () {
+    test('서 있어도 회복(front 1.0초 이상) 뒤 새 이탈은 첫 경고로 말한다', () {
       final s = FeedbackService();
       stand(s, -3000, 0);
       expect(s.decideMessage('left', mild, at(0)), leftMild);
       stand(s, 66, 9000);
       s.decideMessage('front', null, at(7000));
-      s.decideMessage('front', null, at(7800));
+      s.decideMessage('front', null, at(8000));
       expect(s.decideMessage('left', mild, at(9000)), leftMild);
     });
 
@@ -1691,11 +1705,13 @@ void main() {
       expect(lines('chime'), isNotEmpty);
     });
 
-    test('처음부터 보통 단계(0)였던 이탈은 직진 판정 순간 바로 확인(종전과 같음)',
+    test('처음부터 보통 단계(0)였던 이탈은 유지 없이 직진 1초 뒤 확인(T194 B)',
         () async {
       await alertAt(0, 'left', angle: 15);
       await alertAt(250, 'front', angle: 0);
-      expect(vibs.last, (250, -1));
+      expect(vibs.where((v) => v.$2 == -1), isEmpty);
+      await alertAt(1250, 'front', angle: 0);
+      expect(vibs.last, (1250, -1));
       expect(lines('vib.dwell'), isEmpty);
     });
 
@@ -1951,10 +1967,12 @@ void main() {
         ..clock = (() => sched.now)
         ..chimePlayer = (() async {})
         ..timerFactory = sched.create;
-      stand(s, 0, 23000); // 표본이 1초 넘게 끊기면 서 있음이 아니다(staleAfter).
+      stand(s, 0, 24000); // 표본이 1초 넘게 끊기면 서 있음이 아니다(staleAfter).
       sched.advanceTo(at(20000));
       await s.alert('left', 0.9, angleDegrees: 15);
       sched.advanceTo(at(23000));
+      await s.alert('front', 0.9, angleDegrees: 0);
+      sched.advanceTo(at(24000)); // T194 B: front 1초 뒤 확인
       await s.alert('front', 0.9, angleDegrees: 0);
       final alerts = EventLog.instance.earlyLines
           .map((l) => jsonDecode(l) as Map<String, dynamic>)
@@ -2420,9 +2438,10 @@ void main() {
         await turnedAt(ms, 'left');
       }
       await alertAt(900, 'front');
+      await alertAt(1900, 'front'); // T194 B: 복귀 확인은 front 1초 뒤
       runTo(5000);
-      expect(times().where((t) => t > 900), isEmpty);
-      expect(stops().single, containsPair('why', 'state'));
+      expect(times().where((t) => t > 900), [1900], reason: '복귀 확인 1번뿐');
+      expect(stops().first, containsPair('why', 'state'));
       expect(s.vibrationPolicy.lastClass, 'front');
     });
 
@@ -2596,6 +2615,103 @@ void main() {
   });
 
   // T194 A: 정지 중 같은 쪽 좌우 진동은 첫 1번만(vib.skip why=still).
+  // T194 B(사용자 승인 2026-11-23): 좌/우 → front는 front가 1.0초 이어져야 복귀.
+  group('T194 B 빠른 회전 거짓 직진 막기', () {
+    final t0 = DateTime(2026, 11, 22, 19);
+    late _FakeSched sched;
+    late FeedbackService s;
+    late int played;
+    setUp(() {
+      EventLog.instance.clearForTest();
+      sched = _FakeSched(t0);
+      played = 0;
+      s = FeedbackService()
+        ..clock = (() => sched.now)
+        ..timerFactory = sched.create
+        ..chimePlayer = () async => played++;
+    });
+    tearDown(() async {
+      s.isSpeaking.value = false;
+      await s.dispose();
+    });
+
+    Future<void> alertAt(int ms, String cls, {double? angle}) async {
+      sched.advanceTo(t0.add(Duration(milliseconds: ms)));
+      await s.alert(cls, 0.9, angleDegrees: angle);
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    List<Map<String, dynamic>> lines(String ev) => EventLog.instance.earlyLines
+        .map((l) => jsonDecode(l) as Map<String, dynamic>)
+        .where((m) => m['ev'] == ev)
+        .toList();
+
+    test('(a) 좌 → front 0.4초 → 우: 복귀 진동·딩·직진하세요 없음, 이탈 유지', () async {
+      await alertAt(0, 'left', angle: 15);
+      for (var ms = 200; ms <= 600; ms += 200) {
+        await alertAt(ms, 'front', angle: 0);
+      }
+      await alertAt(700, 'right', angle: -15);
+      expect(lines('vib').where((m) => m['kind'] == 'recover'), isEmpty);
+      expect(played, 0);
+      expect(lines('chime'), isEmpty);
+      expect(lines('say').where((m) => m['text'] == '직진하세요'), isEmpty);
+      expect(lines('alert').where((m) => m['vibHold'] == 'front'), hasLength(3));
+      // 반대쪽 이탈은 바로 진동(방향이 바뀜).
+      expect(lines('vib').last['kind'], 'right');
+      expect(s.vibrationPolicy.lastClass, 'right');
+    });
+
+    test('(a) 같은 쪽으로 돌아와도 복귀 없음 — 이탈 묶음 유지(재경고 음성 없음)', () async {
+      await alertAt(0, 'left', angle: 15);
+      await alertAt(300, 'front', angle: 0);
+      await alertAt(700, 'left', angle: 15);
+      expect(lines('vib').where((m) => m['kind'] == 'recover'), isEmpty);
+      expect(lines('alert').last['msg'], isNull, reason: '같은 이탈');
+    });
+
+    test('(b) front 1.0초 이상이면 복귀 진동·딩 1번(그 전엔 없음)', () async {
+      await alertAt(0, 'left', angle: 15);
+      s.isSpeaking.value = false;
+      for (var ms = 200; ms <= 1000; ms += 200) {
+        await alertAt(ms, 'front', angle: 0);
+      }
+      expect(lines('vib').where((m) => m['kind'] == 'recover'), isEmpty,
+          reason: 'front 0.8초');
+      await alertAt(1200, 'front', angle: 0); // front 1.0초
+      await alertAt(1400, 'front', angle: 0);
+      expect(lines('vib').where((m) => m['kind'] == 'recover'), hasLength(1));
+      expect(played, 1);
+      expect(s.vibrationPolicy.lastClass, 'front');
+      expect(lines('say.defer').map((m) => m['text']), contains('직진하세요'));
+    });
+
+    test('(b) front 1.0초가 되는 프레임이 없으면(판정 끊김) 다음 front 프레임에서 복귀',
+        () async {
+      await alertAt(0, 'left', angle: 15);
+      await alertAt(300, 'front', angle: 0);
+      await alertAt(2000, 'front', angle: 0);
+      expect(lines('vib').where((m) => m['kind'] == 'recover'), hasLength(1));
+    });
+
+    test('처음 진입(이탈 없던 front)은 지금처럼 복귀 진동 없음', () async {
+      await alertAt(0, 'front', angle: 0);
+      await alertAt(1500, 'front', angle: 0);
+      expect(lines('vib'), isEmpty);
+      expect(lines('alert').where((m) => m['vibHold'] != null), isEmpty);
+    });
+
+    test('끝 이미 틀었음(front + 끝 + 중앙 쪽)은 보류 대상 아님 — 중앙 쪽 진동 그대로',
+        () async {
+      await alertAt(0, 'left', angle: 15);
+      sched.advanceTo(t0.add(const Duration(milliseconds: 700)));
+      await s.alert('front', 0.9,
+          angleDegrees: 0, atEdge: true, edgeSteerClass: 'left');
+      expect(lines('alert').last['vibAs'], 'left');
+      expect(lines('alert').last['vibHold'], isNull);
+    });
+  });
+
   group('T194 A 정지 중 좌우 진동 줄이기', () {
     final t0 = DateTime(2026, 11, 22, 19);
     late _FakeSched sched;
@@ -2702,18 +2818,23 @@ void main() {
         .where((m) => m['ev'] == 'chime')
         .toList();
 
-    test('이탈 → 직진이면 딩 1번(why=recover, ok=true)', () async {
+    test('이탈 → 직진 1초면 딩 1번(why=recover, ok=true)', () async {
       EventLog.instance.clearForTest();
-      final s = FeedbackService();
+      var now = DateTime(2026, 11, 23, 12);
+      final s = FeedbackService()..clock = (() => now);
       var played = 0;
       s.chimePlayer = () async => played++;
       await s.alert('left', 0.9, angleDegrees: mild);
       s.isSpeaking.value = false;
       await s.alert('front', 0.9);
+      expect(played, 0, reason: 'T194 B: front 1초 전에는 없음');
+      now = now.add(FeedbackService.recoveryHold);
+      await s.alert('front', 0.9);
       await Future<void>.delayed(Duration.zero);
       expect(played, 1);
-      expect(chimes().single, containsPair('ok', true));
-      expect(chimes().single['why'], 'recover');
+      // T194 B: 같은 프레임에 '직진하세요'가 나가 딩은 음성 뒤로 보류될 수 있다(T147).
+      expect(chimes().last, containsPair('ok', true));
+      expect(chimes().last['why'], 'recover');
       // 복귀 확인 진동도 그대로 나간다.
       expect(s.vibrationPolicy.lastClass, 'front');
       await s.dispose();
@@ -2722,6 +2843,7 @@ void main() {
     // T147: TTS 중 복귀는 건너뛰지 않고 보류 → 음성이 끝났을 때 아직 직진이면 울린다.
     group('TTS 중 복귀 보류 (T147)', () {
       final t0 = DateTime(2026, 10, 28, 12);
+      final t1 = t0.add(FeedbackService.recoveryHold);
       late _FakeSched sched;
       late FeedbackService s;
       late int played;
@@ -2741,6 +2863,9 @@ void main() {
         gen = s.beginSpeechGeneration();
         sched.advanceTo(t0.add(const Duration(milliseconds: 300)));
         await s.alert('front', 0.9);
+        // T194 B: 복귀(딩)는 front가 1초 이어진 뒤 — 아래 시각은 모두 t1 기준.
+        sched.advanceTo(t1.add(const Duration(milliseconds: 300)));
+        await s.alert('front', 0.9);
         await Future<void>.delayed(Duration.zero);
       });
       tearDown(() async {
@@ -2756,7 +2881,7 @@ void main() {
       });
 
       test('TTS 중 복귀 → TTS 끝 → 아직 직진이면 울림(ok, after=tts, dt)', () async {
-        sched.advanceTo(t0.add(const Duration(milliseconds: 820)));
+        sched.advanceTo(t1.add(const Duration(milliseconds: 820)));
         await s.alert('front', 0.9);
         s.finishSpeechGeneration(gen);
         await Future<void>.delayed(Duration.zero);
@@ -2774,7 +2899,7 @@ void main() {
       for (final cls in ['left', 'right']) {
         test('TTS 중 다시 이탈($cls) → 취소(drop=redeviated), TTS가 끝나도 안 울림',
             () async {
-          sched.advanceTo(t0.add(const Duration(milliseconds: 600)));
+          sched.advanceTo(t1.add(const Duration(milliseconds: 600)));
           await s.alert(cls, 0.9, angleDegrees: cls == 'left' ? mild : -mild);
           s.finishSpeechGeneration(gen);
           await Future<void>.delayed(Duration.zero);
@@ -2786,7 +2911,7 @@ void main() {
       }
 
       test('TTS 중 이미 틀었음(끝, 중앙 쪽 진동)도 재이탈로 취소', () async {
-        sched.advanceTo(t0.add(const Duration(milliseconds: 600)));
+        sched.advanceTo(t1.add(const Duration(milliseconds: 600)));
         await s.alert('front', 0.9,
             angleDegrees: 0, atEdge: true, edgeSteerClass: 'left');
         s.finishSpeechGeneration(gen);
@@ -2796,27 +2921,27 @@ void main() {
       });
 
       test('T164 (d): 버려진 효과음(drop) → 재이탈 확인 창 없음', () async {
-        sched.advanceTo(t0.add(const Duration(milliseconds: 2300)));
+        sched.advanceTo(t1.add(const Duration(milliseconds: 2300)));
         expect(chimes().last, containsPair('drop', 'timeout'));
         expect(s.recoveryRecheck.remainingMs(sched.now), isNull);
         expect(s.recoveryRecheck.isActive(sched.now, edgeSide: 0), isFalse);
       });
 
       test('T164: 보류 뒤 실제로 울리면(ok) 그 시각부터 8초 창', () async {
-        sched.advanceTo(t0.add(const Duration(milliseconds: 820)));
+        sched.advanceTo(t1.add(const Duration(milliseconds: 820)));
         await s.alert('front', 0.9);
         s.finishSpeechGeneration(gen);
         await Future<void>.delayed(Duration.zero);
         expect(played, 1);
         expect(s.recoveryRecheck.remainingMs(sched.now), 8000);
-        sched.advanceTo(t0.add(const Duration(milliseconds: 3820)));
+        sched.advanceTo(t1.add(const Duration(milliseconds: 3820)));
         expect(s.recoveryRecheck.isActive(sched.now, edgeSide: 0), isTrue);
         expect(s.recoveryRecheck.remainingMs(sched.now), 5000);
       });
 
       test('상한(2초) 초과 → 취소(drop=timeout), 뒤늦게 TTS가 끝나도 안 울림',
           () async {
-        sched.advanceTo(t0.add(const Duration(milliseconds: 2300)));
+        sched.advanceTo(t1.add(const Duration(milliseconds: 2300)));
         expect(chimes().last, containsPair('drop', 'timeout'));
         expect(chimes().last['dt'], FeedbackService.chimeDeferMax.inMilliseconds);
         s.finishSpeechGeneration(gen);
@@ -2826,7 +2951,7 @@ void main() {
       });
 
       test('TTS 끝날 때 직진이 아니면(none) 취소(drop=state, to=none)', () async {
-        sched.advanceTo(t0.add(const Duration(milliseconds: 600)));
+        sched.advanceTo(t1.add(const Duration(milliseconds: 600)));
         await s.alert('none', 0.9);
         s.finishSpeechGeneration(gen);
         await Future<void>.delayed(Duration.zero);
@@ -2838,7 +2963,7 @@ void main() {
       test('dispose()는 보류를 버리고 타이머를 멈춘다', () async {
         await s.dispose();
         disposed = true;
-        sched.advanceTo(t0.add(const Duration(seconds: 5)));
+        sched.advanceTo(t1.add(const Duration(seconds: 5)));
         expect(chimes(), hasLength(1), reason: 'defer 줄만');
       });
     });
@@ -2854,6 +2979,8 @@ void main() {
       s.isSpeaking.value = false;
       expect(s.recoveryRecheck.remainingMs(now), isNull);
       now = now.add(const Duration(milliseconds: 500));
+      await s.alert('front', 0.9);
+      now = now.add(FeedbackService.recoveryHold); // T194 B
       await s.alert('front', 0.9);
       await Future<void>.delayed(Duration.zero);
       expect(chimes().last, containsPair('ok', true));
@@ -2883,15 +3010,19 @@ void main() {
       await s.dispose();
     });
 
-    test('같은 방향 이탈이 이어지는 동안엔 딩 없음, 직진으로 돌아온 순간 1번만', () async {
+    test('같은 방향 이탈이 이어지는 동안엔 딩 없음, 직진으로 돌아오면 1번만', () async {
       EventLog.instance.clearForTest();
-      final s = FeedbackService();
+      var now = DateTime(2026, 11, 23, 12);
+      final s = FeedbackService()..clock = (() => now);
       var played = 0;
       s.chimePlayer = () async => played++;
       await s.alert('left', 0.9, angleDegrees: mild);
       await s.alert('left', 0.9, angleDegrees: mild);
       s.isSpeaking.value = false;
       await s.alert('front', 0.9);
+      now = now.add(FeedbackService.recoveryHold);
+      await s.alert('front', 0.9);
+      now = now.add(const Duration(milliseconds: 500));
       await s.alert('front', 0.9);
       await Future<void>.delayed(Duration.zero);
       expect(played, 1);
@@ -3157,13 +3288,13 @@ void main() {
       expect(s.decideMessage('left', mild, t0.add(ms(1000))), leftMild);
     });
 
-    test('행4: front가 0.7초 이상 이어진 회복 뒤 다시 이탈하면 바로', () {
+    test('행4: front가 1.0초 이상 이어진 회복 뒤 다시 이탈하면 바로', () {
       final s = FeedbackService();
       expect(s.decideMessage('left', mild, t0), leftMild);
       expect(s.decideMessage('front', 0, t0.add(ms(1000))), isNull);
-      expect(s.decideMessage('front', 0, t0.add(ms(1700))), isNull); // 0.7초
-      expect(s.decideMessage('left', mild, t0.add(ms(2000))), leftMild);
-      expect(FeedbackService.recoveryHold, const Duration(milliseconds: 700));
+      expect(s.decideMessage('front', 0, t0.add(ms(2000))), isNull); // 1.0초
+      expect(s.decideMessage('left', mild, t0.add(ms(2200))), leftMild);
+      expect(FeedbackService.recoveryHold, const Duration(milliseconds: 1000));
     });
 
     test('행4: 0.7초보다 짧은 front 깜빡임은 같은 이탈 — 묶음 유지', () {
