@@ -2595,6 +2595,106 @@ void main() {
     });
   });
 
+  // T194 A: 정지 중 같은 쪽 좌우 진동은 첫 1번만(vib.skip why=still).
+  group('T194 A 정지 중 좌우 진동 줄이기', () {
+    final t0 = DateTime(2026, 11, 22, 19);
+    late _FakeSched sched;
+    late FeedbackService s;
+    setUp(() {
+      EventLog.instance.clearForTest();
+      sched = _FakeSched(t0);
+      s = FeedbackService()
+        ..clock = (() => sched.now)
+        ..timerFactory = sched.create;
+    });
+    tearDown(() async => s.dispose());
+
+    DateTime at(int ms) => t0.add(Duration(milliseconds: ms));
+    void stand(int fromMs, int toMs) {
+      for (var ms = fromMs; ms <= toMs; ms += 66) {
+        s.addAccelerometer(0, 0, 9.81, at(ms));
+      }
+    }
+
+    void walk(int fromMs, int toMs) {
+      for (var ms = fromMs; ms <= toMs; ms += 66) {
+        s.addAccelerometer(
+            0, 0, ((ms - fromMs) ~/ 66).isEven ? 12.0 : 7.6, at(ms));
+      }
+    }
+
+    List<Map<String, dynamic>> lines(String ev) => EventLog.instance.earlyLines
+        .map((l) => jsonDecode(l) as Map<String, dynamic>)
+        .where((m) => m['ev'] == ev)
+        .toList();
+
+    test('판정표', () {
+      stand(0, 5000);
+      expect(s.isStillAt(at(5000)), isTrue);
+      final n = at(5000);
+      expect(s.stillVibSkip('left', 0, false, n), isFalse, reason: '첫 1번');
+      expect(s.stillVibSkip('left', 0, false, n), isTrue, reason: '같은 쪽');
+      expect(s.stillVibSkip('left', 2, false, n), isFalse, reason: '단계 올라감');
+      expect(s.stillVibSkip('left', 1, false, n), isTrue, reason: '단계 내려감');
+      expect(s.stillVibSkip('left', 0, true, n), isFalse, reason: '끝');
+      expect(s.stillVibSkip('right', 0, false, n), isFalse, reason: '반대쪽');
+      expect(s.stillVibSkip('right', 0, false, n), isTrue);
+      expect(s.stillVibSkip('left', 0, false, n), isFalse, reason: '다시 반대쪽');
+      walk(5066, 8000);
+      expect(s.isStillAt(at(8000)), isFalse);
+      expect(s.stillVibSkip('left', 0, false, at(8000)), isFalse, reason: '걷는 중');
+      expect(s.stillVibSkip('left', 0, false, at(8000)), isFalse);
+      stand(8066, 14000);
+      expect(s.isStillAt(at(14000)), isTrue);
+      expect(s.stillVibSkip('left', 0, false, at(14000)), isFalse,
+          reason: '새 정지 구간은 다시 첫 1번');
+    });
+
+    test('정지 중 같은 쪽 반복(판정·타이머)은 첫 1번만, vib.skip why=still', () async {
+      stand(0, 5000);
+      for (var ms = 5000; ms <= 8000; ms += 272) {
+        stand(ms - 200, ms);
+        sched.advanceTo(at(ms));
+        await s.alert('left', 0.9, angleDegrees: 12, smoothedAngleDegrees: 12);
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(lines('vib').where((v) => v['kind'] == 'left'), hasLength(1));
+      final skips = lines('vib.skip');
+      expect(skips, isNotEmpty);
+      expect(skips.every((k) => k['why'] == 'still' && k['kind'] == 'left'),
+          isTrue);
+      // 같은 방향 반복은 대부분 타이머가 울린다(T142) — 타이머 쪽도 막혀야 한다.
+      expect(skips.any((k) => k['src'] == 'timer'), isTrue);
+    });
+
+    test('걷는 중 같은 쪽 반복은 지금처럼 낸다', () async {
+      for (var ms = 0; ms <= 3000; ms += 272) {
+        walk(ms - 200 < 0 ? 0 : ms - 200, ms);
+        sched.advanceTo(at(ms));
+        await s.alert('left', 0.9, angleDegrees: 12, smoothedAngleDegrees: 12);
+      }
+      expect(lines('vib').where((v) => v['kind'] == 'left').length,
+          greaterThan(1));
+      expect(lines('vib.skip'), isEmpty);
+    });
+
+    test('정지 중 끝(edge) 이탈 진동은 줄이지 않는다', () async {
+      stand(0, 5000);
+      for (var ms = 5000; ms <= 8000; ms += 272) {
+        stand(ms - 200, ms);
+        sched.advanceTo(at(ms));
+        await s.alert('left', 0.9,
+            angleDegrees: 25,
+            smoothedAngleDegrees: 25,
+            atEdge: true,
+            edgeSteerClass: 'left');
+      }
+      expect(lines('vib').where((v) => v['kind'] == 'left').length,
+          greaterThan(1));
+      expect(lines('vib.skip'), isEmpty);
+    });
+  });
+
   // T139: 이탈에서 직진으로 돌아온 순간 '딩'(복귀 확인 진동은 그대로).
   group('복귀 확인음 (T139)', () {
     List<Map<String, dynamic>> chimes() => EventLog.instance.earlyLines

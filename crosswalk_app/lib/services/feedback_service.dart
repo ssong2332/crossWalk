@@ -106,6 +106,7 @@ class FeedbackService {
     // T178: 서 있음이 바뀌면(시작·끝) 정지 중 끝 확인 문구 1회 기록을 비운다.
     _stillEdgeSaid = null;
     _stillEdgeDevSaid = null; // T183 G4: 같은 방식으로 비운다.
+    _stillVibSide = null; // T194 A: 같은 방식으로 비운다.
     _noteStillSpan(stillness.isStill, now);
     final mot = stillness.motion;
     EventLog.instance.log('still', {
@@ -404,6 +405,32 @@ class FeedbackService {
   // ('…가장자리입니다', 빠른형 제외)의 이탈 쪽('left'/'right'). 서 있음이 바뀌면
   // ([addAccelerometer]) 비운다.
   String? _stillEdgeDevSaid;
+
+  // T194 A: 이번 정지 구간에서 이미 낸 좌우 진동의 쪽·단계([stillVibSkip]).
+  // 서 있음이 바뀌면([addAccelerometer]) 비운다.
+  String? _stillVibSide;
+  int _stillVibLevel = 0;
+  // T194 A: 마지막 alert의 끝 여부(반복 타이머가 쓴다).
+  bool _lastAtEdge = false;
+
+  /// T194 A(2026-11-23, 11/22 통합검증 `train/field_1122/report.md` 1-1: 좌우 진동
+  /// 445번 중 280번이 정지 중, 사용자 "거슬렸다"): 정지 중 좌우 진동을 막을까.
+  /// T133·T183 G4 음성 규칙과 같은 모양이다.
+  ///   | 조건                                         | 결과                       |
+  ///   | 서 있지 않음(걷는 중·센서 멈춤)              | 냄 (지금처럼)              |
+  ///   | 끝(edge) 판정                                | 냄 (지금처럼, 줄이지 않음) |
+  ///   | 서 있음 + 이번 정지 구간 첫 좌우 진동        | 냄, 쪽·단계 기억           |
+  ///   | 서 있음 + 반대쪽                             | 냄, 쪽·단계 기억           |
+  ///   | 서 있음 + 같은 쪽 + 단계 올라감              | 냄, 단계 기억              |
+  ///   | 서 있음 + 같은 쪽 + 단계 같거나 내려감       | 막음 (`vib.skip` why=still)|
+  /// 서 있음이 바뀌면(걷기 시작·다시 섬) 기억을 비운다. 차도·복귀 진동은 대상 아님.
+  bool stillVibSkip(String kind, int level, bool atEdge, DateTime now) {
+    if (atEdge || !stillness.isStillAt(now)) return false;
+    if (_stillVibSide == kind && level <= _stillVibLevel) return true;
+    _stillVibSide = kind;
+    _stillVibLevel = level;
+    return false;
+  }
 
   // T108 Q1(사용자 확정 2026-10-12): 회복 안내("직진하세요"/"그대로 가세요")는
   // 바로 말하지 않고 보류했다가, front가 [recoveryHold] 동안 유지되면 말한다.
@@ -1619,6 +1646,12 @@ class FeedbackService {
         edgeTurnedVib == null &&
         vibClass == detectedClass &&
         isTurnedToCentre(detectedClass, smoothedAngleDegrees);
+    // T194 A: 정지 중 같은 쪽 좌우 진동은 첫 1번만([stillVibSkip]).
+    _lastAtEdge = atEdge;
+    final stillSkip = pattern != null &&
+        !turnedSkip &&
+        (vibClass == 'left' || vibClass == 'right') &&
+        stillVibSkip(vibClass, vibrationPolicy.lastLevel, atEdge, now);
 
     // T106: 경고 입력과 이번에 낸 것(음성 문장 여부·진동 여부). 말이 안 나간
     // 이유(쿨다운)도 이 줄과 'say' 줄을 함께 보면 알 수 있다.
@@ -1636,8 +1669,9 @@ class FeedbackService {
       'phase': phaseMessage,
       'recover': recoveryMessage,
       'edgeTurned': edgeTurnedMessage,
-      'vib': pattern != null && !turnedSkip,
+      'vib': pattern != null && !turnedSkip && !stillSkip,
       if (turnedSkip) 'vibSkip': 'turned',
+      if (stillSkip) 'vibSkip': 'still',
       if (edgeTurnedVib != null) 'vibAs': edgeTurnedVib,
     });
 
@@ -1659,6 +1693,10 @@ class FeedbackService {
     if (pattern == null) return;
     if (turnedSkip) {
       _logVibSkip(detectedClass, smoothedAngleDegrees, src: null);
+      return;
+    }
+    if (stillSkip) {
+      _logVibSkip(vibClass, smoothedAngleDegrees, src: null, why: 'still');
       return;
     }
 
@@ -1722,6 +1760,10 @@ class FeedbackService {
       _logVibSkip(cls, _lastSmoothedAngle, src: 'timer');
       return;
     }
+    if (stillVibSkip(cls, level, _lastAtEdge, now)) {
+      _logVibSkip(cls, _lastSmoothedAngle, src: 'timer', why: 'still');
+      return;
+    }
     unawaited(_vibrate(cls, pattern, src: 'timer'));
   }
 
@@ -1743,10 +1785,11 @@ class FeedbackService {
     return false;
   }
 
-  void _logVibSkip(String kind, double? a, {String? src}) {
+  void _logVibSkip(String kind, double? a,
+      {String? src, String why = 'turned'}) {
     EventLog.instance.log('vib.skip', {
       'kind': kind,
-      'why': 'turned',
+      'why': why,
       'a': a,
       'lvl': vibrationPolicy.lastLevel,
       if (src != null) 'src': src,
