@@ -2375,6 +2375,8 @@ class _CameraScreenState extends State<CameraScreen>
                             sortKey: const OrdinalSortKey(0),
                             child: SlabHeadline(
                               spec: slab,
+                              // T201: '횡단보도 없음'은 글자만 숨긴다(음성·화면 읽기는 그대로).
+                              visuallyHidden: _fieldState == 'none',
                               bigText: _slabBigText,
                               smallText: _slabSmallText,
                               semanticsLabel: _fieldSubline.isEmpty
