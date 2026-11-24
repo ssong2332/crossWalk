@@ -76,12 +76,4 @@ class StillnessDetector {
     }
     return _still != was;
   }
-
-  void reset() {
-    _samples.clear();
-    _still = false;
-    _quietSince = null;
-    _lastSampleAt = null;
-    _motion = null;
-  }
 }
