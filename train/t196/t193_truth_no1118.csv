@@ -1,0 +1,107 @@
+﻿file,label,source,confidence,cond
+train/frame_1111/f_1794387364160.jpg,sidewalk,t188 m1756 R1 줄무늬 안 보임(인도),보고서추정,night
+train/frame_1111/f_1794387365194.jpg,sidewalk,t188 m1756 R1 줄무늬 안 보임(인도),보고서추정,night
+train/frame_1111/f_1794387366218.jpg,sidewalk,t188 m1756 R1 줄무늬 안 보임(인도),보고서추정,night
+train/frame_1111/f_1794387367235.jpg,sidewalk,t188 m1756 R1 줄무늬 안 보임(인도),보고서추정,night
+train/frame_1111/f_1794387368235.jpg,sidewalk,t188 m1756 R1 줄무늬 안 보임(인도),보고서추정,night
+train/frame_1111/f_1794387369237.jpg,sidewalk,t188 m1756 R1 줄무늬 안 보임(인도),보고서추정,night
+train/frame_1111/f_1794387370336.jpg,sidewalk,t188 m1756 R1 줄무늬 안 보임(인도),보고서추정,night
+train/frame_1111/f_1794387371344.jpg,approach,t188 m1756 R2 붉은 자전거도로·인도 너머 정면 줄무늬,보고서추정,night
+train/frame_1111/f_1794387372346.jpg,approach,t188 m1756 R2 같음,보고서추정,night
+train/frame_1111/f_1794387373351.jpg,approach,t188 m1756 R2 붉은 자전거도로 너머 줄무늬,보고서추정,night
+train/frame_1111/f_1794387374389.jpg,approach,"t188 m1756 R2 발밑 붉은 자전거도로, 줄무늬 앞(진입 기록 뒤지만 사진상 아직 위 아님)",보고서추정,night
+train/frame_1111/f_1794387375478.jpg,approach,"t188 m1756 R2 발밑 붉은 포장·점자블록, 줄무늬 앞(진입 기록 뒤)",보고서추정,night
+train/frame_1111/f_1794387524057.jpg,approach,t188 m1758 R2 점자블록 너머 정면 줄무늬,보고서추정,night
+train/frame_1111/f_1794387525093.jpg,on,t188 m1758 R3 줄무늬가 화면 아래에서 시작(위),보고서추정,night
+train/frame_1111/f_1794387526149.jpg,on,t188 m1758 R3 줄무늬가 화면 아래에서 시작(위),보고서추정,night
+train/frame_1111/f_1794387527167.jpg,on,t188 m1758 R3 줄무늬가 화면 아래에서 시작(위),보고서추정,night
+train/frame_1111/f_1794387528206.jpg,on,t188 m1758 R3 줄무늬가 화면 아래에서 시작(위),보고서추정,night
+train/frame_1111/f_1794387529237.jpg,on,t188 m1758 R3 줄무늬가 화면 아래에서 시작(위),보고서추정,night
+train/frame_1111/f_1794387530335.jpg,sidewalk,t188 m1758 R1 줄무늬 안 보임,보고서추정,night
+train/frame_1111/f_1794387531337.jpg,sidewalk,t188 m1758 R1 줄무늬 안 보임,보고서추정,night
+train/frame_1111/f_1794387533379.jpg,approach,t188 m1758 R2 점자블록 너머 정면 줄무늬(진입 기록 뒤),보고서추정,night
+train/frame_1111/f_1794387534414.jpg,approach,t188 m1758 R2 점자블록 너머 정면 줄무늬(진입 기록 뒤),보고서추정,night
+train/frame_1111/f_1794388025027.jpg,sidewalk,t188 m1807a R1 줄무늬 안 보임(인도·연석),보고서추정,night
+train/frame_1111/f_1794388026037.jpg,sidewalk,t188 m1807a R1 줄무늬 안 보임(인도·연석),보고서추정,night
+train/frame_1111/f_1794388027046.jpg,sidewalk,t188 m1807a R1 줄무늬 안 보임(인도·연석),보고서추정,night
+train/frame_1111/f_1794388028047.jpg,sidewalk,t188 m1807a R1 줄무늬 안 보임(인도·연석),보고서추정,night
+train/frame_1111/f_1794388029077.jpg,sidewalk,t188 m1807a R1 줄무늬 안 보임(인도·연석),보고서추정,night
+train/frame_1111/f_1794388030153.jpg,sidewalk,t188 m1807a R1 줄무늬 안 보임(인도·연석),보고서추정,night
+train/frame_1111/f_1794388031185.jpg,sidewalk,t188 m1807a R1 줄무늬 안 보임(인도·연석),보고서추정,night
+train/frame_1111/f_1794388032238.jpg,road,t188 m1807a R6 사이가 차도뿐(표 밖),보고서추정,night
+train/frame_1111/f_1794388033306.jpg,road,t188 m1807a R6 사이가 차도뿐(표 밖),보고서추정,night
+train/frame_1111/f_1794388034323.jpg,road,t188 m1807a R6 사이가 차도뿐(표 밖),보고서추정,night
+train/frame_1111/f_1794388035342.jpg,on,t188 m1807b R3 줄무늬 위,보고서추정,night
+train/frame_1111/f_1794388036392.jpg,on,t188 m1807b R3 줄무늬 위,보고서추정,night
+train/frame_1111/f_1794388037430.jpg,on,t188 m1807b R3 줄무늬 위,보고서추정,night
+train/frame_1111/f_1794388038464.jpg,on,t188 m1807b R3 줄무늬 위,보고서추정,night
+train/frame_1111/f_1794388039486.jpg,on,t188 m1807b R3 줄무늬 위,보고서추정,night
+train/frame_1111/f_1794388040548.jpg,on,t188 m1807b R3 줄무늬 위,보고서추정,night
+train/frame_1111/f_1794388553870.jpg,sidewalk,t188 m1816 R1 줄무늬 안 보임,보고서추정,night
+train/frame_1111/f_1794388554889.jpg,sidewalk,t188 m1816 R1,보고서추정,night
+train/frame_1111/f_1794388555911.jpg,sidewalk,t188 m1816 R1,보고서추정,night
+train/frame_1111/f_1794388558017.jpg,approach,t188 m1816 R2 인도 너머 정면 줄무늬,보고서추정,night
+train/frame_1111/f_1794388559032.jpg,approach,t188 m1816 R2 같음,보고서추정,night
+train/frame_1111/f_1794388560046.jpg,approach,t188 m1816 R2 같음,보고서추정,night
+train/frame_1111/f_1794388561078.jpg,approach,t188 m1816 R2 인도·볼라드 너머 정면 줄무늬,보고서추정,night
+train/frame_1111/f_1794388562131.jpg,approach,t188 m1816 R2 같음,보고서추정,night
+train/frame_1111/f_1794388563142.jpg,approach,t188 m1816 R2 볼라드·붉은 연석 너머 줄무늬,보고서추정,night
+train/frame_1111/f_1794388565228.jpg,on,t188 m1816 R3 줄무늬 위,보고서추정,night
+train/frame_1111/f_1794388628856.jpg,approach,t188 m1817 R2 인도·붉은 포장 너머 정면 줄무늬,보고서추정,night
+train/frame_1111/f_1794388629857.jpg,approach,t188 m1817 R2 같음,보고서추정,night
+train/frame_1111/f_1794388630857.jpg,approach,t188 m1817 R2 같음,보고서추정,night
+train/frame_1111/f_1794388631899.jpg,approach,t188 m1817 R2 붉은 포장 너머 줄무늬,보고서추정,night
+train/frame_1111/f_1794388632925.jpg,approach,t188 m1817 R2 붉은 포장 너머 줄무늬(약간 흔들림),보고서추정,night
+train/frame_1111/f_1794388633937.jpg,approach,t188 m1817 R2 붉은 포장·볼라드 너머 줄무늬,보고서추정,night
+train/frame_1111/f_1794388634960.jpg,on,t188 m1817 R3 줄무늬가 화면 아래에서 시작,보고서추정,night
+train/frame_1111/f_1794388635976.jpg,on,t188 m1817 R3 줄무늬 위,보고서추정,night
+train/frame_1111/f_1794388855762.jpg,sidewalk,t188 m1821 R1 줄무늬 안 보임,보고서추정,night
+train/frame_1111/f_1794388856774.jpg,sidewalk,t188 m1821 R1 줄무늬 안 보임,보고서추정,night
+train/frame_1111/f_1794388857868.jpg,sidewalk,t188 m1821 R1 줄무늬 안 보임,보고서추정,night
+train/frame_1111/f_1794388858924.jpg,sidewalk,t188 m1821 R1 줄무늬 안 보임,보고서추정,night
+train/frame_1111/f_1794388859944.jpg,sidewalk,t188 m1821 R1 줄무늬 안 보임,보고서추정,night
+train/frame_1111/f_1794388863024.jpg,approach,t188 m1821 R2 연석 너머 줄무늬,보고서추정,night
+train/frame_1111/f_1794388864095.jpg,approach,t188 m1821 R2 연석 너머 줄무늬,보고서추정,night
+train/frame_1111/f_1794388865107.jpg,road,"t188 m1821 R6 발밑이 차도(아스팔트), 연석은 오른쪽 옆(표 밖) — 23장 시트 재확인에서 뺌",보고서추정,night
+train/frame_1111/f_1794388866107.jpg,on,t188 m1821 R3 줄무늬가 화면 아래에서 시작,보고서추정,night
+train/frame_1111/f_1794388600992.jpg,sidewalk,field_1111 7-5 '차도입니다' 18:16:41.9,보고서추정,night
+train/frame_1111/f_1794388605036.jpg,sidewalk,field_1111 7-5 '차도입니다' 18:16:45.2,보고서추정,night
+train/frame_1111/f_1794388884684.jpg,road,field_1111 7-5 '차도입니다' 18:21:24.7,보고서추정,night
+train/frame_1111/f_1794388887797.jpg,road,field_1111 7-5 '차도입니다' 18:21:27.9,보고서추정,night
+train/frame_1111/f_1794388890893.jpg,road,field_1111 7-5 '차도입니다' 18:21:31.1,보고서추정,night
+train/frame_1111/f_1794388902312.jpg,sidewalk,field_1111 7-5 '차도입니다' 18:21:42.6,보고서추정,night
+train/frame_1111/f_1794388922945.jpg,road,field_1111 7-5 '차도입니다' 18:22:03.1,보고서추정,night
+train/frame_1111/f_1794388926033.jpg,road,field_1111 7-5 '차도입니다' 18:22:06.2,보고서추정,night
+train/frame_1111/f_1794388929058.jpg,road,field_1111 7-5 '차도입니다' 18:22:09.3,보고서추정,night
+train/frame_1111/f_1794388934159.jpg,road,field_1111 7-5 '차도입니다' 18:22:14.2,보고서추정,night
+train/frame_1111/f_1794388955943.jpg,road,field_1111 7-5 '차도입니다' 18:22:36.2,보고서추정,night
+train/frame_1111/f_1794388958985.jpg,road,field_1111 7-5 '차도입니다' 18:22:39.4,보고서추정,night
+train/frame_1111/f_1794388962156.jpg,road,field_1111 7-5 '차도입니다' 18:22:42.5,보고서추정,night
+train/frame_1111/f_1794388965250.jpg,road,field_1111 7-5 '차도입니다' 18:22:45.9,보고서추정,night
+train/frame_1111/f_1794388968342.jpg,road,field_1111 7-5 '차도입니다' 18:22:49.1,보고서추정,night
+train/frame_1111/f_1794388984786.jpg,road,field_1111 7-5 '차도입니다' 18:23:05.3,보고서추정,night
+train/frame_1111/f_1794387386768.jpg,sidewalk,field_1111 7-5 '차도입니다' 17:56:27.2,보고서추정,night
+train/frame_1111/f_1794387389839.jpg,sidewalk,field_1111 7-5 '차도입니다' 17:56:30.3,보고서추정,night
+train/frame_1111/f_1794387917098.jpg,sidewalk,field_1111 7-5 '차도입니다' 18:05:17.9,보고서추정,night
+train/frame_1111/f_1794388292504.jpg,sidewalk,field_1111 7-5 '차도입니다' 18:11:33.2,보고서추정,night
+train/frame_1111/f_1794387271837.jpg,road,field_1111 7-5 '차도입니다' 17:54:32.0,보고서추정,night
+train/frame_1111/f_1794387275899.jpg,road,field_1111 7-5 '차도입니다' 17:54:36.8,보고서추정,night
+train/frame_1111/f_1794387281014.jpg,road,field_1111 7-5 '차도입니다' 17:54:41.7,보고서추정,night
+train/frame_1111/f_1794387979902.jpg,road,field_1111 7-5 '차도입니다' 18:06:20.0,보고서추정,night
+train/frames_1112/f_1794459234269.jpg,road,field_1112 6절 R1 13:53:54.6,보고서추정,day
+train/frames_1112/f_1794459237442.jpg,road,field_1112 6절 R2 13:53:57.8,보고서추정,day
+train/frames_1112/f_1794459289827.jpg,sidewalk,field_1112 6절 R3 13:54:50.8,보고서추정,day
+train/frames_1112/f_1794459317436.jpg,sidewalk,field_1112 6절 R4 13:55:17.9,보고서추정,day
+train/frames_1112/f_1794459350446.jpg,sidewalk,field_1112 6절 R6 13:55:50.7,보고서추정,day
+train/frames_1112/f_1794459322758.jpg,approach,field_1112 6절 R5 + 8-4 #3 줄무늬 보임 13:55:23.6,보고서추정,day
+train/frames_1112/f_1794459397527.jpg,approach,field_1112 6절 R7 + 8-4 #4 13:56:37.6,보고서추정,day
+train/frames_1112/f_1794460140846.jpg,approach,field_1112 6절 R12 + 8-4 #6 14:09:01.6,보고서추정,day
+train/frames_1112/f_1794459765849.jpg,approach,"field_1112 8-1 경계석, 앞 줄무늬 14:02:46.0",보고서추정,day
+train/frames_1112/f_1794459771067.jpg,approach,field_1112 8-1 경계석 14:02:52.0,보고서추정,day
+train/frames_1112/f_1794459895967.jpg,on,field_1112 8-1 실제 횡단 14:04:56.0,보고서추정,day
+train/frames_1112/f_1794459898198.jpg,on,field_1112 8-1 실제 횡단 14:04:59.0,보고서추정,day
+train/frames_1112/f_1794459901393.jpg,on,field_1112 8-1 실제 횡단 14:05:02.0,보고서추정,day
+train/frames_1112/f_1794459904522.jpg,on,field_1112 8-1 실제 횡단 14:05:05.0,보고서추정,day
+train/frames_1112/f_1794459907888.jpg,on,field_1112 8-1 실제 횡단 14:05:08.0,보고서추정,day
+train/frames_1112/f_1794459910044.jpg,on,field_1112 8-1 실제 횡단 14:05:11.0,보고서추정,day
+train/frames_1112/f_1794459913179.jpg,on,field_1112 8-1 실제 횡단 14:05:14.0,보고서추정,day

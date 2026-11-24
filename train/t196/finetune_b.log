@@ -1,0 +1,22 @@
+t196b: wet_w 0.3 road_w 0.3 road 19장
+step 20/200 aihub 0.4096 wet 0.9382 road 0.3511 (1.61s/step)
+step 40/200 aihub 0.3744 wet 0.4885 road 0.2002 (1.58s/step)
+step 60/200 aihub 0.3994 wet 0.3304 road 0.1444 (1.87s/step)
+step 80/200 aihub 0.3908 wet 0.2512 road 0.1148 (1.85s/step)
+step 100/200 aihub 0.4227 wet 0.2032 road 0.0963 (1.70s/step)
+step 120/200 aihub 0.4283 wet 0.1718 road 0.0825 (1.71s/step)
+step 140/200 aihub 0.4237 wet 0.1493 road 0.0724 (1.65s/step)
+step 160/200 aihub 0.4235 wet 0.1320 road 0.0650 (1.66s/step)
+step 180/200 aihub 0.4274 wet 0.1183 road 0.0589 (1.66s/step)
+step 200/200 aihub 0.4212 wet 0.1072 road 0.0541 (1.69s/step)
+저장 model/crosswalk_surface_t196b.pt 339 s
+val 4853 mIoU 0.5723 [0.6228, 0.8436, 0.8227, 0.7019, 0.582, 0.6087, 0.0607, 0.483, 0.4248] 272 s
+test 4718 mIoU 0.574 [0.6169, 0.8427, 0.816, 0.7031, 0.5836, 0.6214, 0.1343, 0.4333, 0.4151] 282 s
+wet_eval 16 차도 판정 0 평균 차도 0.0 평균 cw 0.977
+wet_train 17 차도 판정 0 평균 차도 0.0 평균 cw 0.97
+오안내 {'18:39:48.8 ★(학습쪽)': {'road': 0.0, 'cw': 1.0, 'side': 0.0}, '18:39:57.0 ★(학습쪽)': {'road': 0.0, 'cw': 1.0, 'side': 0.0}, '18:40:11.5 ★': {'road': 0.0, 'cw': 1.0, 'side': 0.0}, '18:40:16.7 ★': {'road': 0.0, 'cw': 1.0, 'side': 0.0}, '18:40:29.6 인도(#6)': {'road': 0.0, 'cw': 1.0, 'side': 0.0}, '18:44:18.8 인도 타일(#7)': {'road': 0.0, 'cw': 0.0, 'side': 1.0}}
+t193 road 23 차도 판정 20
+t193 on 22 차도 판정 3
+t193 approach 27 차도 판정 10
+t193 sidewalk 34 차도 판정 10
+exit=0

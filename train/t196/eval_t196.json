@@ -1,0 +1,1064 @@
+{
+ "model": "model/crosswalk_surface_t196.pt",
+ "val": {
+  "n": 4853,
+  "miou": 0.577,
+  "iou": [
+   0.6206,
+   0.846,
+   0.8245,
+   0.7295,
+   0.5954,
+   0.6062,
+   0.0648,
+   0.4884,
+   0.4173
+  ],
+  "front": {
+   "인도": [
+    2871,
+    3040,
+    3007
+   ],
+   "차도": [
+    1706,
+    1830,
+    1885
+   ],
+   "횡단보도": [
+    118,
+    130,
+    154
+   ],
+   "점자블록 선형": [
+    128,
+    132,
+    165
+   ],
+   "점자블록 점형": [
+    164,
+    183,
+    205
+   ],
+   "계단": [
+    0,
+    6,
+    6
+   ],
+   "맨홀·그레이팅": [
+    166,
+    178,
+    213
+   ],
+   "가로수 구역": [
+    37,
+    37,
+    62
+   ]
+  },
+  "sec": 272
+ },
+ "test": {
+  "n": 4718,
+  "miou": 0.5788,
+  "iou": [
+   0.6152,
+   0.845,
+   0.8176,
+   0.7255,
+   0.5972,
+   0.6152,
+   0.1509,
+   0.4375,
+   0.4055
+  ],
+  "front": {
+   "인도": [
+    2801,
+    2953,
+    2944
+   ],
+   "차도": [
+    1606,
+    1727,
+    1790
+   ],
+   "횡단보도": [
+    123,
+    129,
+    172
+   ],
+   "점자블록 선형": [
+    125,
+    131,
+    163
+   ],
+   "점자블록 점형": [
+    161,
+    171,
+    185
+   ],
+   "계단": [
+    2,
+    9,
+    8
+   ],
+   "맨홀·그레이팅": [
+    149,
+    164,
+    210
+   ],
+   "가로수 구역": [
+    43,
+    50,
+    73
+   ]
+  },
+  "sec": 276
+ },
+ "wet_eval": {
+  "f_1794994807281.jpg": {
+   "road": 0.0,
+   "cw": 0.694,
+   "side": 0.306
+  },
+  "f_1794994808312.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994809352.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994810384.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994811461.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994812490.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994813539.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994814562.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994815642.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994816671.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994817671.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994818672.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994819672.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994820720.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994821794.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994822811.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  }
+ },
+ "wet_train": {
+  "f_1794994786705.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994787718.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994788769.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994789794.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994790834.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994791865.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994792871.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994793874.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994794921.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994795942.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994796983.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994797987.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994798991.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994800029.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994801076.jpg": {
+   "road": 0.0,
+   "cw": 0.828,
+   "side": 0.172
+  },
+  "f_1794994802090.jpg": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "f_1794994803106.jpg": {
+   "road": 0.0,
+   "cw": 0.986,
+   "side": 0.014
+  }
+ },
+ "mistake": {
+  "18:39:48.8 ★(학습쪽)": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "18:39:57.0 ★(학습쪽)": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "18:40:11.5 ★": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "18:40:16.7 ★": {
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "18:40:29.6 인도(#6)": {
+   "road": 0.0,
+   "cw": 0.838,
+   "side": 0.075
+  },
+  "18:44:18.8 인도 타일(#7)": {
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 1.0
+  }
+ },
+ "t193": {
+  "train/frame_1111/f_1794387364160.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.186,
+   "side": 0.468
+  },
+  "train/frame_1111/f_1794387365194.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 0.225
+  },
+  "train/frame_1111/f_1794387366218.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 1.0
+  },
+  "train/frame_1111/f_1794387367235.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 1.0
+  },
+  "train/frame_1111/f_1794387368235.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 0.831
+  },
+  "train/frame_1111/f_1794387369237.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 0.534
+  },
+  "train/frame_1111/f_1794387370336.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 1.0
+  },
+  "train/frame_1111/f_1794387371344.jpg": {
+   "label": "approach",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 0.968
+  },
+  "train/frame_1111/f_1794387372346.jpg": {
+   "label": "approach",
+   "cond": "night",
+   "road": 0.001,
+   "cw": 0.178,
+   "side": 0.413
+  },
+  "train/frame_1111/f_1794387373351.jpg": {
+   "label": "approach",
+   "cond": "night",
+   "road": 0.087,
+   "cw": 0.913,
+   "side": 0.0
+  },
+  "train/frame_1111/f_1794387374389.jpg": {
+   "label": "approach",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "train/frame_1111/f_1794387375478.jpg": {
+   "label": "approach",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.994,
+   "side": 0.0
+  },
+  "train/frame_1111/f_1794387524057.jpg": {
+   "label": "approach",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.138,
+   "side": 0.408
+  },
+  "train/frame_1111/f_1794387525093.jpg": {
+   "label": "on",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.964,
+   "side": 0.036
+  },
+  "train/frame_1111/f_1794387526149.jpg": {
+   "label": "on",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "train/frame_1111/f_1794387527167.jpg": {
+   "label": "on",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.94,
+   "side": 0.06
+  },
+  "train/frame_1111/f_1794387528206.jpg": {
+   "label": "on",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "train/frame_1111/f_1794387529237.jpg": {
+   "label": "on",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.956,
+   "side": 0.013
+  },
+  "train/frame_1111/f_1794387530335.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.606,
+   "side": 0.132
+  },
+  "train/frame_1111/f_1794387531337.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 0.531
+  },
+  "train/frame_1111/f_1794387533379.jpg": {
+   "label": "approach",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.721,
+   "side": 0.037
+  },
+  "train/frame_1111/f_1794387534414.jpg": {
+   "label": "approach",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.272,
+   "side": 0.447
+  },
+  "train/frame_1111/f_1794388025027.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 1.0
+  },
+  "train/frame_1111/f_1794388026037.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 1.0
+  },
+  "train/frame_1111/f_1794388027046.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 0.985
+  },
+  "train/frame_1111/f_1794388028047.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 0.786
+  },
+  "train/frame_1111/f_1794388029077.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 1.0
+  },
+  "train/frame_1111/f_1794388030153.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 0.583
+  },
+  "train/frame_1111/f_1794388031185.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.27,
+   "cw": 0.0,
+   "side": 0.721
+  },
+  "train/frame_1111/f_1794388032238.jpg": {
+   "label": "road",
+   "cond": "night",
+   "road": 0.002,
+   "cw": 0.0,
+   "side": 0.518
+  },
+  "train/frame_1111/f_1794388033306.jpg": {
+   "label": "road",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 0.972
+  },
+  "train/frame_1111/f_1794388034323.jpg": {
+   "label": "road",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.41,
+   "side": 0.208
+  },
+  "train/frame_1111/f_1794388035342.jpg": {
+   "label": "on",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 1.0
+  },
+  "train/frame_1111/f_1794388036392.jpg": {
+   "label": "on",
+   "cond": "night",
+   "road": 0.178,
+   "cw": 0.545,
+   "side": 0.276
+  },
+  "train/frame_1111/f_1794388037430.jpg": {
+   "label": "on",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.377,
+   "side": 0.417
+  },
+  "train/frame_1111/f_1794388038464.jpg": {
+   "label": "on",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 1.0
+  },
+  "train/frame_1111/f_1794388039486.jpg": {
+   "label": "on",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.405,
+   "side": 0.595
+  },
+  "train/frame_1111/f_1794388040548.jpg": {
+   "label": "on",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.964,
+   "side": 0.036
+  },
+  "train/frame_1111/f_1794388553870.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.832,
+   "side": 0.002
+  },
+  "train/frame_1111/f_1794388554889.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 0.256
+  },
+  "train/frame_1111/f_1794388555911.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 0.983
+  },
+  "train/frame_1111/f_1794388558017.jpg": {
+   "label": "approach",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 1.0
+  },
+  "train/frame_1111/f_1794388559032.jpg": {
+   "label": "approach",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 1.0
+  },
+  "train/frame_1111/f_1794388560046.jpg": {
+   "label": "approach",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 0.997
+  },
+  "train/frame_1111/f_1794388561078.jpg": {
+   "label": "approach",
+   "cond": "night",
+   "road": 0.425,
+   "cw": 0.0,
+   "side": 0.575
+  },
+  "train/frame_1111/f_1794388562131.jpg": {
+   "label": "approach",
+   "cond": "night",
+   "road": 0.028,
+   "cw": 0.115,
+   "side": 0.857
+  },
+  "train/frame_1111/f_1794388563142.jpg": {
+   "label": "approach",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "train/frame_1111/f_1794388565228.jpg": {
+   "label": "on",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "train/frame_1111/f_1794388628856.jpg": {
+   "label": "approach",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 1.0
+  },
+  "train/frame_1111/f_1794388629857.jpg": {
+   "label": "approach",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 1.0
+  },
+  "train/frame_1111/f_1794388630857.jpg": {
+   "label": "approach",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 0.349
+  },
+  "train/frame_1111/f_1794388631899.jpg": {
+   "label": "approach",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 0.094
+  },
+  "train/frame_1111/f_1794388632925.jpg": {
+   "label": "approach",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 0.933
+  },
+  "train/frame_1111/f_1794388633937.jpg": {
+   "label": "approach",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.009,
+   "side": 0.06
+  },
+  "train/frame_1111/f_1794388634960.jpg": {
+   "label": "on",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.564,
+   "side": 0.303
+  },
+  "train/frame_1111/f_1794388635976.jpg": {
+   "label": "on",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "train/frame_1111/f_1794388855762.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 0.0
+  },
+  "train/frame_1111/f_1794388856774.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 0.0
+  },
+  "train/frame_1111/f_1794388857868.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 0.034
+  },
+  "train/frame_1111/f_1794388858924.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 0.771
+  },
+  "train/frame_1111/f_1794388859944.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 0.0
+  },
+  "train/frame_1111/f_1794388863024.jpg": {
+   "label": "approach",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 0.658
+  },
+  "train/frame_1111/f_1794388864095.jpg": {
+   "label": "approach",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.022,
+   "side": 0.015
+  },
+  "train/frame_1111/f_1794388865107.jpg": {
+   "label": "road",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.764,
+   "side": 0.091
+  },
+  "train/frame_1111/f_1794388866107.jpg": {
+   "label": "on",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.86,
+   "side": 0.0
+  },
+  "train/frame_1111/f_1794388600992.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.945,
+   "cw": 0.055,
+   "side": 0.0
+  },
+  "train/frame_1111/f_1794388605036.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 1.0,
+   "cw": 0.0,
+   "side": 0.0
+  },
+  "train/frame_1111/f_1794388884684.jpg": {
+   "label": "road",
+   "cond": "night",
+   "road": 1.0,
+   "cw": 0.0,
+   "side": 0.0
+  },
+  "train/frame_1111/f_1794388887797.jpg": {
+   "label": "road",
+   "cond": "night",
+   "road": 1.0,
+   "cw": 0.0,
+   "side": 0.0
+  },
+  "train/frame_1111/f_1794388890893.jpg": {
+   "label": "road",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 1.0
+  },
+  "train/frame_1111/f_1794388902312.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 1.0
+  },
+  "train/frame_1111/f_1794388922945.jpg": {
+   "label": "road",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 1.0
+  },
+  "train/frame_1111/f_1794388926033.jpg": {
+   "label": "road",
+   "cond": "night",
+   "road": 0.675,
+   "cw": 0.0,
+   "side": 0.286
+  },
+  "train/frame_1111/f_1794388929058.jpg": {
+   "label": "road",
+   "cond": "night",
+   "road": 0.966,
+   "cw": 0.0,
+   "side": 0.0
+  },
+  "train/frame_1111/f_1794388934159.jpg": {
+   "label": "road",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 0.985
+  },
+  "train/frame_1111/f_1794388955943.jpg": {
+   "label": "road",
+   "cond": "night",
+   "road": 1.0,
+   "cw": 0.0,
+   "side": 0.0
+  },
+  "train/frame_1111/f_1794388958985.jpg": {
+   "label": "road",
+   "cond": "night",
+   "road": 1.0,
+   "cw": 0.0,
+   "side": 0.0
+  },
+  "train/frame_1111/f_1794388962156.jpg": {
+   "label": "road",
+   "cond": "night",
+   "road": 0.999,
+   "cw": 0.0,
+   "side": 0.001
+  },
+  "train/frame_1111/f_1794388965250.jpg": {
+   "label": "road",
+   "cond": "night",
+   "road": 0.941,
+   "cw": 0.0,
+   "side": 0.0
+  },
+  "train/frame_1111/f_1794388968342.jpg": {
+   "label": "road",
+   "cond": "night",
+   "road": 0.693,
+   "cw": 0.287,
+   "side": 0.0
+  },
+  "train/frame_1111/f_1794388984786.jpg": {
+   "label": "road",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 1.0
+  },
+  "train/frame_1111/f_1794387386768.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.006,
+   "cw": 0.016,
+   "side": 0.978
+  },
+  "train/frame_1111/f_1794387389839.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.998,
+   "cw": 0.0,
+   "side": 0.002
+  },
+  "train/frame_1111/f_1794387917098.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.421,
+   "cw": 0.0,
+   "side": 0.0
+  },
+  "train/frame_1111/f_1794388292504.jpg": {
+   "label": "sidewalk",
+   "cond": "night",
+   "road": 0.014,
+   "cw": 0.001,
+   "side": 0.819
+  },
+  "train/frame_1111/f_1794387271837.jpg": {
+   "label": "road",
+   "cond": "night",
+   "road": 0.226,
+   "cw": 0.0,
+   "side": 0.774
+  },
+  "train/frame_1111/f_1794387275899.jpg": {
+   "label": "road",
+   "cond": "night",
+   "road": 0.081,
+   "cw": 0.0,
+   "side": 0.908
+  },
+  "train/frame_1111/f_1794387281014.jpg": {
+   "label": "road",
+   "cond": "night",
+   "road": 0.0,
+   "cw": 0.967,
+   "side": 0.033
+  },
+  "train/frame_1111/f_1794387979902.jpg": {
+   "label": "road",
+   "cond": "night",
+   "road": 0.581,
+   "cw": 0.002,
+   "side": 0.199
+  },
+  "train/frames_1112/f_1794459234269.jpg": {
+   "label": "road",
+   "cond": "day",
+   "road": 0.054,
+   "cw": 0.845,
+   "side": 0.101
+  },
+  "train/frames_1112/f_1794459237442.jpg": {
+   "label": "road",
+   "cond": "day",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 0.976
+  },
+  "train/frames_1112/f_1794459289827.jpg": {
+   "label": "sidewalk",
+   "cond": "day",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 1.0
+  },
+  "train/frames_1112/f_1794459317436.jpg": {
+   "label": "sidewalk",
+   "cond": "day",
+   "road": 0.0,
+   "cw": 0.079,
+   "side": 0.921
+  },
+  "train/frames_1112/f_1794459350446.jpg": {
+   "label": "sidewalk",
+   "cond": "day",
+   "road": 0.107,
+   "cw": 0.0,
+   "side": 0.885
+  },
+  "train/frames_1112/f_1794459322758.jpg": {
+   "label": "approach",
+   "cond": "day",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 1.0
+  },
+  "train/frames_1112/f_1794459397527.jpg": {
+   "label": "approach",
+   "cond": "day",
+   "road": 1.0,
+   "cw": 0.0,
+   "side": 0.0
+  },
+  "train/frames_1112/f_1794460140846.jpg": {
+   "label": "approach",
+   "cond": "day",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 1.0
+  },
+  "train/frames_1112/f_1794459765849.jpg": {
+   "label": "approach",
+   "cond": "day",
+   "road": 0.0,
+   "cw": 0.539,
+   "side": 0.135
+  },
+  "train/frames_1112/f_1794459771067.jpg": {
+   "label": "approach",
+   "cond": "day",
+   "road": 0.0,
+   "cw": 0.123,
+   "side": 0.811
+  },
+  "train/frames_1112/f_1794459895967.jpg": {
+   "label": "on",
+   "cond": "day",
+   "road": 0.0,
+   "cw": 0.971,
+   "side": 0.029
+  },
+  "train/frames_1112/f_1794459898198.jpg": {
+   "label": "on",
+   "cond": "day",
+   "road": 0.0,
+   "cw": 0.923,
+   "side": 0.077
+  },
+  "train/frames_1112/f_1794459901393.jpg": {
+   "label": "on",
+   "cond": "day",
+   "road": 0.0,
+   "cw": 0.0,
+   "side": 0.957
+  },
+  "train/frames_1112/f_1794459904522.jpg": {
+   "label": "on",
+   "cond": "day",
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "train/frames_1112/f_1794459907888.jpg": {
+   "label": "on",
+   "cond": "day",
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  },
+  "train/frames_1112/f_1794459910044.jpg": {
+   "label": "on",
+   "cond": "day",
+   "road": 0.0,
+   "cw": 0.733,
+   "side": 0.267
+  },
+  "train/frames_1112/f_1794459913179.jpg": {
+   "label": "on",
+   "cond": "day",
+   "road": 0.0,
+   "cw": 1.0,
+   "side": 0.0
+  }
+ }
+}
