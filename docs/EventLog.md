@@ -109,7 +109,7 @@
 | `slot_full` | 대기 슬롯을 먼저 온 P1이 차지 (T108) | 버림 |
 | `after_p0` | 대기하던 진입 안내를 P0가 끝난 직후 최소 간격 없이 끼워 넣음 (T131) | 즉시 |
 | `p0_cut` | 대기하던 진입 안내를, 재생 중인 P0가 다른 P0에 끊기는 순간 끼워 넣음 — 끊으려던 P0는 `say.defer` why=insert로 기다림 (T132 ①) | 즉시 (재생 중인 P0를 끊음) |
-| `walk.start` / `walk.stop` / `walk.area` / `walk.data` / `walk.info` / `walk.route_start` / `walk.turn` / `walk.offroute` / `walk.reroute` / `walk.error` | T198 보행 정보: 켬·끔, 시군구 바뀜, 받은 건수, 앞에 횡단보도 뒤 정보 문장, 경로 시작, 턴·도착 안내, 경로 이탈·재탐색, 실패 | `area`(시도\|시군구), `std`·`signlamp`(건수), `src`·`text`, `dest`·`m`(경로 길이)·`guides`, `n`(재탐색 횟수), `ok`, `where`·`e` — **좌표는 남기지 않는다** | `walk_info.dart` |
+| `walk.start` / `walk.stop` / `walk.area` / `walk.data` / `walk.info` / `walk.search` / `walk.route_start` / `walk.turn` / `walk.offroute` / `walk.reroute` / `walk.error` | T198 보행 정보: 켬·끔, 시군구 바뀜, 받은 건수, 앞에 횡단보도 뒤 정보 문장, 목적지 검색(T205), 경로 시작, 턴·도착 안내, 경로 이탈·재탐색, 실패 | `area`(시도\|시군구), `std`·`signlamp`(건수), `src`·`text`, `dest`·`m`(경로 길이)·`guides`, `n`(재탐색 횟수 / `walk.search`는 결과 수), `ok`, `where`·`e` — **좌표는 남기지 않는다** | `walk_info.dart` |
 
 ## 5. 쓰는 법
 

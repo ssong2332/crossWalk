@@ -73,4 +73,49 @@ void main() {
     unawaited(s.dispose());
     await tester.pump(const Duration(seconds: 1));
   });
+
+  group('T205 목적지 검색', () {
+    const near = Place('가까운 곳', 37, 127, 350);
+    const far = Place('먼 곳', 35, 129, 250000);
+    const mid = Place('중간', 37.1, 127, 12340);
+
+    test('20km 넘는 결과는 뒤로, 나머지는 티맵 순서 그대로', () {
+      expect(orderPlaces([far, mid, near]).map((p) => p.name),
+          ['중간', '가까운 곳', '먼 곳']);
+    });
+
+    test('거리 말: 1km 미만 10m 단위(최소 10), 이상 0.1km 단위', () {
+      expect(placeDistance(346, AppLanguage.ko), '350미터');
+      expect(placeDistance(3, AppLanguage.ko), '10미터');
+      expect(placeDistance(12340, AppLanguage.ko), '12.3킬로미터');
+      expect(placeDistance(1000, AppLanguage.en), '1.0 kilometers');
+    });
+
+    test('목록 읽기 문장', () {
+      expect(placesSpeech([near, mid], AppLanguage.ko),
+          '검색 결과 2곳. 1번, 가까운 곳, 350미터. 2번, 중간, 12.3킬로미터. 안내할 곳을 고르세요');
+    });
+
+    test('SingleFlight: 진행 중 두 번째 요청은 버린다(한 번만 시작)', () async {
+      final f = SingleFlight();
+      var calls = 0;
+      final done = Completer<void>();
+      final a = f.run(() async {
+        calls++;
+        await done.future;
+        return 1;
+      });
+      final b = f.run(() async {
+        calls++;
+        return 2;
+      });
+      expect(f.busy, isTrue);
+      expect(await b, isNull);
+      done.complete();
+      expect(await a, 1);
+      expect(calls, 1);
+      expect(f.busy, isFalse);
+      expect(await f.run(() async => 3), 3);
+    });
+  });
 }

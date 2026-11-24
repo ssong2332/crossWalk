@@ -123,6 +123,70 @@ class WalkStrings {
   }
 }
 
+/// T205: 목적지 검색 결과 수.
+const int kPlaceCount = 5;
+
+/// T205: 이보다 먼 검색 결과(m)는 목록 뒤로 보낸다(표시는 함).
+const double kPlaceFarM = 20000;
+
+/// T205: 목적지 검색 결과 한 곳. [distM] = 현재 위치에서 직선 거리(m).
+@immutable
+class Place {
+  final String name;
+  final double lat;
+  final double lon;
+  final double distM;
+  const Place(this.name, this.lat, this.lon, this.distM);
+}
+
+/// T205: [kPlaceFarM] 안은 티맵 순서 그대로 앞에, 넘는 것은 뒤에(서로는 티맵 순서).
+List<Place> orderPlaces(List<Place> ps) => [
+      ...ps.where((p) => p.distM <= kPlaceFarM),
+      ...ps.where((p) => p.distM > kPlaceFarM),
+    ];
+
+/// T205: 거리 말·글자 — 1km 미만은 10m 단위, 이상은 0.1km 단위.
+String placeDistance(double m, AppLanguage lang) {
+  final ko = lang == AppLanguage.ko;
+  if (m < 1000) {
+    final r = math.max(10, (m / 10).round() * 10);
+    return ko ? '$r미터' : '$r meters';
+  }
+  final km = (m / 100).round() / 10;
+  return ko ? '$km킬로미터' : '$km kilometers';
+}
+
+/// T205: 검색 결과를 읽는 문장. "검색 결과 2곳. 1번, 시청역, 350미터. 2번, …"
+String placesSpeech(List<Place> ps, AppLanguage lang) {
+  final ko = lang == AppLanguage.ko;
+  final items = [
+    for (var i = 0; i < ps.length; i++)
+      ko
+          ? '${i + 1}번, ${ps[i].name}, ${placeDistance(ps[i].distM, lang)}'
+          : '${i + 1}, ${ps[i].name}, ${placeDistance(ps[i].distM, lang)}',
+  ];
+  final head = ko ? '검색 결과 ${ps.length}곳' : '${ps.length} results';
+  final tail = ko ? '안내할 곳을 고르세요' : 'Choose one to start';
+  return '$head. ${items.join('. ')}. $tail';
+}
+
+/// T205: 진행 중이면 새 요청을 버린다 — 키보드 '이동'과 버튼이 같이 눌려도 한 번만.
+class SingleFlight {
+  bool _busy = false;
+  bool get busy => _busy;
+
+  /// 이미 진행 중이면 [f]를 부르지 않고 null.
+  Future<T?> run<T>(Future<T> Function() f) async {
+    if (_busy) return null;
+    _busy = true;
+    try {
+      return await f();
+    } finally {
+      _busy = false;
+    }
+  }
+}
+
 /// 위치를 받아 주변 횡단보도 정보를 모으고, 경로 안내를 돌린다.
 class WalkInfoService {
   WalkInfoService._();
@@ -325,34 +389,45 @@ class WalkInfoService {
     return out;
   }
 
-  /// 목적지 검색 -> 경로 받기. 성공하면 null, 실패하면 이유.
-  Future<String?> startRoute(String keyword) async {
+  /// T205: 목적지 검색 — 티맵 POI 최대 [kPlaceCount]곳을 현재 위치에서 거리와 함께
+  /// [orderPlaces] 순서로. 실패하면 이유(`not_running`/`no_position`/`no_place`/`network`).
+  Future<({List<Place> places, String? why})> searchPlaces(String keyword) async {
     final pos = _last;
-    if (!running) return 'not_running';
-    if (pos == null) return 'no_position';
+    if (!running) return (places: const <Place>[], why: 'not_running');
+    if (pos == null) return (places: const <Place>[], why: 'no_position');
     try {
       final poi = await _getJson(
           Uri.https('apis.openapi.sk.com', '/tmap/pois', {
             'version': '1',
             'searchKeyword': keyword,
-            'count': '1',
+            'count': '$kPlaceCount',
             'resCoordType': 'WGS84GEO',
             'reqCoordType': 'WGS84GEO',
           }),
           headers: {'appKey': kTmapKey});
-      final pois = poi['searchPoiInfo']?['pois']?['poi'] as List?;
-      if (pois == null || pois.isEmpty) return 'no_place';
-      final p = pois.first as Map;
-      _limiter = RerouteLimiter();
-      return _routeTo((
-        lat: double.parse('${p['frontLat']}'),
-        lon: double.parse('${p['frontLon']}'),
-        name: '${p['name']}',
-      ));
+      final pois = poi['searchPoiInfo']?['pois']?['poi'] as List? ?? const [];
+      final out = <Place>[];
+      for (final p in pois) {
+        final m = p as Map;
+        final lat = _num(m['frontLat']), lon = _num(m['frontLon']);
+        if (lat == null || lon == null) continue;
+        out.add(Place('${m['name']}', lat, lon,
+            distanceM(pos.latitude, pos.longitude, lat, lon)));
+      }
+      EventLog.instance.log('walk.search', {'n': out.length});
+      if (out.isEmpty) return (places: const <Place>[], why: 'no_place');
+      return (places: orderPlaces(out), why: null);
     } catch (e) {
       EventLog.instance.log('walk.error', {'where': 'poi', 'e': '$e'});
-      return 'network';
+      return (places: const <Place>[], why: 'network');
     }
+  }
+
+  /// 고른 [place]까지 경로 안내를 시작한다. 성공하면 null, 실패하면 이유.
+  Future<String?> startRouteTo(Place place) {
+    if (!running) return Future.value('not_running');
+    _limiter = RerouteLimiter();
+    return _routeTo((lat: place.lat, lon: place.lon, name: place.name));
   }
 
   /// 현재 위치에서 [dest]까지 경로를 받아 안내를 (다시) 시작한다.
