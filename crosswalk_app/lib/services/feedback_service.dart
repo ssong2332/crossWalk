@@ -352,7 +352,10 @@ class FeedbackService {
   /// 막으면 `{rule, ...}`(기록용), 아니면 null.
   @visibleForTesting
   Map<String, Object>? noWalkCrossed(DateTime from, DateTime now) {
-    if (_stillSpans.isNotEmpty && _stillSpans.last.$2 == null) {
+    // 감사 13: 센서가 멈춰(stale) 구간이 열린 채 남았으면 서 있음으로 보지 않는다.
+    if (_stillSpans.isNotEmpty &&
+        _stillSpans.last.$2 == null &&
+        stillness.isStillAt(now)) {
       return {
         'rule': 'still',
         'still_ms': now.difference(_stillSpans.last.$1).inMilliseconds,

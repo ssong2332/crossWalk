@@ -12,6 +12,7 @@
 // source under the pub cache (see each mock's comment for the exact file),
 // not guessed — matching this repo's established verification discipline
 // (see docs/Tasks.md T24/T25 notes).
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
@@ -174,6 +175,36 @@ void main() {
         expect(errorCardFinder(), findsOneWidget);
       },
     );
+  });
+
+  group('감사 3: 초기화 중 화면이 닫히면', () {
+    testWidgets('권한 응답이 dispose 뒤에 와도 다음 단계(모델·카메라·오류 안내)로 가지 않는다',
+        (tester) async {
+      final answer = Completer<Map<int, int>>();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(permissionChannel, (call) async {
+        if (call.method == 'requestPermissions') return answer.future;
+        return null;
+      });
+      final ttsCalls = <String>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(ttsChannel, (call) async {
+        ttsCalls.add(call.method);
+        return 1;
+      });
+
+      await tester.pumpWidget(const MaterialApp(home: CameraScreen()));
+      await tester.pump();
+      await tester.pumpWidget(const SizedBox()); // 화면 닫힘(dispose)
+      ttsCalls.clear();
+      answer.complete({cameraPermissionValue: 1}); // granted
+      await tester.pump();
+      await tester.pump();
+
+      expect(ttsCalls, isNot(contains('speak')),
+          reason: '닫힌 뒤 setState 예외 → 오류 안내가 나오면 안 된다');
+      expect(tester.takeException(), isNull);
+    });
   });
 
   group('CameraScreen — _hasError card + retry (permanent denial)', () {
