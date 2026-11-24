@@ -3,10 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:geolocator/geolocator.dart';
 import 'package:meta/meta.dart';
-import 'package:sensors_plus/sensors_plus.dart';
 
 import '../localization/app_strings.dart';
 import 'event_log.dart';
@@ -125,24 +123,6 @@ class WalkStrings {
   }
 }
 
-/// 카메라 위 경로 층(바닥 화살표·미니맵)이 그릴 것. 경로가 없으면 null.
-@immutable
-class RouteView {
-  final RouteGeometry geo;
-  final math.Point<double> me;
-  final double s;
-  final double? heading;
-
-  /// 화살표 진하기(1 또렷 · 0.35 흐리게 · 0 숨김) — [arrowAlpha].
-  final double alpha;
-  final List<math.Point<double>> arrow;
-
-  /// 미니맵 밑 짧은 글자(예: "20m 왼쪽"). 없으면 null.
-  final String? caption;
-  const RouteView(this.geo, this.me, this.s, this.heading, this.alpha,
-      this.arrow, this.caption);
-}
-
 /// 위치를 받아 주변 횡단보도 정보를 모으고, 경로 안내를 돌린다.
 class WalkInfoService {
   WalkInfoService._();
@@ -160,21 +140,10 @@ class WalkInfoService {
   final _offRoute = OffRouteDetector();
   RerouteLimiter _limiter = RerouteLimiter();
   bool _rerouting = false;
-  StreamSubscription<MagnetometerEvent>? _magSub;
-  StreamSubscription<AccelerometerEvent>? _accSub;
-  List<double>? _gravity;
-  final _compass = <double>[];
-  DateTime? _viewAt;
-
-  /// 카메라 위 경로 층이 듣는다(RouteOverlay).
-  final ValueNotifier<RouteView?> view = ValueNotifier(null);
 
   bool get running => _sub != null;
   NavGuide? get nav => _nav;
   String? get destName => _dest?.name;
-
-  /// 횡단 중이면 경로 화살표를 숨긴다(기존 횡단 방향 화살표와 겹치지 않게).
-  bool get onCrosswalk => _feedback?.onCrosswalk ?? false;
 
   static bool get keysReady =>
       kTmapKey.isNotEmpty && kDataGoKrKey.isNotEmpty;
@@ -250,7 +219,6 @@ class WalkInfoService {
         unawaited(_reroute(dest));
       }
     }
-    _publish(force: true);
   }
 
   Future<void> _reroute(({double lat, double lon, String name}) dest) async {
@@ -258,92 +226,6 @@ class WalkInfoService {
     final why = await _routeTo(dest);
     _rerouting = false;
     EventLog.instance.log('walk.reroute', {'ok': why == null});
-  }
-
-  /// 걷는 중(0.8m/s 이상, 추정)엔 GPS 진행 방향, 아니면 나침반.
-  ({double? heading, bool fromGps}) _heading() {
-    final pos = _last;
-    if (pos != null && pos.speed >= 0.8 && pos.heading >= 0) {
-      return (heading: pos.heading, fromGps: true);
-    }
-    return (heading: _compass.isEmpty ? null : _compass.last, fromGps: false);
-  }
-
-  void _publish({bool force = false}) {
-    final nav = _nav;
-    final pos = _last;
-    if (nav == null || pos == null) {
-      view.value = null;
-      return;
-    }
-    final now = DateTime.now();
-    final last = _viewAt;
-    // 나침반은 초당 수십 번 — 그리기는 초당 5번까지만.
-    if (!force && last != null && now.difference(last).inMilliseconds < 200) {
-      return;
-    }
-    _viewAt = now;
-    final me = nav.geo.frame.toXY(pos.latitude, pos.longitude);
-    final fix = nav.geo.locate(me);
-    final h = _heading();
-    final alpha = arrowAlpha(
-        heading: h.heading,
-        gpsAccuracy: pos.accuracy,
-        fromGps: h.fromGps,
-        compassSpread: headingSpread(_compass));
-    final turn = nav.nextTurn(fix.s);
-    final ahead = turn == null ? null : math.max(0.0, turn.s - fix.s);
-    final lang = _feedback?.language ?? AppLanguage.ko;
-    final heading = h.heading;
-    view.value = RouteView(
-      nav.geo,
-      me,
-      fix.s,
-      heading,
-      alpha,
-      heading == null
-          ? const []
-          : arrowPath(
-              routeBearing: nav.geo.bearingAt(fix.s),
-              heading: heading,
-              turnAhead: ahead,
-              turnBearing: turn == null ? null : nav.geo.bearingAt(turn.s + 3)),
-      turn == null || ahead == null || ahead > kTurnPreM
-          ? null
-          : '${roundTo10(ahead)}m ${turnPhrase(turn.turnType, lang)}',
-    );
-  }
-
-  void _startCompass() {
-    _accSub ??= accelerometerEventStream().listen((e) {
-      // 저역 통과로 중력만 남긴다(걸음 흔들림 제거).
-      final g = _gravity;
-      _gravity = g == null
-          ? [e.x, e.y, e.z]
-          : [
-              g[0] * 0.9 + e.x * 0.1,
-              g[1] * 0.9 + e.y * 0.1,
-              g[2] * 0.9 + e.z * 0.1,
-            ];
-    }, onError: (Object _) {});
-    _magSub ??= magnetometerEventStream().listen((e) {
-      final g = _gravity;
-      if (g == null) return;
-      final h = compassHeading(g, [e.x, e.y, e.z]);
-      if (h == null) return;
-      _compass.add(h);
-      if (_compass.length > 10) _compass.removeAt(0);
-      _publish();
-    }, onError: (Object _) {});
-  }
-
-  void _stopCompass() {
-    unawaited(_accSub?.cancel());
-    unawaited(_magSub?.cancel());
-    _accSub = null;
-    _magSub = null;
-    _gravity = null;
-    _compass.clear();
   }
 
   /// 판정표 1·2행: 표준데이터 30m 안 -> 없으면 Signlamp 30m 안 -> 없으면 침묵.
@@ -497,13 +379,11 @@ class WalkInfoService {
       _dest = dest;
       _nav = NavGuide(g);
       _offRoute.reset();
-      _startCompass();
       EventLog.instance.log('walk.route_start', {
         'dest': dest.name,
         'm': g.length.round(),
         'guides': g.guides.length,
       });
-      _publish(force: true);
       return null;
     } catch (e) {
       EventLog.instance.log('walk.error', {'where': 'route', 'e': '$e'});
@@ -514,8 +394,6 @@ class WalkInfoService {
   void stopRoute() {
     _nav = null;
     _dest = null;
-    _stopCompass();
-    view.value = null;
   }
 
   static Future<Map<String, dynamic>> _getJson(Uri uri,

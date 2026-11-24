@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:crosswalk_app/localization/app_strings.dart';
 import 'package:crosswalk_app/services/route_nav.dart';
 
-// T198 턴 안내: 판정표·이탈 판정·남은 거리 -> 꺾임 위치.
+// T198 턴 안내: 판정표·이탈 판정.
 void main() {
   const ko = AppLanguage.ko;
   // 가상 경로: (37,127)에서 북쪽 100m, 왼쪽(서쪽)으로 꺾어 50m.
@@ -38,13 +38,11 @@ void main() {
   };
 
   group('경로 기하', () {
-    test('길이·안내점 진행 거리·방위', () {
+    test('길이·안내점 진행 거리', () {
       final g = RouteGeometry.fromTmap(geo);
       expect(g.length, closeTo(150, 0.5));
       expect(g.guides.map((e) => e.turnType), [200, 12, 201]);
       expect(g.guides[1].s, closeTo(100, 0.5));
-      expect(g.bearingAt(10), closeTo(0, 0.5));
-      expect(g.bearingAt(120), closeTo(270, 0.5));
     });
 
     test('옆으로 20m 떨어진 점 -> 진행 50m, 옆 거리 20m', () {
@@ -99,13 +97,6 @@ void main() {
       expect(n.message(95, ko), '왼쪽으로 도세요');
       expect(n.message(96, ko), isNull);
     });
-
-    test('nextTurn: 지나간 회전(5m 넘게 뒤)은 없음', () {
-      final n = NavGuide(RouteGeometry.fromTmap(geo));
-      expect(n.nextTurn(50)!.turnType, 12);
-      expect(n.nextTurn(103)!.turnType, 12);
-      expect(n.nextTurn(110), isNull);
-    });
   });
 
   test('경로 이탈: 30m 밖 3번 연속 + 10초, 정확도 나쁜 위치는 무시', () {
@@ -134,56 +125,5 @@ void main() {
       l.tryAcquire(t);
     }
     expect(l.count, 20);
-  });
-
-  group('방향', () {
-    test('나침반: 세운 폰, 카메라가 자북 -> 편각만큼, 동쪽 -> 90+편각', () {
-      final north = compassHeading([0, 9.8, 0], [0, -20, -30])!;
-      expect(north, closeTo((360 + kMagneticDeclinationDeg) % 360, 0.01));
-      final east = compassHeading([0, 9.8, 0], [-30, -20, 0])!;
-      expect(east, closeTo(90 + kMagneticDeclinationDeg, 0.01));
-    });
-
-    test('퍼짐과 화살표 진하기', () {
-      expect(headingSpread([10, 10, 10]), closeTo(0, 1e-6));
-      expect(headingSpread([355, 5]), closeTo(5, 0.2));
-      expect(arrowAlpha(heading: null, gpsAccuracy: 5, fromGps: true), 0);
-      expect(arrowAlpha(heading: 10, gpsAccuracy: 5, fromGps: true), 1);
-      expect(arrowAlpha(heading: 10, gpsAccuracy: 30, fromGps: true), 0.35);
-      expect(arrowAlpha(heading: 10, gpsAccuracy: 50, fromGps: true), 0);
-      expect(
-          arrowAlpha(
-              heading: 10, gpsAccuracy: 5, fromGps: false, compassSpread: 30),
-          0.35);
-      expect(
-          arrowAlpha(
-              heading: 10, gpsAccuracy: 5, fromGps: false, compassSpread: 60),
-          0);
-      expect(arrowAlpha(heading: 10, gpsAccuracy: 5, fromGps: false), 0);
-    });
-  });
-
-  group('바닥 화살표 경로', () {
-    test('남은 거리 15m에서 왼쪽으로 꺾임', () {
-      final p = arrowPath(
-          routeBearing: 0, heading: 0, turnAhead: 15, turnBearing: 270);
-      final bend = p.lastWhere((e) => e.x.abs() < 1e-6);
-      expect(bend.y, closeTo(15, 0.5)); // 0.5m 간격 표본
-      expect(p.last.x, closeTo(-8, 1e-6));
-      expect(p.last.y, closeTo(15, 1e-6));
-    });
-
-    test('회전이 멀면(>30m) 곧게 30m', () {
-      final p = arrowPath(
-          routeBearing: 0, heading: 0, turnAhead: 45, turnBearing: 270);
-      expect(p.every((e) => e.x.abs() < 1e-6), isTrue);
-      expect(p.last.y, closeTo(30, 0.5));
-    });
-
-    test('폰이 경로보다 오른쪽(+30도)을 보면 화살표는 왼쪽으로', () {
-      final p = arrowPath(routeBearing: 0, heading: 30);
-      expect(p.last.x, lessThan(0));
-      expect(angleDiff(10, 350), closeTo(20, 1e-9));
-    });
   });
 }

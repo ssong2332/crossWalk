@@ -63,8 +63,8 @@ class _WalkInfoSectionState extends State<WalkInfoSection> {
     final msg = why != null
         ? _reason(why)
         : _ko
-            ? '${_svc.destName}까지 $m미터 안내합니다. 카메라 화면에 화살표가 나옵니다'
-            : 'Guiding to ${_svc.destName}, $m meters. Arrow on the camera screen';
+            ? '${_svc.destName}까지 $m미터 안내합니다'
+            : 'Guiding to ${_svc.destName}, $m meters';
     setState(() {
       _busy = false;
       _status = msg;

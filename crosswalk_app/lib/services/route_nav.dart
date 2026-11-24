@@ -5,7 +5,7 @@ import 'package:meta/meta.dart';
 import '../localization/app_strings.dart';
 
 /// T198 턴 안내(사용자 결정 2026-11-24): 티맵 보행자 경로를 따라 회전·시설을
-/// 예고하고, 카메라 위 바닥 화살표·미니맵에 쓸 기하를 낸다. 플러그인에 의존하지
+/// 예고한다. 플러그인에 의존하지
 /// 않는 순수 로직이라 단위 테스트로 판정표를 전수 확인한다.
 
 /// 예고 거리(m). 보행 1.4m/s 기준 약 30초 전.
@@ -25,10 +25,6 @@ const double kOffRouteM = 30;
 
 /// 경로 이탈 판정에 쓰는 GPS 정확도 상한(m).
 const double kOffRouteMaxAccuracyM = 25;
-
-/// 한국의 자기 편각(진북 기준, 서쪽 음수).
-/// shortcut: 전국 고정값 -8.5도(추정), 지역별 오차가 문제되면 위도·경도로 계산한다.
-const double kMagneticDeclinationDeg = -8.5;
 
 /// 위경도 -> 기준점 둘레 평면(m, x 동쪽 · y 북쪽).
 @immutable
@@ -123,23 +119,7 @@ class RouteGeometry {
     }
     return best;
   }
-
-  /// 진행 거리 [s]에서 경로의 방위(도, 진북 0 · 시계방향 +).
-  double bearingAt(double s) {
-    if (pts.length < 2) return 0;
-    var i = 0;
-    while (i < pts.length - 2 && cum[i + 1] <= s) {
-      i++;
-    }
-    final a = pts[i], b = pts[i + 1];
-    return _norm(math.atan2(b.x - a.x, b.y - a.y) * 180 / math.pi);
-  }
 }
-
-double _norm(double deg) => (deg % 360 + 360) % 360;
-
-/// -180~180으로.
-double angleDiff(double a, double b) => (a - b + 540) % 360 - 180;
 
 /// 회전 안내인 turnType(12~19, 15 없음). 지점 안내까지 두 번 말한다.
 bool isTurnType(int t) => t == 12 || t == 13 || t == 14 || (t >= 16 && t <= 19);
@@ -231,14 +211,6 @@ class NavGuide {
     }
     return null;
   }
-
-  /// 아직 지나지 않은 다음 회전 안내점.
-  GuidePoint? nextTurn(double s) {
-    for (final g in geo.guides) {
-      if (isTurnType(g.turnType) && g.s - s >= -kPassedM) return g;
-    }
-    return null;
-  }
 }
 
 /// 경로 이탈: 정확도 좋은 위치가 [kOffRouteM]보다 3번 연속, 10초 이상 멀면 true.
@@ -278,81 +250,4 @@ class RerouteLimiter {
     count++;
     return true;
   }
-}
-
-/// 나침반: 중력·자기장(기기 좌표)으로 후면 카메라가 보는 방향의 방위(진북,
-/// 도). 계산 불가(자기장이 중력과 나란함 등)면 null.
-double? compassHeading(List<double> g, List<double> m) {
-  // Android SensorManager.getRotationMatrix와 같은 방식: E = m × g, N = g × E.
-  var ex = m[1] * g[2] - m[2] * g[1];
-  var ey = m[2] * g[0] - m[0] * g[2];
-  var ez = m[0] * g[1] - m[1] * g[0];
-  final en = math.sqrt(ex * ex + ey * ey + ez * ez);
-  final gn = math.sqrt(g[0] * g[0] + g[1] * g[1] + g[2] * g[2]);
-  if (en < 0.1 || gn < 0.1) return null;
-  ex /= en;
-  ey /= en;
-  ez /= en;
-  final ax = g[0] / gn, ay = g[1] / gn;
-  // N = g × E. 후면 카메라 방향은 기기 -Z라 E·N의 z 성분만 쓴다.
-  final nz = ax * ey - ay * ex;
-  final east = -ez, north = -nz;
-  return _norm(
-      math.atan2(east, north) * 180 / math.pi + kMagneticDeclinationDeg);
-}
-
-/// 방위 표본들의 원형 퍼짐(도). 표본이 2개 미만이면 null.
-double? headingSpread(List<double> degs) {
-  if (degs.length < 2) return null;
-  var c = 0.0, s = 0.0;
-  for (final d in degs) {
-    c += math.cos(d * math.pi / 180);
-    s += math.sin(d * math.pi / 180);
-  }
-  final r = math.sqrt(c * c + s * s) / degs.length;
-  if (r >= 1) return 0;
-  return math.sqrt(-2 * math.log(r)) * 180 / math.pi;
-}
-
-/// 화살표 진하기: 1 = 또렷, 0.35 = 흐리게, 0 = 숨김.
-double arrowAlpha({
-  required double? heading,
-  required double gpsAccuracy,
-  required bool fromGps,
-  double? compassSpread,
-}) {
-  if (heading == null || gpsAccuracy > 40) return 0;
-  final spread = fromGps ? 0.0 : (compassSpread ?? 90);
-  if (spread > 45) return 0;
-  if (gpsAccuracy > 25 || spread > 20) return 0.35;
-  return 1;
-}
-
-/// 바닥 화살표 경로(카메라 기준 지면 좌표, x 오른쪽 · z 앞, m).
-/// 꺾이는 위치는 GPS 좌표가 아니라 "다음 회전까지 남은 경로 거리"로 정한다.
-List<math.Point<double>> arrowPath({
-  required double routeBearing,
-  required double heading,
-  double? turnAhead,
-  double? turnBearing,
-  double maxLen = 30,
-  double tail = 8,
-  double start = 1.8,
-  double step = 0.5,
-}) {
-  final out = <math.Point<double>>[];
-  final t1 = angleDiff(routeBearing, heading) * math.pi / 180;
-  final bends = turnAhead != null && turnBearing != null && turnAhead <= maxLen;
-  final len = bends ? math.max(start, turnAhead) : maxLen;
-  for (var d = start; d <= len + 1e-9; d += step) {
-    out.add(math.Point(d * math.sin(t1), d * math.cos(t1)));
-  }
-  if (bends) {
-    final c = math.Point(len * math.sin(t1), len * math.cos(t1));
-    final t2 = angleDiff(turnBearing, heading) * math.pi / 180;
-    for (var d = step; d <= tail + 1e-9; d += step) {
-      out.add(math.Point(c.x + d * math.sin(t2), c.y + d * math.cos(t2)));
-    }
-  }
-  return out;
 }
