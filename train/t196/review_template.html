@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>T196 젖은 야간 횡단보도 36장 확인</title>
+<style>
+body{font-family:system-ui,"Malgun Gothic",sans-serif;margin:16px;background:#f4f4f4;color:#111}
+header{position:sticky;top:0;background:#fff;padding:10px;border-bottom:1px solid #ccc;z-index:2}
+.grid{display:flex;flex-wrap:wrap;gap:12px;margin-top:12px}
+.card{background:#fff;border:2px solid #ccc;border-radius:6px;padding:8px;width:336px}
+.card.done{border-color:#2a7}
+.ph{position:relative;width:320px;height:480px;overflow:hidden;background:#000}
+.ph img{position:absolute;left:0;top:0;width:480px;height:320px;transform-origin:0 0;transform:translate(320px,0) rotate(90deg)}
+.zone{position:absolute;left:33.3%;width:33.3%;top:50%;height:50%;border:2px dashed #ff0;box-sizing:border-box;pointer-events:none}
+.low{color:#c00;font-weight:bold}
+.btns button{margin:3px 2px;padding:6px 8px;font-size:14px;border:1px solid #888;border-radius:4px;background:#fff;cursor:pointer}
+.btns button.sug{outline:2px solid #f80}
+.btns button.on{background:#135;color:#fff}
+textarea{width:100%;height:40px;box-sizing:border-box}
+</style></head><body>
+<header>
+<b>T196 확인표</b> — 11/18 비 온 밤, 모두 '횡단보도 안'에서 찍힌 36장. 노란 점선 = 노면 모델의 '발 앞 영역'.
+<br>질문: <b>노란 점선 안의 땅은 어느 클래스로 학습시켜야 하나?</b> 주황 테두리 = VLM 제안. 학습에 쓰기 싫은 장은 '제외'.
+<br>진행: <span id="cnt"></span> &nbsp;
+<button onclick="dl()">결과 JSON 내려받기</button> <button onclick="cp()">결과 복사</button>
+<span id="msg"></span>
+</header>
+<div class="grid" id="g"></div>
+<script>
+const DATA = /*DATA*/[];
+const OPTS = [["crosswalk","횡단보도"],["roadway","차도"],["sidewalk","인도"],["unclear","판단 불가"],["exclude","제외"]];
+const KEY = "t196_review_v1";
+const st = JSON.parse(localStorage.getItem(KEY) || "{}");
+function save(){localStorage.setItem(KEY, JSON.stringify(st)); count();}
+function count(){const n = DATA.filter(d => st[d.file] && st[d.file].label).length; document.getElementById("cnt").textContent = n + " / " + DATA.length;}
+function result(){return JSON.stringify(DATA.map(d => ({file: d.file, time: d.time, vlm: d.vlm, vlm_conf: d.conf,
+  user: (st[d.file] || {}).label || null, memo: (st[d.file] || {}).memo || ""})), null, 1);}
+function dl(){const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([result()], {type: "application/json"}));
+  a.download = "t196_review_result.json"; a.click();}
+function cp(){navigator.clipboard.writeText(result()).then(() => document.getElementById("msg").textContent = "복사됨",
+  () => document.getElementById("msg").textContent = "복사 실패 — 내려받기를 쓰세요");}
+const g = document.getElementById("g");
+DATA.forEach((d, i) => {
+  const s = st[d.file] = st[d.file] || {};
+  const c = document.createElement("div"); c.className = "card";
+  const low = d.conf < 0.7;
+  c.innerHTML = `<div class="ph"><img src="${d.src}" alt="${d.file}"><div class="zone"></div></div>
+    <div>${i + 1}. ${d.time} ${d.star ? "★ '차도입니다' 순간" : ""}<br><small>${d.file}</small></div>
+    <div>VLM: <b>${d.vlm}</b> <span class="${low ? "low" : ""}">(확신 ${d.conf.toFixed(2)}${low ? " 낮음" : ""})</span></div>
+    <div class="btns"></div><textarea placeholder="메모"></textarea>`;
+  const b = c.querySelector(".btns"), ta = c.querySelector("textarea");
+  function paint(){b.querySelectorAll("button").forEach(x => x.classList.toggle("on", x.dataset.v === s.label)); c.classList.toggle("done", !!s.label);}
+  OPTS.forEach(([v, t]) => {const x = document.createElement("button"); x.textContent = t; x.dataset.v = v;
+    if (v === d.vlm) x.classList.add("sug");
+    x.onclick = () => {s.label = s.label === v ? undefined : v; paint(); save();}; b.appendChild(x);});
+  ta.value = s.memo || ""; ta.oninput = () => {s.memo = ta.value; save();};
+  paint(); g.appendChild(c);
+});
+count();
+</script></body></html>
