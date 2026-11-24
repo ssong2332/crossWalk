@@ -58,18 +58,6 @@ class Classifier {
   // 이탈(left/right)은 민감하게, 정상(front) 확인은 엄격하게
   static const _deviationThreshold = 0.55;
 
-  // T63: 이탈 "정도"를 판정하는 기준. 이 분류기는 좌표·기하 정보를 내지
-  // 않으므로 실제 이탈 각도/거리는 알 수 없다 — left/right 확신도를
-  // **근사치**로 쓴다. 확신도가 높을수록 그 방향으로의 특징이 뚜렷하다는
-  // 것이지, 몇 도/몇 미터 벗어났는지를 재는 것이 아니다.
-  // 0.80은 **잠정값**(측정 아님). _deviationThreshold(0.55)와 1.0 사이의
-  // 중간보다 살짝 위 — 실기기 보행 테스트로 재보정이 필요하다.
-  //
-  // T84(2026-09-13): **더 이상 강도 판정에 쓰지 않는다.** 누수 없는 CV로
-  // 재보니 이 기준은 정판정 이탈의 81%를 '심함'으로 찍어 변별력이 없었다.
-  // 강도는 각도 모델 출력으로 판정한다 — `FeedbackService.severeAngleDegrees`.
-  // 상수는 이력 참조용으로만 남긴다.
-  static const deviationSeverityThreshold = 0.80;
   // T42 재학습 후 none 데이터가 36→101장으로 늘며 softmax 확률이 더 분산돼
   // 0.65는 front 판정을 과도하게 "무판정(None)" 처리함 (recall 78.6%→57.1% 하락,
   // train/eval_model.py로 실측). 0.65→0.5로 낮춰 재측정 시 recall 89.3%,

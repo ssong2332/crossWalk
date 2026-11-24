@@ -32,7 +32,6 @@ class FeedbackService {
   /// T153: BLE 좌우 진동 모듈(개발 설정, 기본 꺼짐). null이면 종전과 똑같이 폰만
   /// 울린다. 붙어 있어도 연결이 아니면 폰으로 낸다(`vib`의 `out`=phone).
   VibModuleController? _vibModule;
-  VibModuleController? get vibModule => _vibModule;
 
   /// T153: 모듈이 연결된 동안 폰 진동도 함께 낼지. 기본 false = 모듈만.
   bool vibModuleWithPhone = false;
