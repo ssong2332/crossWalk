@@ -73,7 +73,9 @@ class SurfaceFeatures {
       {this.left = const SurfaceRegion(),
       this.front = const SurfaceRegion(),
       this.right = const SurfaceRegion(),
-      this.crosswalkAll = 0});
+      this.crosswalkAll = 0,
+      this.crosswalkRows = const [],
+      this.gridWidth = 0});
 
   final SurfaceRegion left;
   final SurfaceRegion front;
@@ -82,6 +84,13 @@ class SurfaceFeatures {
   /// T125: **화면 전체**(위 절반 포함)의 횡단보도 픽셀 비율 — 노면 횡단보도 확인
   /// (`CrosswalkSurfaceGate`)과 기록에 쓴다. 학습 사진 분석(`surface_cw.csv` cw_all)과 같은 정의.
   final double crosswalkAll;
+
+  /// T200: 행마다 가장 긴 횡단보도 연속 구간 `[시작0, 끝0, 시작1, 끝1, ...]`
+  /// (모델 격자 좌표, 끝 포함). 없는 행은 -1. 경계 표시(`CrosswalkOutline`)에 쓴다.
+  final List<int> crosswalkRows;
+
+  /// T200: [crosswalkRows]의 가로 격자 크기(모델 출력 너비).
+  final int gridWidth;
 
   /// 모델 출력 로짓 `[클래스][세로][가로]`(배치 차원 제거)에서 아래 절반을 argmax해
   /// 세 칸의 비율을 낸다. 크기는 리스트 길이에서 읽는다. T125: 위 절반도 argmax해
@@ -93,7 +102,9 @@ class SurfaceFeatures {
     final counts = List.generate(3, (_) => List<int>.filled(SurfaceClass.count, 0));
     final totals = List<int>.filled(3, 0);
     var crosswalkPixels = 0;
+    final rowsOut = List<int>.filled(2 * h, -1);
     for (var y = 0; y < h; y++) {
+      var runStart = -1;
       final bottom = y >= h ~/ 2;
       final rows = [for (var c = 0; c < nCls; c++) (logits[c] as List)[y] as List];
       for (var x = 0; x < w; x++) {
@@ -106,7 +117,19 @@ class SurfaceFeatures {
             best = c;
           }
         }
-        if (best == SurfaceClass.crosswalk) crosswalkPixels++;
+        if (best == SurfaceClass.crosswalk) {
+          crosswalkPixels++;
+          if (runStart < 0) runStart = x;
+        }
+        // T200: 구간이 끝나면(다른 클래스 또는 행 끝) 가장 긴 구간인지 본다.
+        if (runStart >= 0 && (best != SurfaceClass.crosswalk || x == w - 1)) {
+          final end = best == SurfaceClass.crosswalk ? x : x - 1;
+          if (rowsOut[2 * y] < 0 || end - runStart > rowsOut[2 * y + 1] - rowsOut[2 * y]) {
+            rowsOut[2 * y] = runStart;
+            rowsOut[2 * y + 1] = end;
+          }
+          runStart = -1;
+        }
         if (!bottom) continue;
         final region = x < w ~/ 3 ? 0 : (x < 2 * w ~/ 3 ? 1 : 2);
         if (best < SurfaceClass.count) counts[region][best]++;
@@ -131,7 +154,9 @@ class SurfaceFeatures {
         left: r(0),
         front: r(1),
         right: r(2),
-        crosswalkAll: h * w == 0 ? 0 : crosswalkPixels / (h * w));
+        crosswalkAll: h * w == 0 ? 0 : crosswalkPixels / (h * w),
+        crosswalkRows: rowsOut,
+        gridWidth: w);
   }
 }
 
