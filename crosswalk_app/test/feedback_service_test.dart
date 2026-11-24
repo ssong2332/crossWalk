@@ -4100,6 +4100,91 @@ void main() {
       expect(cancelled, ['R2', 'R5', 'R7']);
       expect(spokenAfter.keys, hasLength(9));
     });
+
+    group('T202 보류 끝 순간 분류기 원값', () {
+      test('끝 순간 원값이 front면 앱 판정이 none이어도 취소(road_raw_on), 진동 없음', () async {
+        await s.alert('none', 0.9);
+        await s.surfaceAlert([SurfaceEvent.road]);
+        sched.advanceTo(at(2900));
+        s.noteClassifierBest('front');
+        await s.alert('none', 0.9); // cw 게이트가 none으로 내린 상황
+        expect(s.holdsRoad, isTrue, reason: '보류 중에는 원값으로 취소하지 않는다');
+        sched.advanceTo(at(3000));
+        await pumpEventQueue();
+        expect(roadSays(), isEmpty);
+        expect(lines('vib').where((m) => m['kind'] == 'road'), isEmpty);
+        expect(
+            lines('say.cancel').single,
+            allOf(containsPair('text', road), containsPair('why', 'road_raw_on'),
+                containsPair('to', 'front'), containsPair('dt', 3000)));
+        expect(s.holdsRoad, isFalse);
+      });
+
+      test('left·right도 취소한다', () async {
+        for (final c in ['left', 'right']) {
+          EventLog.instance.clearForTest();
+          final sc = _FakeSched(at(0));
+          final f = FeedbackService()
+            ..clock = (() => sc.now)
+            ..timerFactory = sc.create;
+          await f.alert('none', 0.9);
+          await f.surfaceAlert([SurfaceEvent.road]);
+          f.noteClassifierBest(c);
+          sc.advanceTo(at(3000));
+          await pumpEventQueue();
+          expect(roadSays(), isEmpty, reason: c);
+          expect(lines('say.cancel').single['why'], 'road_raw_on', reason: c);
+          await f.dispose();
+        }
+      });
+
+      test('보류 중 원값 front였다가 끝 순간 none이면 말한다 (11/11·11/22 진짜 차도 모양)', () async {
+        await s.alert('none', 0.9);
+        await s.surfaceAlert([SurfaceEvent.road]);
+        sched.advanceTo(at(1000));
+        s.noteClassifierBest('front');
+        await s.alert('none', 0.9);
+        sched.advanceTo(at(2000));
+        s.noteClassifierBest('none');
+        await s.alert('none', 0.9);
+        sched.advanceTo(at(3000));
+        await pumpEventQueue();
+        expect(roadSays(), hasLength(1));
+        expect(lines('vib').single['kind'], 'road');
+        expect(lines('say.cancel'), isEmpty);
+      });
+
+      test('원값이 approach·crossed·없음이면 T191 그대로 말한다', () async {
+        for (final c in ['approach', 'crossed', null]) {
+          EventLog.instance.clearForTest();
+          final sc = _FakeSched(at(0));
+          final f = FeedbackService()
+            ..clock = (() => sc.now)
+            ..timerFactory = sc.create;
+          await f.alert('none', 0.9);
+          await f.surfaceAlert([SurfaceEvent.road]);
+          f.noteClassifierBest(c);
+          sc.advanceTo(at(3000));
+          await pumpEventQueue();
+          expect(roadSays(), hasLength(1), reason: '$c');
+          expect(lines('say.cancel'), isEmpty, reason: '$c');
+          await f.dispose();
+        }
+      });
+
+      test('앱 판정 취소(road_before_cw)가 먼저다', () async {
+        await s.alert('none', 0.9);
+        await s.surfaceAlert([SurfaceEvent.road]);
+        sched.advanceTo(at(1500));
+        s.noteClassifierBest('front');
+        await s.alert('front', 0.9);
+        expect(lines('say.cancel').single['why'], 'road_before_cw');
+        sched.advanceTo(at(3000));
+        await pumpEventQueue();
+        expect(lines('say.cancel'), hasLength(1));
+        expect(roadSays(), isEmpty);
+      });
+    });
   });
 }
 
