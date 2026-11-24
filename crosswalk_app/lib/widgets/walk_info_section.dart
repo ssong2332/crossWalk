@@ -5,6 +5,7 @@ import '../services/feedback_service.dart';
 import '../services/walk_info.dart';
 
 /// T198: 설정 화면의 "보행 정보" 칸 — 켜기/끄기, 목적지 경로 안내.
+/// T205: 목적지는 검색 결과 여러 곳(이름 + 거리)을 보여 주고 읽어서 고르게 한다.
 ///
 /// 기본 꺼짐(위치·네트워크를 쓰므로 사용자가 켤 때만). 앱을 다시 켜면 꺼진다
 /// (설정 화면의 다른 값처럼 저장하지 않음).
@@ -22,6 +23,8 @@ class _WalkInfoSectionState extends State<WalkInfoSection> {
   final _dest = TextEditingController();
   String? _status;
   bool _busy = false;
+  final _flight = SingleFlight();
+  List<Place> _places = const [];
 
   WalkInfoService get _svc => WalkInfoService.instance;
   bool get _ko => widget.language == AppLanguage.ko;
@@ -52,24 +55,45 @@ class _WalkInfoSectionState extends State<WalkInfoSection> {
     if (why != null) await widget.feedback.announceError(_status!);
   }
 
-  Future<void> _startRoute() async {
+  /// T205: 검색 -> 목록 표시 + 읽기. 키보드 '이동'과 버튼이 겹쳐도 [_flight]로 한 번만.
+  Future<void> _search() async {
     final text = _dest.text.trim();
     if (text.isEmpty) return;
-    setState(() => _busy = true);
-    final why = await _svc.startRoute(text);
-    if (!mounted) return;
-    final geo = _svc.nav?.geo;
-    final m = geo == null ? 0 : (geo.length / 10).round() * 10;
-    final msg = why != null
-        ? _reason(why)
-        : _ko
-            ? '${_svc.destName}까지 $m미터 안내합니다'
-            : 'Guiding to ${_svc.destName}, $m meters';
-    setState(() {
-      _busy = false;
-      _status = msg;
+    await _flight.run(() async {
+      setState(() => _places = const []);
+      final r = await _svc.searchPlaces(text);
+      if (!mounted) return;
+      final msg = r.why != null
+          ? _reason(r.why!)
+          : placesSpeech(r.places, widget.language);
+      setState(() {
+        _places = r.places;
+        _status = r.why == null ? null : msg;
+      });
+      await widget.feedback.announceRoute(msg);
     });
-    await widget.feedback.announceRoute(msg);
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _choose(Place p) async {
+    await _flight.run(() async {
+      setState(() {});
+      final why = await _svc.startRouteTo(p);
+      if (!mounted) return;
+      final geo = _svc.nav?.geo;
+      final m = geo == null ? 0 : (geo.length / 10).round() * 10;
+      final msg = why != null
+          ? _reason(why)
+          : _ko
+              ? '${_svc.destName}까지 $m미터 안내합니다'
+              : 'Guiding to ${_svc.destName}, $m meters';
+      setState(() {
+        if (why == null) _places = const [];
+        _status = msg;
+      });
+      await widget.feedback.announceRoute(msg);
+    });
+    if (mounted) setState(() {});
   }
 
   @override
@@ -105,7 +129,7 @@ class _WalkInfoSectionState extends State<WalkInfoSection> {
               enabled: !_busy,
               style: const TextStyle(color: Colors.white),
               textInputAction: TextInputAction.go,
-              onSubmitted: (_) => _startRoute(),
+              onSubmitted: (_) => _search(),
               decoration: InputDecoration(
                 labelText: _ko ? '목적지' : 'Destination',
                 labelStyle: const TextStyle(color: Colors.white70),
@@ -113,8 +137,8 @@ class _WalkInfoSectionState extends State<WalkInfoSection> {
             ),
             Row(children: [
               TextButton(
-                onPressed: _busy ? null : _startRoute,
-                child: Text(_ko ? '경로 안내 시작' : 'Start route'),
+                onPressed: _busy || _flight.busy ? null : _search,
+                child: Text(_ko ? '목적지 찾기' : 'Find destination'),
               ),
               if (_svc.nav != null)
                 TextButton(
@@ -122,11 +146,50 @@ class _WalkInfoSectionState extends State<WalkInfoSection> {
                   child: Text(_ko ? '경로 안내 끝' : 'Stop route'),
                 ),
             ]),
+            PlaceList(
+                places: _places,
+                language: widget.language,
+                enabled: !_flight.busy,
+                onTap: _choose),
           ],
           if (_status != null)
             Text(_status!, style: const TextStyle(color: Colors.white70)),
         ],
       ),
     );
+  }
+}
+
+/// T205: 목적지 검색 결과 목록 — "1. 이름 … 350미터". 20km 넘는 곳은 거리를 흐리게.
+class PlaceList extends StatelessWidget {
+  const PlaceList(
+      {super.key,
+      required this.places,
+      required this.language,
+      required this.enabled,
+      required this.onTap});
+  final List<Place> places;
+  final AppLanguage language;
+  final bool enabled;
+  final ValueChanged<Place> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(children: [
+      for (var i = 0; i < places.length; i++)
+        ListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          enabled: enabled,
+          onTap: () => onTap(places[i]),
+          title: Text('${i + 1}. ${places[i].name}',
+              style: const TextStyle(color: Colors.white)),
+          trailing: Text(placeDistance(places[i].distM, language),
+              style: TextStyle(
+                  color: places[i].distM > kPlaceFarM
+                      ? Colors.white38
+                      : Colors.white70)),
+        ),
+    ]);
   }
 }
