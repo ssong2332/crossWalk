@@ -2231,6 +2231,13 @@ class FeedbackService {
   String? Function()? approachInfo;
   String? _lastWalkInfo;
 
+  /// T198: 지금 횡단보도 위인가(마지막 판정이 front·left·right). 경로 턴 안내와
+  /// 바닥 화살표는 이때 보류한다.
+  bool get onCrosswalk =>
+      _lastRawClass == 'front' ||
+      _lastRawClass == 'left' ||
+      _lastRawClass == 'right';
+
   /// T198: 경로 안내("N미터 앞 횡단보도", "목적지 근처") — 1회성 사실이라 P1.
   Future<void> announceRoute(String message) async {
     await _speak(message, priority: FeedbackPriority.p1);
