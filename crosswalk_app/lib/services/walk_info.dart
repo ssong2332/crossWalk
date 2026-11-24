@@ -200,7 +200,11 @@ class RouteView {
 
   /// 미니맵 밑 짧은 글자(예: "20m 왼쪽"). 없으면 null.
   final String? caption;
-  const RouteView(this.geo, this.me, this.s, this.heading, this.caption);
+
+  /// T206: 목적지 이름(미니맵 밑 "OO까지 N미터").
+  final String? dest;
+  const RouteView(this.geo, this.me, this.s, this.heading, this.caption,
+      [this.dest]);
 }
 
 /// 위치를 받아 주변 횡단보도 정보를 모으고, 경로 안내를 돌린다.
@@ -327,6 +331,7 @@ class WalkInfoService {
       turn == null || ahead == null || ahead > kTurnPreM
           ? null
           : '${roundTo10(ahead)}m ${turnPhrase(turn.turnType, lang)}',
+      _dest?.name,
     );
   }
 

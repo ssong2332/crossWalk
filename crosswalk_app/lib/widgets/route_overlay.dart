@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../localization/app_strings.dart';
 import '../services/route_nav.dart';
 import '../services/walk_info.dart';
 
@@ -10,20 +11,37 @@ import '../services/walk_info.dart';
 ///
 /// 층 순서(아래->위): 미리보기 -> **미니맵(여기)** -> 노란 면 -> 글자. 경로가 없으면
 /// 아무것도 그리지 않는다. 음성으로 같은 안내가 나가므로 화면 읽기에서는 제외한다.
+///
+/// T206: [destLabel]이 true면 미니맵·밑 글자 자리는 비워 두고(같은 배치) 그 아래
+/// "OO까지 N미터" 글자만 그린다 — 화면 맨 위 층에 하나 더 깔아 누르기·화면 읽기가
+/// 위 층(안내 글자 판)에 막히지 않게 한다. 누르면 [onSpeak]로 같은 문장을 읽는다.
 class RouteOverlay extends StatelessWidget {
-  const RouteOverlay({super.key});
+  const RouteOverlay(
+      {super.key,
+      this.destLabel = false,
+      this.language = AppLanguage.ko,
+      this.onSpeak});
+  final bool destLabel;
+  final AppLanguage language;
+  final ValueChanged<String>? onSpeak;
 
   static const steel = Color(0xFFA8CDE8);
 
   @override
   Widget build(BuildContext context) {
     final svc = WalkInfoService.instance;
-    return ExcludeSemantics(
-      child: IgnorePointer(
-        child: ValueListenableBuilder<RouteView?>(
+    return ValueListenableBuilder<RouteView?>(
           valueListenable: svc.view,
           builder: (context, v, _) {
             if (v == null) return const SizedBox.shrink();
+            // 미니맵·밑 글자: 음성으로 같은 안내가 나가므로 화면 읽기 제외.
+            Widget map(Widget w) => ExcludeSemantics(
+                child: IgnorePointer(
+                    child: destLabel ? Opacity(opacity: 0, child: w) : w));
+            final name = v.dest;
+            final text = name == null
+                ? null
+                : destRemainText(name, v.geo.length - v.s, language);
             return Stack(children: [
               Positioned(
                 left: 12,
@@ -31,7 +49,7 @@ class RouteOverlay extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
+                    map(Container(
                       width: 104,
                       height: 104,
                       decoration: BoxDecoration(
@@ -40,9 +58,9 @@ class RouteOverlay extends StatelessWidget {
                         border: Border.all(color: Colors.white24),
                       ),
                       child: CustomPaint(painter: MiniRoutePainter(v)),
-                    ),
+                    )),
                     if (v.caption != null)
-                      Container(
+                      map(Container(
                         margin: const EdgeInsets.only(top: 4),
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 2),
@@ -52,16 +70,43 @@ class RouteOverlay extends StatelessWidget {
                                 color: Colors.white,
                                 fontSize: 15,
                                 fontWeight: FontWeight.w700)),
+                      )),
+                    if (destLabel && text != null)
+                      Semantics(
+                        button: true,
+                        label: text,
+                        excludeSemantics: true,
+                        onTap: () => onSpeak?.call(text),
+                        child: GestureDetector(
+                          onTap: () => onSpeak?.call(text),
+                          child: Container(
+                            margin: const EdgeInsets.only(top: 4),
+                            // 글자 폭만큼, 누르는 높이는 48dp 이상.
+                            constraints: const BoxConstraints(maxWidth: 200),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 15),
+                            color: Colors.black.withValues(alpha: 0.6),
+                            child: Text(text,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    color: Colors.white70, fontSize: 13)),
+                          ),
+                        ),
                       ),
                   ],
                 ),
               ),
             ]);
           },
-        ),
-      ),
     );
   }
+}
+
+/// T206: 안내 중 목적지 확인 문장 — "시청역까지 350미터"(남은 경로 거리).
+String destRemainText(String name, double remainM, AppLanguage lang) {
+  final d = placeDistance(remainM < 0 ? 0 : remainM, lang);
+  return lang == AppLanguage.ko ? '$name까지 $d' : '$d to $name';
 }
 
 /// 위쪽 모서리 미니맵: 내 위치 둘레 약 60m, 진행 방향이 위(방향을 모르면 북쪽 위).

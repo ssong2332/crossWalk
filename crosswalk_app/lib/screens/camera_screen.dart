@@ -33,6 +33,7 @@ import '../services/score_timeline.dart';
 import '../services/share_picker.dart';
 import '../widgets/haptic_score.dart';
 import '../widgets/route_overlay.dart';
+import '../widgets/walk_info_section.dart';
 import '../widgets/slab_guidance.dart';
 import '../localization/app_strings.dart';
 import 'settings_screen.dart';
@@ -1987,6 +1988,34 @@ class _CameraScreenState extends State<CameraScreen>
     );
   }
 
+  // T206: 목적지 안내 화면 버튼. 설정과 달리 인식을 멈추지 않는다.
+  Widget _buildDestinationButton() {
+    return Semantics(
+      container: true,
+      sortKey: const OrdinalSortKey(0.75),
+      label: _language == AppLanguage.ko ? '목적지 안내' : 'Destination',
+      button: true,
+      child: Material(
+        color:
+            _slabSpec.onSlab ? _colorBg : Colors.black.withValues(alpha: 0.35),
+        shape: const CircleBorder(
+          side: BorderSide(color: Colors.white38, width: 1.5),
+        ),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) =>
+                DestinationScreen(feedback: _feedback, language: _language),
+          )),
+          child: const Padding(
+            padding: EdgeInsets.all(14),
+            child: Icon(Icons.place_outlined, size: 20, color: Colors.white70),
+          ),
+        ),
+      ),
+    );
+  }
+
   // T38/T39: 설정 화면 진입 버튼. SettingsScreen으로 라우팅한다.
   Widget _buildSettingsButton() {
     return Semantics(
@@ -2271,6 +2300,8 @@ class _CameraScreenState extends State<CameraScreen>
                               ),
                             ),
                             const SizedBox(width: 8),
+                            _buildDestinationButton(),
+                            const SizedBox(width: 8),
                             _buildSettingsButton(),
                           ],
                         ),
@@ -2495,6 +2526,15 @@ class _CameraScreenState extends State<CameraScreen>
               ],
             ),
           ),
+          // T206: 미니맵 아래 "OO까지 N미터" — 맨 위 층이라 누르기·화면 읽기가 막히지 않는다.
+          if (!_hasError)
+            Positioned.fill(
+              child: RouteOverlay(
+                destLabel: true,
+                language: _language,
+                onSpeak: (t) => _feedback.announceRoute(t),
+              ),
+            ),
         ],
       ),
     );
