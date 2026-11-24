@@ -46,30 +46,6 @@ void main() {
         '신호등 있음, 음향신호기 정보 없음');
     expect(ko.info(const CrosswalkInfo(0, 0, signal: false, sound: true, src: 's')),
         '신호등 없음');
-    expect(ko.crosswalkAhead(46), '50미터 앞 횡단보도');
-  });
-
-  test('경로: 횡단보도(211~217)만 뽑고, 50m 안에서 한 번씩, 목적지 20m', () {
-    final geo = {
-      'features': [
-        {'geometry': {'type': 'Point', 'coordinates': [127.0, 37.0]},
-         'properties': {'turnType': 200}},
-        {'geometry': {'type': 'Point', 'coordinates': [127.0, 37.001]},
-         'properties': {'turnType': 212}},
-        {'geometry': {'type': 'LineString', 'coordinates': []},
-         'properties': {'facilityType': '15'}},
-        {'geometry': {'type': 'Point', 'coordinates': [127.0, 37.003]},
-         'properties': {'turnType': 201}},
-      ]
-    };
-    final cw = parseRouteCrosswalks(geo);
-    expect(cw.map((p) => p.turnType), [212]);
-    final g = RouteGuide(cw, 37.003, 127.0, 'dest');
-    expect(g.update(37.0, 127.0, ko), isNull); // 111m
-    expect(g.update(37.0006, 127.0, ko), '40미터 앞 횡단보도');
-    expect(g.update(37.0008, 127.0, ko), isNull); // 이미 말함
-    expect(g.update(37.0029, 127.0, ko), '목적지 근처입니다');
-    expect(g.update(37.0029, 127.0, ko), isNull);
   });
 
   testWidgets('앞에 횡단보도 뒤에 주변 정보를 잇는다(정보 없으면 침묵)',

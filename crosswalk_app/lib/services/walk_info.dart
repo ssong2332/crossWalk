@@ -3,12 +3,15 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:geolocator/geolocator.dart';
 import 'package:meta/meta.dart';
+import 'package:sensors_plus/sensors_plus.dart';
 
 import '../localization/app_strings.dart';
 import 'event_log.dart';
 import 'feedback_service.dart';
+import 'route_nav.dart';
 
 /// T198(사용자 결정 2026-11-24): 보행 정보 — 주변 횡단보도의 신호등·음향신호기
 /// 정보와 티맵 보행자 경로의 "앞 횡단보도" 안내.
@@ -22,12 +25,6 @@ const String kGgKey = String.fromEnvironment('GG_KEY');
 
 /// 주변 횡단보도 정보 판정 반경(m) — 판정표 1·2행.
 const double kCrosswalkInfoRadiusM = 30;
-
-/// 경로의 다음 횡단보도를 미리 알리는 거리(m).
-const double kRouteCrosswalkNoticeM = 50;
-
-/// 목적지 근처 안내 거리(m).
-const double kRouteArriveM = 20;
 
 /// 위치가 이보다 오래되면 주변 정보를 말하지 않는다(엉뚱한 곳 정보 방지).
 const Duration kPositionMaxAge = Duration(seconds: 20);
@@ -126,68 +123,24 @@ class WalkStrings {
     }
     return parts.join(', ');
   }
-
-  String crosswalkAhead(double m) {
-    final r = (m / 10).round() * 10;
-    return _ko ? '$r미터 앞 횡단보도' : 'Crosswalk in $r meters';
-  }
-
-  String get arrived => _ko ? '목적지 근처입니다' : 'Near your destination';
 }
 
-/// 경로 위의 안내 지점.
+/// 카메라 위 경로 층(바닥 화살표·미니맵)이 그릴 것. 경로가 없으면 null.
 @immutable
-class RoutePoint {
-  final double lat;
-  final double lon;
-  final int turnType;
-  const RoutePoint(this.lat, this.lon, this.turnType);
-}
+class RouteView {
+  final RouteGeometry geo;
+  final math.Point<double> me;
+  final double s;
+  final double? heading;
 
-/// 티맵 보행자 경로(GeoJSON)에서 횡단보도(211~217) 지점만 순서대로 뽑는다.
-List<RoutePoint> parseRouteCrosswalks(Map<String, dynamic> geo) {
-  final out = <RoutePoint>[];
-  for (final f in (geo['features'] as List? ?? const [])) {
-    final g = f['geometry'];
-    if (g?['type'] != 'Point') continue;
-    final t = f['properties']?['turnType'];
-    if (t is! int || t < 211 || t > 217) continue;
-    final c = g['coordinates'] as List;
-    out.add(RoutePoint(
-        (c[1] as num).toDouble(), (c[0] as num).toDouble(), t));
-  }
-  return out;
-}
+  /// 화살표 진하기(1 또렷 · 0.35 흐리게 · 0 숨김) — [arrowAlpha].
+  final double alpha;
+  final List<math.Point<double>> arrow;
 
-/// 걸으며 받은 위치로 "N미터 앞 횡단보도"·"목적지 근처"를 한 번씩 낸다.
-class RouteGuide {
-  final List<RoutePoint> crosswalks;
-  final double destLat;
-  final double destLon;
-  final String destName;
-  final _announced = <int>{};
-  bool _arrived = false;
-  RouteGuide(this.crosswalks, this.destLat, this.destLon, this.destName);
-
-  bool get arrived => _arrived;
-
-  /// 이번 위치에서 말할 문장. 없으면 null.
-  String? update(double lat, double lon, WalkStrings s) {
-    if (_arrived) return null;
-    if (distanceM(lat, lon, destLat, destLon) <= kRouteArriveM) {
-      _arrived = true;
-      return s.arrived;
-    }
-    for (var i = 0; i < crosswalks.length; i++) {
-      if (_announced.contains(i)) continue;
-      final d = distanceM(lat, lon, crosswalks[i].lat, crosswalks[i].lon);
-      if (d <= kRouteCrosswalkNoticeM) {
-        _announced.add(i);
-        return s.crosswalkAhead(d);
-      }
-    }
-    return null;
-  }
+  /// 미니맵 밑 짧은 글자(예: "20m 왼쪽"). 없으면 null.
+  final String? caption;
+  const RouteView(this.geo, this.me, this.s, this.heading, this.alpha,
+      this.arrow, this.caption);
 }
 
 /// 위치를 받아 주변 횡단보도 정보를 모으고, 경로 안내를 돌린다.
@@ -202,10 +155,26 @@ class WalkInfoService {
   DateTime? _areaCheckedAt;
   List<CrosswalkInfo> _std = const [];
   List<CrosswalkInfo> _signlamp = const [];
-  RouteGuide? _route;
+  NavGuide? _nav;
+  ({double lat, double lon, String name})? _dest;
+  final _offRoute = OffRouteDetector();
+  RerouteLimiter _limiter = RerouteLimiter();
+  bool _rerouting = false;
+  StreamSubscription<MagnetometerEvent>? _magSub;
+  StreamSubscription<AccelerometerEvent>? _accSub;
+  List<double>? _gravity;
+  final _compass = <double>[];
+  DateTime? _viewAt;
+
+  /// 카메라 위 경로 층이 듣는다(RouteOverlay).
+  final ValueNotifier<RouteView?> view = ValueNotifier(null);
 
   bool get running => _sub != null;
-  RouteGuide? get route => _route;
+  NavGuide? get nav => _nav;
+  String? get destName => _dest?.name;
+
+  /// 횡단 중이면 경로 화살표를 숨긴다(기존 횡단 방향 화살표와 겹치지 않게).
+  bool get onCrosswalk => _feedback?.onCrosswalk ?? false;
 
   static bool get keysReady =>
       kTmapKey.isNotEmpty && kDataGoKrKey.isNotEmpty;
@@ -240,7 +209,7 @@ class WalkInfoService {
     _sub = null;
     _feedback?.approachInfo = null;
     _feedback = null;
-    _route = null;
+    stopRoute();
     EventLog.instance.log('walk.stop', const {});
   }
 
@@ -252,17 +221,129 @@ class WalkInfoService {
       _areaCheckedAt = now;
       unawaited(_refreshArea(pos.latitude, pos.longitude));
     }
-    final route = _route;
+    _updateRoute(pos, now);
+  }
+
+  void _updateRoute(Position pos, DateTime now) {
+    final nav = _nav;
     final fb = _feedback;
-    if (route != null && fb != null) {
-      final msg = route.update(
-          pos.latitude, pos.longitude, WalkStrings(fb.language));
-      if (msg != null) {
-        // 기록에는 위치를 남기지 않는다(docs/EventLog.md).
-        EventLog.instance.log('walk.route', {'text': msg});
-        unawaited(fb.announceRoute(msg));
+    if (nav == null || fb == null) return;
+    final fix = nav.geo.locate(nav.geo.frame.toXY(pos.latitude, pos.longitude));
+    final msg = nav.message(fix.s, fb.language, onCrosswalk: fb.onCrosswalk);
+    if (msg != null) {
+      // 기록에는 위치를 남기지 않는다(docs/EventLog.md).
+      EventLog.instance.log('walk.turn', {'text': msg});
+      unawaited(fb.announceRoute(msg));
+      if (nav.arrived) {
+        stopRoute();
+        return;
       }
     }
+    if (!fb.onCrosswalk &&
+        !_rerouting &&
+        _offRoute.update(fix.d, pos.accuracy, now)) {
+      _offRoute.reset();
+      final dest = _dest;
+      if (dest != null && _limiter.tryAcquire(now)) {
+        EventLog.instance.log('walk.offroute', {'n': _limiter.count});
+        unawaited(fb.announceRoute(offRouteMessage(fb.language)));
+        unawaited(_reroute(dest));
+      }
+    }
+    _publish(force: true);
+  }
+
+  Future<void> _reroute(({double lat, double lon, String name}) dest) async {
+    _rerouting = true;
+    final why = await _routeTo(dest);
+    _rerouting = false;
+    EventLog.instance.log('walk.reroute', {'ok': why == null});
+  }
+
+  /// 걷는 중(0.8m/s 이상, 추정)엔 GPS 진행 방향, 아니면 나침반.
+  ({double? heading, bool fromGps}) _heading() {
+    final pos = _last;
+    if (pos != null && pos.speed >= 0.8 && pos.heading >= 0) {
+      return (heading: pos.heading, fromGps: true);
+    }
+    return (heading: _compass.isEmpty ? null : _compass.last, fromGps: false);
+  }
+
+  void _publish({bool force = false}) {
+    final nav = _nav;
+    final pos = _last;
+    if (nav == null || pos == null) {
+      view.value = null;
+      return;
+    }
+    final now = DateTime.now();
+    final last = _viewAt;
+    // 나침반은 초당 수십 번 — 그리기는 초당 5번까지만.
+    if (!force && last != null && now.difference(last).inMilliseconds < 200) {
+      return;
+    }
+    _viewAt = now;
+    final me = nav.geo.frame.toXY(pos.latitude, pos.longitude);
+    final fix = nav.geo.locate(me);
+    final h = _heading();
+    final alpha = arrowAlpha(
+        heading: h.heading,
+        gpsAccuracy: pos.accuracy,
+        fromGps: h.fromGps,
+        compassSpread: headingSpread(_compass));
+    final turn = nav.nextTurn(fix.s);
+    final ahead = turn == null ? null : math.max(0.0, turn.s - fix.s);
+    final lang = _feedback?.language ?? AppLanguage.ko;
+    final heading = h.heading;
+    view.value = RouteView(
+      nav.geo,
+      me,
+      fix.s,
+      heading,
+      alpha,
+      heading == null
+          ? const []
+          : arrowPath(
+              routeBearing: nav.geo.bearingAt(fix.s),
+              heading: heading,
+              turnAhead: ahead,
+              turnBearing: turn == null ? null : nav.geo.bearingAt(turn.s + 3)),
+      turn == null || ahead == null || ahead > kTurnPreM
+          ? null
+          : '${roundTo10(ahead)}m ${turnPhrase(turn.turnType, lang)}',
+    );
+  }
+
+  void _startCompass() {
+    _accSub ??= accelerometerEventStream().listen((e) {
+      // 저역 통과로 중력만 남긴다(걸음 흔들림 제거).
+      final g = _gravity;
+      _gravity = g == null
+          ? [e.x, e.y, e.z]
+          : [
+              g[0] * 0.9 + e.x * 0.1,
+              g[1] * 0.9 + e.y * 0.1,
+              g[2] * 0.9 + e.z * 0.1,
+            ];
+    }, onError: (Object _) {});
+    _magSub ??= magnetometerEventStream().listen((e) {
+      final g = _gravity;
+      if (g == null) return;
+      final h = compassHeading(g, [e.x, e.y, e.z]);
+      if (h == null) return;
+      _compass.add(h);
+      if (_compass.length > 10) _compass.removeAt(0);
+      _publish();
+    }, onError: (Object _) {});
+  }
+
+  void _stopCompass() {
+    unawaited(_accSub?.cancel());
+    unawaited(_magSub?.cancel());
+    _accSub = null;
+    _magSub = null;
+    _gravity = null;
+    _compass.clear();
   }
 
   /// 판정표 1·2행: 표준데이터 30m 안 -> 없으면 Signlamp 30m 안 -> 없으면 침묵.
@@ -380,26 +461,49 @@ class WalkInfoService {
       final pois = poi['searchPoiInfo']?['pois']?['poi'] as List?;
       if (pois == null || pois.isEmpty) return 'no_place';
       final p = pois.first as Map;
-      final destLat = double.parse('${p['frontLat']}');
-      final destLon = double.parse('${p['frontLon']}');
-      final name = '${p['name']}';
+      _limiter = RerouteLimiter();
+      return _routeTo((
+        lat: double.parse('${p['frontLat']}'),
+        lon: double.parse('${p['frontLon']}'),
+        name: '${p['name']}',
+      ));
+    } catch (e) {
+      EventLog.instance.log('walk.error', {'where': 'poi', 'e': '$e'});
+      return 'network';
+    }
+  }
+
+  /// 현재 위치에서 [dest]까지 경로를 받아 안내를 (다시) 시작한다.
+  Future<String?> _routeTo(({double lat, double lon, String name}) dest) async {
+    final pos = _last;
+    if (pos == null) return 'no_position';
+    try {
       final geo = await _postForm(
           Uri.https('apis.openapi.sk.com', '/tmap/routes/pedestrian',
               {'version': '1'}),
           {
             'startX': '${pos.longitude}',
             'startY': '${pos.latitude}',
-            'endX': '$destLon',
-            'endY': '$destLat',
+            'endX': '${dest.lon}',
+            'endY': '${dest.lat}',
             'startName': 'start',
-            'endName': name,
+            'endName': dest.name,
             // 30 = 최단거리 + 계단 제외(시각장애 사용자).
             'searchOption': '30',
           },
           headers: {'appKey': kTmapKey});
-      _route = RouteGuide(parseRouteCrosswalks(geo), destLat, destLon, name);
-      EventLog.instance.log('walk.route_start',
-          {'dest': name, 'crosswalks': _route!.crosswalks.length});
+      final g = RouteGeometry.fromTmap(geo);
+      if (g.pts.length < 2) return 'network';
+      _dest = dest;
+      _nav = NavGuide(g);
+      _offRoute.reset();
+      _startCompass();
+      EventLog.instance.log('walk.route_start', {
+        'dest': dest.name,
+        'm': g.length.round(),
+        'guides': g.guides.length,
+      });
+      _publish(force: true);
       return null;
     } catch (e) {
       EventLog.instance.log('walk.error', {'where': 'route', 'e': '$e'});
@@ -407,7 +511,12 @@ class WalkInfoService {
     }
   }
 
-  void stopRoute() => _route = null;
+  void stopRoute() {
+    _nav = null;
+    _dest = null;
+    _stopCompass();
+    view.value = null;
+  }
 
   static Future<Map<String, dynamic>> _getJson(Uri uri,
       {Map<String, String> headers = const {}}) async {

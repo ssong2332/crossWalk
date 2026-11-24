@@ -58,12 +58,13 @@ class _WalkInfoSectionState extends State<WalkInfoSection> {
     setState(() => _busy = true);
     final why = await _svc.startRoute(text);
     if (!mounted) return;
-    final route = _svc.route;
+    final geo = _svc.nav?.geo;
+    final m = geo == null ? 0 : (geo.length / 10).round() * 10;
     final msg = why != null
         ? _reason(why)
         : _ko
-            ? '${route!.destName}까지 안내합니다. 횡단보도 ${route.crosswalks.length}곳'
-            : 'Guiding to ${route!.destName}. ${route.crosswalks.length} crosswalks';
+            ? '${_svc.destName}까지 $m미터 안내합니다. 카메라 화면에 화살표가 나옵니다'
+            : 'Guiding to ${_svc.destName}, $m meters. Arrow on the camera screen';
     setState(() {
       _busy = false;
       _status = msg;
@@ -115,7 +116,7 @@ class _WalkInfoSectionState extends State<WalkInfoSection> {
                 onPressed: _busy ? null : _startRoute,
                 child: Text(_ko ? '경로 안내 시작' : 'Start route'),
               ),
-              if (_svc.route != null)
+              if (_svc.nav != null)
                 TextButton(
                   onPressed: () => setState(_svc.stopRoute),
                   child: Text(_ko ? '경로 안내 끝' : 'Stop route'),
