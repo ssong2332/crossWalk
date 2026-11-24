@@ -56,6 +56,18 @@ void main() {
     });
   });
 
+  group('감사 13: 가속도 센서가 멈추면', () {
+    test('열린 still 구간이 남아도 표본이 1초보다 오래되면 still로 막지 않는다', () {
+      final s = FeedbackService();
+      walk(s, 0, 3);
+      stand(s, 3.066, 8);
+      expect(s.noWalkCrossed(at(0), at(8)), containsPair('rule', 'still'),
+          reason: '센서가 살아 있을 때는 그대로 막는다');
+      expect(s.noWalkCrossed(at(0), at(20)), isNull,
+          reason: '8초 뒤 표본 없음(센서 오류로 구독 끊김) — 멈춤 아님');
+    });
+  });
+
   group('거짓 건넜습니다 — 막는다', () {
     test('11/12 13:54:09.1: 해제 순간 서 있음 (위 9.3초, 걸음 6.4초)', () {
       final (s, said) = release([('w', 0, 3.4), ('s', 3.47, 9.26)], 9.26);

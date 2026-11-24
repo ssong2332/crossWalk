@@ -126,6 +126,7 @@ class CameraScreen extends StatefulWidget {
 class _CameraScreenState extends State<CameraScreen>
     with WidgetsBindingObserver, TickerProviderStateMixin {
   CameraController? _controller;
+  Future<void>? _closingController;
   final Classifier _classifier = Classifier();
   // T70: 학습된 각도 회귀 모델. 분류기와 별도 세션이며, 횡단보도가
   // 보이는 상태에서만 돌린다(none이면 각도라는 개념 자체가 없다).
@@ -348,6 +349,8 @@ class _CameraScreenState extends State<CameraScreen>
         await _feedback.init(language: _language);
 
         final status = await Permission.camera.request();
+        // 감사 3: 기다리는 사이 화면이 닫혔으면 더 진행하지 않는다.
+        if (!mounted) return;
         if (!status.isGranted) {
           EventLog.instance.log('error', {
             'where': 'permission',
@@ -385,6 +388,8 @@ class _CameraScreenState extends State<CameraScreen>
         // 각도 모델 초기화 실패는 치명적이지 않다 — 각도만 못 쓰고
         // 화살표는 기존 좌/우 표시로 동작한다. 앱 전체를 막지 않는다.
         loadClock.reset();
+        // 감사 10: 각도·위치 모델 실패도 말로 알린다(둘 다 실패해도 한 번).
+        var modelBroken = false;
         try {
           await _angleEstimator.init();
           EventLog.instance.log('model',
@@ -393,6 +398,7 @@ class _CameraScreenState extends State<CameraScreen>
           debugPrint('[T70] 각도 모델 초기화 실패(각도 없이 계속 진행): $e');
           EventLog.instance
               .log('model', {'name': 'angle', 'ok': false, 'err': '$e'});
+          modelBroken = true;
         }
         // T98: 위치 모델도 마찬가지 — 실패하면 끝 규칙만 빠지고 각도로 동작한다.
         loadClock.reset();
@@ -404,10 +410,21 @@ class _CameraScreenState extends State<CameraScreen>
           debugPrint('[T98] 위치 모델 초기화 실패(끝 규칙 없이 계속 진행): $e');
           EventLog.instance
               .log('model', {'name': 'pos', 'ok': false, 'err': '$e'});
+          modelBroken = true;
+        }
+        // 감사 3: 모델을 여는 사이 화면이 닫혔으면 방금 만든 세션을 닫는다.
+        if (!mounted) {
+          _closeModels();
+          return;
+        }
+        if (modelBroken) {
+          await _feedback.announceError(_strings.modelCorruptedAnnouncement);
+          if (!mounted) return;
         }
 
         setState(() => _statusLabel = _strings.connectingCamera);
         final cameras = await availableCameras();
+        if (!mounted) return;
         if (cameras.isEmpty) {
           EventLog.instance.log('error', {'where': 'camera', 'msg': 'no camera'});
           await _feedback.announceError(_strings.cameraNotFoundAnnouncement);
@@ -425,6 +442,10 @@ class _CameraScreenState extends State<CameraScreen>
           orElse: () => cameras.first,
         );
 
+        // 감사 4: 이전 컨트롤러(앱 일시정지 때 닫기 시작한 것 포함)가 다 닫힌 뒤 연다.
+        await _closingController;
+        await _dropController();
+        if (!mounted) return;
         _controller = CameraController(
           back,
           ResolutionPreset.medium,
@@ -433,6 +454,11 @@ class _CameraScreenState extends State<CameraScreen>
         );
 
         await _controller!.initialize();
+        // 감사 3: 여는 사이 화면이 닫혔으면 남기지 않고 닫는다.
+        if (!mounted) {
+          await _dropController();
+          return;
+        }
         await _controller!.lockCaptureOrientation();
 
         // T37 (low-light v1, investigation result): explicitly request auto
@@ -469,7 +495,10 @@ class _CameraScreenState extends State<CameraScreen>
           zoomMax = null;
         }
 
-        if (!mounted) return;
+        if (!mounted) {
+          await _dropController();
+          return;
+        }
 
         _zoomMin = zoomMin;
         _zoomMax = zoomMax;
@@ -479,7 +508,10 @@ class _CameraScreenState extends State<CameraScreen>
         // B안 ①(b): 카메라를 열 때마다(앱 재개 포함) 초광각을 다시 건다. 꺼져
         // 있으면 아무것도 하지 않는다(지금 동작).
         if (_ultraWideEnabled) await _applyUltraWide(true);
-        if (!mounted) return;
+        if (!mounted) {
+          await _dropController();
+          return;
+        }
         _streamSizeLogged = false;
         _controller!.startImageStream(_onFrame);
         // B안 ①(a): 릴리스 빌드에서 `Size` 문자열 보간이 "Instance of 'Size'"로
@@ -498,6 +530,7 @@ class _CameraScreenState extends State<CameraScreen>
         });
         setState(() => _statusLabel = _strings.detecting);
       } on ModelIntegrityException catch (e) {
+        await _dropController();
         EventLog.instance
             .log('error', {'where': 'model_integrity', 'msg': e.message});
         await _feedback.announceError(_strings.modelCorruptedAnnouncement);
@@ -508,6 +541,8 @@ class _CameraScreenState extends State<CameraScreen>
           });
         }
       } catch (e) {
+        // 감사 4: initialize 실패 등 — 반쯤 연 컨트롤러를 닫고 비운다(재시도 때 덮어쓰지 않게).
+        await _dropController();
         EventLog.instance.log('error', {'where': 'init', 'msg': '$e'});
         await _feedback.announceError(_strings.detectionErrorAnnouncement);
         if (mounted) {
@@ -520,6 +555,22 @@ class _CameraScreenState extends State<CameraScreen>
     } finally {
       _isInitializing = false;
     }
+  }
+
+  /// 감사 4: 지금 컨트롤러를 떼어 닫는다. 닫기 실패는 무시(이미 오류 처리 중일 수 있다).
+  Future<void> _dropController() async {
+    final c = _controller;
+    _controller = null;
+    try {
+      await c?.dispose();
+    } catch (_) {}
+  }
+
+  /// 감사 3: 화면이 닫힌 뒤 끝난 init이 만든 세션을 닫는다(dispose는 이미 지나갔다).
+  void _closeModels() {
+    _classifier.dispose();
+    _angleEstimator.dispose();
+    _positionEstimator.dispose();
   }
 
   // T37: manual, off-by-default flashlight/torch toggle — see docs/Tasks.md
@@ -1643,7 +1694,8 @@ class _CameraScreenState extends State<CameraScreen>
     }
     if (state == AppLifecycleState.inactive) {
       if (_controller != null && _controller!.value.isInitialized) {
-        _controller!.dispose();
+        // 감사 4: 재개 때 _initCamera가 이 닫기를 기다린 뒤 새로 연다.
+        _closingController = _controller!.dispose();
       }
     } else if (state == AppLifecycleState.resumed) {
       _initCamera();
