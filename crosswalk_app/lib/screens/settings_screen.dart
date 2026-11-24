@@ -6,6 +6,7 @@ import '../localization/app_strings.dart';
 import '../services/dev_capture.dart';
 import '../services/vib_module.dart';
 import '../services/feedback_service.dart';
+import '../widgets/walk_info_section.dart';
 
 /// T39: language selection + TTS-rate/vibration-strength sliders + a
 /// disabled "screen reader optimization" placeholder.
@@ -776,6 +777,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _buildSectionHeader(_strings.settingsVibModuleSectionHeader),
             _buildVibModuleSection(),
           ],
+          // T198: 보행 정보(위치·네트워크, 기본 꺼짐).
+          _buildSectionHeader(
+              _language == AppLanguage.ko ? '보행 정보' : 'Walk info'),
+          WalkInfoSection(feedback: widget.feedback, language: _language),
           _buildSectionHeader(_strings.settingsAccessibilitySectionHeader),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),

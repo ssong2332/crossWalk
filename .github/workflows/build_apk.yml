@@ -62,7 +62,16 @@ jobs:
       # settings_screen.dart의 `String.fromEnvironment('BUILD_SHA', ...)`.
       - name: APK 빌드
         working-directory: crosswalk_app
-        run: flutter build apk --release --dart-define=BUILD_SHA=${{ github.sha }}
+        # T198: 보행 정보 API 키(저장소 비밀값). 없으면 빈 값 — 앱은 "키 없음"을 말하고 끈다.
+        env:
+          TMAP_KEY: ${{ secrets.TMAP_KEY }}
+          DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
+          GG_KEY: ${{ secrets.GG_KEY }}
+        run: >-
+          flutter build apk --release --dart-define=BUILD_SHA=${{ github.sha }}
+          --dart-define=TMAP_KEY="$TMAP_KEY"
+          --dart-define=DATA_GO_KR_KEY="$DATA_GO_KR_KEY"
+          --dart-define=GG_KEY="$GG_KEY"
 
       - name: APK 서명
         env:
