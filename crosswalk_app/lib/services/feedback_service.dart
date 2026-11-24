@@ -2142,10 +2142,39 @@ class FeedbackService {
     _roadTimer = null;
   }
 
+  /// T202: 분류기 원값(게이트 전 `cls.best`). 카메라 화면이 분류기가 돈 프레임마다 넣는다.
+  String? _classifierBest;
+
+  /// T202: 분류기가 실제로 돈 프레임의 원값(best 라벨)을 기록한다(`cls` 기록과 같은 값).
+  void noteClassifierBest(String? label) => _classifierBest = label;
+
+  /// T202(사용자 선택 (가) END 변형, 2026-11-24): 차도 보류가 **끝나는 순간** 분류기 원값이
+  /// 위(front·left·right)면 말하지 않는다. 앱 판정이 cw 게이트로 none이 되어도 T191이
+  /// 못 막던 젖은 야간 횡단보도 안 '차도입니다'(11/18 18:39:57.0)를 막는다.
+  /// 보류 중 어느 프레임이든 보는 규칙은 진짜 차도 2건(11/11 18:23:05.3, 11/22 18:50:41.9)을
+  /// 막아 버려 끝 순간만 본다(`train/t202/replay.csv`).
+  @visibleForTesting
+  bool cancelHeldRoadOnClassifier() {
+    final at = _heldRoadAt;
+    final best = _classifierBest ?? '';
+    if (at == null || !DirectionResolver.isOnCrosswalk(best)) return false;
+    final dt = clock().difference(at).inMilliseconds;
+    final message = _heldRoadMessage;
+    _clearHeldRoad();
+    EventLog.instance.log('say.cancel', {
+      'text': message,
+      'why': 'road_raw_on',
+      'to': best,
+      'dt': dt,
+    });
+    return true;
+  }
+
   Future<void> _releaseHeldRoad() async {
     if (_heldRoadAt == null) return;
     // 타이머 직전 프레임에 상태가 바뀌었을 수 있다 — 한 번 더 본다.
     if (cancelHeldRoadOnState(_lastRawClass ?? '')) return;
+    if (cancelHeldRoadOnClassifier()) return;
     final message = _heldRoadMessage;
     final shortMs = _heldRoadShortMs;
     _clearHeldRoad();

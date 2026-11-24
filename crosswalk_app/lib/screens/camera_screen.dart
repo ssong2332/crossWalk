@@ -723,6 +723,7 @@ class _CameraScreenState extends State<CameraScreen>
         'avg': _classifier.lastAvgProbs,
         'dur': clsClock.elapsedMilliseconds,
       });
+      _feedback.noteClassifierBest(_classifier.lastBestLabel); // T202: 차도 보류 끝 판단용 원값
     }
     if (result != null) {
       // T138: 같은 설정이 켜져 있으면, 아직 건너지 않았는데(직전 상태가 위·hold가
