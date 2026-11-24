@@ -204,6 +204,30 @@ void main() {
       expect(_lines('ble').last['st'], 'denied');
     });
 
+    test('C: 켰는데 못 찾으면 한 번만 알린다(재시도 실패·끊긴 뒤 실패는 다시 안 함), 다시 켜면 또 한 번',
+        () async {
+      var notFound = 0;
+      c.onNotFoundAnnounce = () => notFound++;
+      t.connectError = Exception('scan timeout');
+      await c.start();
+      await c.tryConnect();
+      await c.tryConnect();
+      expect(notFound, 1);
+      await c.stop();
+      await c.start();
+      expect(notFound, 2, reason: '켤 때마다 한 번');
+      t.connectError = null;
+      await c.tryConnect();
+      t.drop();
+      t.connectError = Exception('scan timeout');
+      await c.tryConnect();
+      expect(notFound, 2, reason: '끊긴 뒤 재시도 실패는 "끊겼습니다"로 이미 알렸다');
+      t.connectError = const VibPermissionDenied('denied');
+      await c.stop();
+      await c.start();
+      expect(notFound, 2, reason: '권한 거절은 해당 없음');
+    });
+
     test('쓰기 실패 → 끊김으로 본다', () async {
       await c.start();
       t.writeError = Exception('gatt');
@@ -286,6 +310,20 @@ void main() {
       final said = _lines('say').map((m) => m['text']).toList();
       expect(said.where((x) => x == ko.vibModuleLostMessage), hasLength(1));
       expect(said.where((x) => x == ko.vibModuleConnectedMessage), hasLength(1));
+    });
+
+    test('C: 못 찾으면 "연결 안 됨, 폰 진동으로 안내" 음성 1번 + 진동은 폰(out=phone)', () async {
+      final ko = AppStrings.of(AppLanguage.ko);
+      final s = FeedbackService()..attachVibModule(c);
+      t.connectError = Exception('scan timeout');
+      await c.start();
+      await c.tryConnect();
+      await s.alert('left', 0.9, angleDegrees: 15);
+      expect(_lines('vib').single['out'], 'phone');
+      await Future<void>.delayed(Duration.zero);
+      final said = _lines('say').map((m) => m['text']).toList();
+      expect(said.where((x) => x == ko.vibModuleNotFoundMessage), hasLength(1));
+      expect(ko.vibModuleNotFoundMessage, '진동 모듈 연결 안 됨, 폰 진동으로 안내합니다');
     });
 
     test('노면: 차도는 양쪽 모터 PATTERN', () async {

@@ -254,6 +254,7 @@ class AppStrings {
   final String vibModuleStateDenied;
   final String vibModuleConnectedMessage;
   final String vibModuleLostMessage;
+  final String vibModuleNotFoundMessage;
   // T135: 골라 보내기 화면(기록 파일·프레임 묶음).
   final String sharePickLogTitle;
   final String sharePickFramesTitle;
@@ -441,6 +442,7 @@ class AppStrings {
     required this.vibModuleStateDenied,
     required this.vibModuleConnectedMessage,
     required this.vibModuleLostMessage,
+    required this.vibModuleNotFoundMessage,
     required this.sharePickLogTitle,
     required this.sharePickFramesTitle,
     required this.sharePickSend,
@@ -612,6 +614,7 @@ class AppStrings {
     vibModuleStateDenied: '블루투스 권한이 없습니다',
     vibModuleConnectedMessage: '진동 모듈이 연결되었습니다',
     vibModuleLostMessage: '진동 모듈 연결이 끊겼습니다. 폰 진동으로 바꿉니다',
+    vibModuleNotFoundMessage: '진동 모듈 연결 안 됨, 폰 진동으로 안내합니다',
     sharePickLogTitle: '보낼 기록 고르기',
     sharePickFramesTitle: '보낼 프레임 묶음 고르기',
     sharePickSend: '보내기',
@@ -810,6 +813,8 @@ class AppStrings {
     vibModuleStateDenied: 'No Bluetooth permission',
     vibModuleConnectedMessage: 'Vibration module connected',
     vibModuleLostMessage: 'Vibration module disconnected. Switching to phone vibration',
+    vibModuleNotFoundMessage:
+        'Vibration module not connected. Using phone vibration',
     sharePickLogTitle: 'Choose logs to send',
     sharePickFramesTitle: 'Choose frame sets to send',
     sharePickSend: 'Send',

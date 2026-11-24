@@ -187,6 +187,12 @@ class VibModuleController {
   /// 연결됨(true)·끊김(false)으로 **바뀔 때 한 번** 부른다 — 음성 1회 알림용.
   void Function(bool connected)? onLinkAnnounce;
 
+  /// C(사용자 결정): 켠 뒤 아직 한 번도 연결되지 않았는데 찾기·연결이 실패하면
+  /// (스캔 시간 초과 등, 권한 거절 제외) **켤 때마다 한 번** 부른다 — 이어지는 재시도
+  /// 실패와 끊긴 뒤 재시도 실패는 다시 부르지 않는다.
+  void Function()? onNotFoundAnnounce;
+  bool _notFoundSaid = false;
+
   /// 세기(0~255). 설정에서 바꾼다.
   int strength = VibModuleProtocol.defaultStrength;
 
@@ -214,6 +220,7 @@ class VibModuleController {
   Future<void> start() async {
     if (_enabled) return;
     _enabled = true;
+    _notFoundSaid = false;
     _statusSub ??= transport.notifications.listen(_onStatus);
     _linkSub ??= transport.connection.listen((up) {
       if (!up) _markLost('link');
@@ -239,6 +246,10 @@ class VibModuleController {
     } catch (e) {
       _connecting = false;
       EventLog.instance.log('ble', {'st': 'fail', 'err': e.toString()});
+      if (state.value == VibLinkState.searching && !_notFoundSaid) {
+        _notFoundSaid = true;
+        onNotFoundAnnounce?.call();
+      }
       _scheduleRetry();
       return false;
     }
