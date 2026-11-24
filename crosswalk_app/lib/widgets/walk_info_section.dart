@@ -4,7 +4,7 @@ import '../localization/app_strings.dart';
 import '../services/feedback_service.dart';
 import '../services/walk_info.dart';
 
-/// T198: 설정 화면의 "보행 정보" 칸 — 켜기/끄기, 목적지 경로 안내.
+/// T198: "보행 정보" 칸(T206부터 [DestinationScreen] 안) — 켜기/끄기, 목적지 경로 안내.
 /// T205: 목적지는 검색 결과 여러 곳(이름 + 거리)을 보여 주고 읽어서 고르게 한다.
 ///
 /// 기본 꺼짐(위치·네트워크를 쓰므로 사용자가 켤 때만). 앱을 다시 켜면 꺼진다
@@ -177,7 +177,17 @@ class PlaceList extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(children: [
       for (var i = 0; i < places.length; i++)
-        ListTile(
+        // T206: 화면 읽기로 "1번, 이름, 거리" 한 덩어리 + 버튼으로 읽힌다
+        // (TalkBack이 "두 번 탭하여 활성화"를 붙인다).
+        Semantics(
+          button: true,
+          enabled: enabled,
+          label: language == AppLanguage.ko
+              ? '${i + 1}번, ${places[i].name}, ${placeDistance(places[i].distM, language)}'
+              : '${i + 1}, ${places[i].name}, ${placeDistance(places[i].distM, language)}',
+          excludeSemantics: true,
+          onTap: enabled ? () => onTap(places[i]) : null,
+          child: ListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
           enabled: enabled,
@@ -189,7 +199,31 @@ class PlaceList extends StatelessWidget {
                   color: places[i].distM > kPlaceFarM
                       ? Colors.white38
                       : Colors.white70)),
-        ),
+        )),
     ]);
+  }
+}
+
+/// T206: 카메라 화면의 목적지 버튼으로 여는 화면 — 보행 정보 켜기·목적지 검색·안내 끝.
+/// 설정 화면과 달리 인식을 멈추지 않는다(T190의 멈춤은 설정 화면에만).
+class DestinationScreen extends StatelessWidget {
+  const DestinationScreen(
+      {super.key, required this.feedback, required this.language});
+  final FeedbackService feedback;
+  final AppLanguage language;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        title: Text(language == AppLanguage.ko ? '목적지 안내' : 'Destination'),
+      ),
+      body: ListView(children: [
+        WalkInfoSection(feedback: feedback, language: language),
+      ]),
+    );
   }
 }
