@@ -169,6 +169,8 @@ class _CameraScreenState extends State<CameraScreen>
   bool _noCall = false;
   Timer? _noCallTicker;
   final _frameGate = FrameGate();
+  // G: 설정 화면이 떠 있는 동안 true — 프레임을 버린다(인식·경고·진동 멈춤).
+  bool _pausedForSettings = false;
   bool _hasError = false;
   bool _isInitializing = false;
   bool _permissionPermanentlyDenied = false;
@@ -643,9 +645,38 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   // T192: 본문에서 예외가 한 번 나도 다음 프레임을 계속 받는다(경고가 멈추지 않게).
-  void _onFrame(CameraImage image) => _frameGate.run(
-      () => _processFrame(image),
-      (e) => EventLog.instance.log('error', {'where': 'frame', 'msg': '$e'}));
+  void _onFrame(CameraImage image) {
+    if (_pausedForSettings) return;
+    _frameGate.run(() => _processFrame(image),
+        (e) => EventLog.instance.log('error', {'where': 'frame', 'msg': '$e'}));
+  }
+
+  /// G(사용자 결정 2026-11-24): 설정 화면에 들어가면 인식을 멈추고 보류·대기 중인
+  /// 안내와 진동을 버린다. 나오면 [_resumeAfterSettings]가 말없이 다시 시작한다.
+  void _pauseForSettings() {
+    _pausedForSettings = true;
+    EventLog.instance.log('pause', {'why': 'settings'});
+    unawaited(_feedback.pauseGuidance());
+    if (_vibModuleEnabled) _vibModule.sendStop('settings');
+  }
+
+  /// G: 재개 — 멈추기 전 각도·위치·상태가 이어져 엉뚱한 안내(예: 멈춘 사이 시간을
+  /// 위 지속으로 세어 "건넜습니다")가 나오지 않게 카메라를 새로 열 때처럼 비우고,
+  /// 직전 상태는 처음 켰을 때의 무판정으로 둔다. 음성은 내지 않는다.
+  void _resumeAfterSettings() {
+    if (!mounted) return;
+    _angleSmoother.reset();
+    _positionSmoother.reset();
+    _edgeSide = 0;
+    _stillOpposite.reset();
+    _guidanceLabel = unjudgedGuidanceLabel;
+    setState(() {
+      _arrowStripeAngle = null;
+      _smoothedPosition = null;
+    });
+    EventLog.instance.log('resume', {'why': 'settings'});
+    _pausedForSettings = false;
+  }
 
   void _processFrame(CameraImage image) {
     // B안 ①(a): 이미지 스트림의 실제 해상도는 카메라를 열 때마다 첫 프레임에서 한 번.
@@ -1973,7 +2004,9 @@ class _CameraScreenState extends State<CameraScreen>
         child: InkWell(
           customBorder: const CircleBorder(),
           onTap: () {
-            Navigator.of(context).push(
+            _pauseForSettings();
+            Navigator.of(context)
+                .push(
               MaterialPageRoute(
                 builder: (_) => SettingsScreen(
                   feedback: _feedback,
@@ -2011,7 +2044,8 @@ class _CameraScreenState extends State<CameraScreen>
                   onVibModuleTest: _vibModuleTest,
                 ),
               ),
-            );
+            )
+                .then((_) => _resumeAfterSettings());
           },
           child: const Padding(
             // Reviewer fix: 8 -> 14 so the tappable circle (icon 20 + 2x

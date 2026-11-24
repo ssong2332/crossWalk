@@ -3982,6 +3982,20 @@ void main() {
       expect(s.holdsRoad, isFalse);
     });
 
+    test('G: 설정 화면에 들어가 pauseGuidance면 보류 중인 차도를 말하지 않는다', () async {
+      await s.alert('none', 0.9);
+      await s.surfaceAlert([SurfaceEvent.road]);
+      expect(s.holdsRoad, isTrue);
+      sched.advanceTo(at(1000));
+      await s.pauseGuidance();
+      expect(s.holdsRoad, isFalse);
+      expect(s.audioPolicy.pendingMessage, isNull);
+      sched.advanceTo(at(6000));
+      await pumpEventQueue();
+      expect(roadSays(), isEmpty);
+      expect(lines('vib').where((m) => m['kind'] == 'road'), isEmpty);
+    });
+
     test('13:55:23.6 순서: 2.3초 뒤 approach면 취소하고 앞에 횡단보도만 남는다', () async {
       await s.alert('none', 0.9);
       await s.surfaceAlert([SurfaceEvent.road]);
