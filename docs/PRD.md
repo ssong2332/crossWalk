@@ -297,7 +297,8 @@ Bbox 시점 특성(실측, 박스 아래끝 y 위치 중앙값 = 화면 높이�
 
 ## Out of Scope (current build)
 - iOS build/signing (CI produces APK only). NOTE: iOS is now an in-scope target platform (Open Q #1 ANSWERED 2026-07-17), but no iOS build/signing pipeline exists yet — building it is tracked as T33, not part of the current build.
-- GPS/location, traffic-signal detection, obstacle detection.
+- traffic-signal detection, obstacle detection. (GPS/location: T198에서 설정의 "보행 정보"로 추가 — 아래 결정 참고)
+- **T198 결정 (사용자, 2026-11-24):** 네트워크·위치를 쓰는 "보행 정보"를 넣는다. 범위 = 앞에 횡단보도 뒤 주변 신호등·음향신호기 정보(전국횡단보도표준데이터 → 경기 Signlamp, 30m) + 티맵 보행자 경로의 "N미터 앞 횡단보도". 설정에서 켤 때만(기본 꺼짐). 키는 CI 비밀값을 `--dart-define`으로 넣고 공개 저장소 그대로 둔다 — APK에서 키를 꺼낼 수 있는 위험은 사용자가 감수(Free 요금제라 과금 없음). 실시간 신호 API(서울·제주·울산)는 잔여시간 단위·방향 미확정이라 제외.
 - `crosswalk_app_scaffold/` — was default Flutter counter-app boilerplate, unused; DELETED from the filesystem (T20, 2026-07-17). It was never tracked by git (`.gitignore:18`), so there is no commit/diff for the removal — pure local cleanup. The directory no longer exists.
 
 ## Assumptions (推定 — verify before building on them)

@@ -1580,8 +1580,25 @@ class FeedbackService {
         EventLog.instance.log('say.cancel',
             {'text': strings.approachAheadMessage, 'why': 'entry'});
       }
+      // T198: 대기 중인 보행 정보는 진입 순간 늦은 말이다 — 진입 안내를 넣는다.
+      if (phaseMessage == strings.enteredCrosswalkMessage &&
+          _lastWalkInfo != null &&
+          audioPolicy.pendingMessage == _lastWalkInfo) {
+        audioPolicy.clearPending();
+        EventLog.instance
+            .log('say.cancel', {'text': _lastWalkInfo!, 'why': 'entry'});
+      }
       unawaited(_speak(phaseMessage,
           priority: FeedbackPriority.p1, supersedes: supersedes));
+      // T198: "앞에 횡단보도" 뒤에 주변 신호등·음향신호기 정보를 P1로 잇는다
+      // (재생 중인 P1 뒤에서 기다림). 정보가 없으면 아무것도 하지 않는다.
+      if (phaseMessage == strings.approachAheadMessage) {
+        final info = approachInfo?.call();
+        if (info != null && info.isNotEmpty) {
+          _lastWalkInfo = info;
+          unawaited(_speak(info, priority: FeedbackPriority.p1));
+        }
+      }
     }
 
     // 이탈에서 회복했을 때의 확인 안내(P0 회복 순위). 처음부터 똑바로 가는
@@ -2209,6 +2226,15 @@ class FeedbackService {
   @visibleForTesting
   static List<int> surfaceRoadPattern(int shortMs) =>
       <int>[0, shortMs, shortMs, shortMs, shortMs, shortMs];
+
+  /// T198: 주변 횡단보도 정보를 돌려주는 함수(보행 정보가 켜졌을 때만 설정됨).
+  String? Function()? approachInfo;
+  String? _lastWalkInfo;
+
+  /// T198: 경로 안내("N미터 앞 횡단보도", "목적지 근처") — 1회성 사실이라 P1.
+  Future<void> announceRoute(String message) async {
+    await _speak(message, priority: FeedbackPriority.p1);
+  }
 
   // 앱 초기화 실패 시 사용자에게 오류 상황을 음성으로 안내
   Future<void> announceError(String message) async {
