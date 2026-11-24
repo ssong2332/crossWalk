@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>T200 횡단보도 경계 표시 시안 (로컬 전용)</title>
+<style>
+body{font-family:system-ui,"Malgun Gothic",sans-serif;margin:24px;max-width:1280px;color:#111;background:#fafafa}
+h1{font-size:22px}h2{font-size:18px;margin-top:32px;border-bottom:2px solid #ddd;padding-bottom:4px}
+table{border-collapse:collapse;width:100%;font-size:14px;background:#fff}th,td{border:1px solid #ccc;padding:6px 8px;vertical-align:top;text-align:left}
+th{background:#eee}.grid{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}.grid figure{margin:0}
+.grid img{width:100%;display:block;border:1px solid #999}.grid figcaption{font-size:12px;text-align:center}
+.warn{background:#fff4d6;border-left:4px solid #e0a800;padding:8px 12px}.rec{background:#e6f6ea;border-left:4px solid #2a9d4b;padding:8px 12px}
+code{background:#eee;padding:0 3px}
+</style></head><body>
+<h1>T200 횡단보도 경계 표시 시안 — 로컬 전용</h1>
+<p class="warn">거리 사진이 들어 있다. <b>외부(Artifact·클라우드 등)에 올리지 말 것.</b> 이미지(<code>img/</code>)는 커밋하지 않는다 —
+<code>PYTHONIOENCODING=utf-8 python train/t200/mockup.py</code>로 다시 만든다(필요: 메인 체크아웃의 <code>train/frames_*</code>).</p>
+
+<h2>1. 무엇을 그렸나</h2>
+<ul>
+<li>노면 분할 모델: 앱과 같은 <code>crosswalk_app/assets/model/crosswalk_surface.onnx</code>, 같은 전처리(세로 프레임 전체를 224×224로 누름, ImageNet 정규화). 클래스 3(횡단보도)의 argmax 마스크.</li>
+<li>위치 막대: 앱과 같은 <code>crosswalk_position.onnx</code> 한 장 출력(평활 없음). -2 왼쪽 끝 ~ +2 오른쪽 끝, 눈금은 끝 판정선 ±1.0(<code>direction_resolver.dart:192</code>). 흰 고리 = 끝 구간(색 아님).</li>
+<li>프레임의 실제 상태(분류기·각도)는 이 시안에 쓰지 않았다. 행 제목은 화면 모양만 적은 것이다.</li>
+</ul>
+
+<h2>2. 시안 (열: 원본 / A 칠하기 / B 외곽선 / C 칠하기+보이는 경계+위치 막대 / C 저시력 색)</h2>
+<div id="rows"></div>
+<script>
+const rows=[["center","횡단보도가 화면 양쪽 밖까지 — 보이는 경계 없음(C는 선을 안 그림). 위치 모델 -1.47(왼쪽 끝 구간)"],
+["onright","오른쪽 경계만 보임 — C는 오른쪽 선만. 위치 모델 -0.30"],
+["onleft","왼쪽 '경계'가 실은 빨간 차가 가린 선 — 가림을 경계로 오인하는 예. 위치 모델 -0.99"],
+["approach","접근 중(횡단보도가 발 앞까지 안 옴) — C는 선·막대 없이 칠하기만"]];
+const cols=[["0raw","원본"],["A","A 칠하기"],["B","B 외곽선"],["C","C 동행자·개발용"],["Clv","C 저시력용"]];
+document.getElementById("rows").innerHTML=rows.map(([id,t])=>`<h3>${t}</h3><div class="grid">`+
+cols.map(([k,c])=>`<figure><img src="img/${id}_${k}.jpg" alt="${c}"><figcaption>${c}</figcaption></figure>`).join("")+`</div>`).join("");
+</script>
+
+<h2>3. 후보 비교</h2>
+<table><tr><th></th><th>A 마스크 반투명 칠하기</th><th>B 마스크 외곽선(다각형)</th><th>C 옅은 칠하기 + 보이는 양 끝 경계선 + 위치 막대 (추천)</th></tr>
+<tr><th>데이터 출처</th><td>노면 모델 argmax==3 (이미 <code>SurfaceFeatures.fromLogits</code>가 224×224 전부 argmax함)</td><td>같은 마스크 → 가장 큰 덩어리 → 외곽 추적·단순화</td><td>같은 마스크 → 행마다 왼/오른 끝 → 직선 2개 맞춤. 위치는 기존 위치 모델(<code>_positionSmoother</code> 값)</td></tr>
+<tr><th>떨림 처리</th><td>2.5Hz 갱신이라 칸이 '툭툭' 바뀜. 최근 2~3장 마스크 다수결 또는 페이드(추정)</td><td>모양(꼭짓점 수)이 매번 달라 평활이 어렵다 — 가장 많이 떨림(추정)</td><td>선 끝점 4개를 EMA(기존 각도 스무더와 같은 방식) + 220ms 보간(화살표와 같음). 선 2개라 평활이 쉬움</td></tr>
+<tr><th>성능(추가분)</th><td>마스크 224×224 바이트 보관 + 화면에 이미지 1장 그리기(작음, 추정)</td><td>Dart로 외곽 추적 구현 필요(코드량 큼), 계산은 작음(추정)</td><td>argmax 루프 안에서 행별 최소/최대 x만 기록 → 직선 맞춤 224점: 1ms 미만(추정)</td></tr>
+<tr><th>가슴 고정에서 보이는 모양</th><td>원근 때문에 사다리꼴, 줄무늬 사이 아스팔트까지 채워져 '띠'로 보임(시안 1행)</td><td>가림·그림자·차량 따라 들쭉날쭉(시안 2~4행)</td><td>사다리꼴의 두 옆변. 화면 밖 경계·발 앞까지 안 온 횡단보도는 선 생략 → 틀린 선을 덜 그림</td></tr>
+<tr><th>사용자 위치·이탈 방향</th><td>따로 없음(칠한 띠가 화면 어디 있는지로 짐작)</td><td>따로 없음</td><td>아래 막대에 위치 점, 끝 구간이면 점에 고리·가까운 쪽 경계선이 굵은 이중선</td></tr>
+<tr><th>실패 모습</th><td>오검출이 그대로 보임 — 개발 확인엔 오히려 장점</td><td>오검출이 '확실한 선'처럼 보임</td><td>가림 선을 경계로 오인(3행). 경계가 안 보이면 선이 없다는 점을 사용자가 알아야 함</td></tr>
+</table>
+<p class="rec"><b>추천: C (동행자·개발용 보라, 기본 꺼짐 설정, 6절 규칙대로 상태별 표시)</b> — 칠하기(A)를 옅게 깔아 모델이 본 영역을 그대로 보이되, '경계'는 확실히 보이는 옆변만 직선으로 그리고, 위치는 이미 검증된 위치 모델에서 가져온다. B는 떨림·오인이 가장 크고 구현량도 커서 제외.</p>
+
+<h2>4. 누구를 위한 표시인가 — 색·두께</h2>
+<table><tr><th></th><th>동행자·개발 확인용 (기본값 추천)</th><th>저시력 사용자용</th></tr>
+<tr><th>칠하기</th><td>보라(#B58CFF) 25% 섞기 — 카메라 화면을 거의 가리지 않음</td><td>칠하지 않고 <b>횡단보도 밖을 55% 어둡게</b> — 밝기 대비로 영역을 보여 줌</td></tr>
+<tr><th>경계선</th><td>보라 5px+검정 테두리, 끝 구간 쪽은 9px 이중선(빨강은 앱에서 '심한 이탈' 전용이라 안 씀)</td><td>노랑(<code>kSlabYellow</code>) 18px + 검정 테두리 10px, 끝 구간 쪽 30px — 색 말고 <b>두께</b>로도 구분</td></tr>
+<tr><th>위치 막대</th><td>흰 6px, 흰 점, 끝 구간이면 고리 추가</td><td>노랑 14px, 점 지름 44px</td></tr>
+<tr><th>주의</th><td>—</td><td>이탈이 심하면 기존 노란 면(<code>SlabBackdrop</code>, 62~100%)이 화면을 덮는다 → 그 위에선 경계 표시가 안 보이는 게 맞음(겹침 순서: 미리보기 → 경계 → 노란 면). 야간 눈부심·실제 효용은 미확인(저시력 사용자 확인 필요)</td></tr>
+</table>
+<p>기본값 추천 이유: 주 사용자는 화면을 보지 않고(<code>camera_screen.dart</code> 상태 필드 주석), 경계선이 가림을 오인할 수 있어(3행) 저시력 사용자에게 '확실한 정보'처럼 보이면 위험하다. 저시력 색은 사용자 확인 뒤 설정 선택지로 추가.</p>
+
+<h2>5. 구현 예상 (승인 뒤)</h2>
+<table><tr><th>파일</th><th>변경</th><th>크기(추정)</th></tr>
+<tr><td><code>services/surface_guide.dart</code> (<code>SurfaceFeatures.fromLogits</code>)</td><td>기존 argmax 루프에서 횡단보도 행별 최소/최대 x 기록</td><td>+15줄</td></tr>
+<tr><td>새 <code>services/crosswalk_outline.dart</code></td><td>행 끝점 → 가장 큰 덩어리·직선 2개 맞춤, 보이는 변 판정, EMA</td><td>~90줄 + 테스트 ~60줄</td></tr>
+<tr><td>새 <code>widgets/crosswalk_outline_painter.dart</code></td><td>224 격자 → 화면 좌표(미리보기와 같은 cover 확대 <code>_buildFullBleedPreview</code>), 칠하기·선·막대</td><td>~110줄</td></tr>
+<tr><td><code>screens/camera_screen.dart</code></td><td>Stack에 <code>Positioned.fill</code> 한 겹(미리보기 바로 뒤, <code>SlabBackdrop</code> 앞), 설정 켜면 노면 모델도 돌게 <code>_surfaceRunning</code> 조건 추가</td><td>~30줄</td></tr>
+<tr><td><code>screens/settings_screen.dart</code>, <code>localization/app_strings.dart</code></td><td>'횡단보도 경계 표시'(개발, 기본 꺼짐) 스위치</td><td>~20줄</td></tr>
+</table>
+<p class="warn"><b>겹침:</b> T198(티맵 경로 시각화) 설계도 <code>camera_screen.dart</code>의 같은 <code>Stack</code>(미리보기 위 레이어)이나 상태 필드를 건드릴 가능성이 높다(추정 — T198 설계안 확인 필요). 두 작업을 같은 시기에 하면 <code>build()</code>의 Stack 부분에서 충돌하므로 순서를 정해 하나씩 머지 권장.</p>
+
+<h2>6. T198(AR 바닥 경로 화살표·미니맵)과 함께 쓰는 규칙</h2>
+<p>전제(오케스트레이터 전달): T198이 같은 카메라 Stack에 셰브론 띠 경로 화살표(<code>ground_projection.dart</code> 재사용)와 작은 경로선 미니맵을 먼저 넣고, 횡단 중엔 경로 화살표를 숨긴다. T198의 색·미니맵 위치는 아직 못 봤다(확인 필요).</p>
+<table><tr><th>상태</th><th>T198 경로 화살표</th><th>기존 횡단 화살표</th><th>경계 표시(T200)</th></tr>
+<tr><td>none / crossed (노면에 횡단보도 보여도)</td><td>보임</td><td>—</td><td><b>없음</b> — 횡단보도 확인 전엔 경로와 경쟁하지 않음</td></tr>
+<tr><td>approach</td><td>보임</td><td>approach 표시</td><td><b>칠하기만 12%</b>, 선·막대 없음. 층 순서상 경로 화살표 <b>아래</b></td></tr>
+<tr><td>front / left / right (횡단 중)</td><td>숨김</td><td>보임</td><td><b>C 전체</b>: 칠하기 25% + 보이는 경계선 + 위치 막대</td></tr>
+<tr><td>nocall / error / 절전(미리보기 없음)</td><td>T198 규칙</td><td>—</td><td>없음</td></tr></table>
+<ul>
+<li><b>층 순서</b>(아래→위): 카메라 미리보기 → 경계 표시 → T198 경로 화살표 → 노란 면(<code>SlabBackdrop</code>) → 글자·상태 필드. 경계는 '바닥 칠'이라 항상 맨 아래 장식층.</li>
+<li><b>색</b>: 경계 = 보라 #B58CFF. 앱에서 이미 쓰는 스틸 #A8CDE8(정렬·approach), 앰버 #F2B14A(이탈), 빨강 #FF5A5F(심한 이탈), 노랑 #FFD60A(노란 면)과 겹치지 않게 골랐다(<code>camera_screen.dart:205-229</code>). <b>T198 셰브론은 보라를 피해 달라고 요청</b>(스틸·흰색 계열 권장).</li>
+<li><b>위치</b>: 위치 막대는 카메라 영역 맨 아래(아래에서 40px). 기존 화살표 꼬리는 발 앞 1.8m(<code>GroundProjection.tailZ</code>)라 그보다 위에 그려진다(추정 — 화면 높이·자세 가정값 기준). <b>미니맵은 위쪽 모서리에 두는 게 안 겹친다</b> — 미니맵이 아래에 오면 막대를 빼거나 미니맵 옆으로 줄인다.</li>
+<li>저시력 색(노랑)은 노란 면과 같은 색이라, 심한 이탈에서 노란 면이 덮으면 구분이 안 된다 — 저시력 변형은 그대로 '사용자 확인 뒤'로 미룬다.</li>
+</ul>
+</body></html>

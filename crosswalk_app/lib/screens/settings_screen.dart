@@ -55,6 +55,8 @@ class SettingsScreen extends StatefulWidget {
     this.onCautionGuidanceChanged,
     this.crosswalkGateEnabled = false,
     this.onCrosswalkGateChanged,
+    this.outlineEnabled = false,
+    this.onOutlineChanged,
     this.eventLogEnabled = true,
     this.onEventLogChanged,
     this.onShareEventLog,
@@ -105,6 +107,10 @@ class SettingsScreen extends StatefulWidget {
   // 콜백이 없으면 스위치를 그리지 않는다.
   final bool crosswalkGateEnabled;
   final ValueChanged<bool>? onCrosswalkGateChanged;
+
+  // T200: 횡단보도 경계 표시(개발, 기본 꺼짐). 콜백이 없으면 스위치를 그리지 않는다.
+  final bool outlineEnabled;
+  final ValueChanged<bool>? onOutlineChanged;
 
   // T106: 개발용 기록(기본 켬, 사용자 확정 Q3). 콜백이 없으면 이 구역을 그리지 않는다.
   // [onShareEventLog]는 성공이면 null, 실패·빈 기록이면 띄울 문구를 돌려준다.
@@ -162,6 +168,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late bool _surfaceGuidance;
   late bool _cautionGuidance;
   late bool _crosswalkGate;
+  late bool _outline;
   late bool _eventLog;
   bool _sharingLog = false;
   late bool _score;
@@ -185,6 +192,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _surfaceGuidance = widget.surfaceGuidanceEnabled;
     _cautionGuidance = widget.cautionGuidanceEnabled;
     _crosswalkGate = widget.crosswalkGateEnabled;
+    _outline = widget.outlineEnabled;
     _eventLog = widget.eventLogEnabled;
     _score = widget.scoreEnabled;
     _ultraWide = widget.ultraWideEnabled;
@@ -239,6 +247,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _toggleCautionGuidance(bool value) {
     setState(() => _cautionGuidance = value);
     widget.onCautionGuidanceChanged?.call(value);
+  }
+
+  void _toggleOutline(bool value) {
+    setState(() => _outline = value);
+    widget.onOutlineChanged?.call(value);
   }
 
   void _toggleCrosswalkGate(bool value) {
@@ -657,7 +670,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           if (widget.onSurfaceGuidanceChanged != null ||
               widget.onCautionGuidanceChanged != null ||
-              widget.onCrosswalkGateChanged != null)
+              widget.onCrosswalkGateChanged != null ||
+              widget.onOutlineChanged != null)
             _buildSectionHeader(_strings.settingsExperimentalSectionHeader),
           if (widget.onSurfaceGuidanceChanged != null) ...[
             Padding(
@@ -711,6 +725,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 subtitle: Text(
                   _strings.settingsCrosswalkGateNote,
+                  style: const TextStyle(color: Colors.white38, fontSize: 12),
+                ),
+              ),
+            ),
+          ],
+          if (widget.onOutlineChanged != null) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: SwitchListTile(
+                value: _outline,
+                onChanged: _toggleOutline,
+                activeColor: _colorAccent,
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  _strings.settingsOutlineLabel,
+                  style: const TextStyle(color: Colors.white70),
+                ),
+                subtitle: Text(
+                  _strings.settingsOutlineNote,
                   style: const TextStyle(color: Colors.white38, fontSize: 12),
                 ),
               ),
