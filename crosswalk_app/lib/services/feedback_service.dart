@@ -41,8 +41,13 @@ class FeedbackService {
   /// 음성으로 한 번 알린다(`docs/HardwarePlan.md` §4 고장 시 동작).
   void attachVibModule(VibModuleController? module) {
     _vibModule?.onLinkAnnounce = null;
+    _vibModule?.onNotFoundAnnounce = null;
     _vibModule = module;
     module?.onLinkAnnounce = _announceVibModule;
+    // C: 켰는데 못 찾으면 한 번 — 이후 진동은 [_sendToVibModule]이 'phone'으로 폰에서 낸다.
+    module?.onNotFoundAnnounce = () => unawaited(_speak(
+        AppStrings.of(_language).vibModuleNotFoundMessage,
+        priority: FeedbackPriority.p1));
   }
 
   void _announceVibModule(bool connected) {
@@ -2223,6 +2228,7 @@ class FeedbackService {
   Future<void> dispose() async {
     directionTimer.stop();
     _vibModule?.onLinkAnnounce = null;
+    _vibModule?.onNotFoundAnnounce = null;
     await _tts.stop();
     _vibrationTimer?.cancel();
     _drainTimer?.cancel();
