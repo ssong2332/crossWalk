@@ -97,6 +97,13 @@ void main() {
       expect(n.message(95, ko), '왼쪽으로 도세요');
       expect(n.message(96, ko), isNull);
     });
+
+    test('nextTurn: 지나간 회전(5m 넘게 뒤)은 없음', () {
+      final n = NavGuide(RouteGeometry.fromTmap(geo));
+      expect(n.nextTurn(50)!.turnType, 12);
+      expect(n.nextTurn(103)!.turnType, 12);
+      expect(n.nextTurn(110), isNull);
+    });
   });
 
   test('경로 이탈: 30m 밖 3번 연속 + 10초, 정확도 나쁜 위치는 무시', () {
@@ -125,5 +132,12 @@ void main() {
       l.tryAcquire(t);
     }
     expect(l.count, 20);
+  });
+
+  test('T204 미니맵 방향: 걷는 중엔 GPS, 서면 직전 값, 처음엔 null', () {
+    expect(gpsHeading(1.2, 90, null), 90);
+    expect(gpsHeading(0.3, 90, 45), 45);
+    expect(gpsHeading(0.3, 90, null), isNull);
+    expect(gpsHeading(1.2, -1, 45), 45); // 방향 없음(-1)
   });
 }

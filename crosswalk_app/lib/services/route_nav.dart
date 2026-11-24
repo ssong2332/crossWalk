@@ -211,7 +211,20 @@ class NavGuide {
     }
     return null;
   }
+
+  /// 아직 지나지 않은 다음 회전 안내점(미니맵 밑 글자용).
+  GuidePoint? nextTurn(double s) {
+    for (final g in geo.guides) {
+      if (isTurnType(g.turnType) && g.s - s >= -kPassedM) return g;
+    }
+    return null;
+  }
 }
+
+/// T204 미니맵 방향: 걷는 중(0.8m/s 이상, 추정)이면 GPS 진행 방향, 아니면 직전
+/// 값을 유지(null이면 북쪽 위). 나침반은 쓰지 않는다(T203에서 삭제).
+double? gpsHeading(double speed, double heading, double? last) =>
+    speed >= 0.8 && heading >= 0 ? heading : last;
 
 /// 경로 이탈: 정확도 좋은 위치가 [kOffRouteM]보다 3번 연속, 10초 이상 멀면 true.
 class OffRouteDetector {

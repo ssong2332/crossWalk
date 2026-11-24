@@ -32,6 +32,7 @@ import '../services/stripe_direction_estimator.dart';
 import '../services/score_timeline.dart';
 import '../services/share_picker.dart';
 import '../widgets/haptic_score.dart';
+import '../widgets/route_overlay.dart';
 import '../widgets/slab_guidance.dart';
 import '../localization/app_strings.dart';
 import 'settings_screen.dart';
@@ -2220,6 +2221,8 @@ class _CameraScreenState extends State<CameraScreen>
       body: Stack(
         children: [
           if (showPreview) Positioned.fill(child: _buildFullBleedPreview()),
+          // T204: 경로 미니맵(왼쪽 위). 경로가 없으면 빈 층.
+          if (!_hasError) const Positioned.fill(child: RouteOverlay()),
           // T129: 노란 면 + 위험 막대(화면 전체 높이). 오류 카드 뒤에는 그리지 않는다.
           if (!_hasError)
             Positioned.fill(

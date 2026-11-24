@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:geolocator/geolocator.dart';
 import 'package:meta/meta.dart';
 
@@ -123,6 +124,21 @@ class WalkStrings {
   }
 }
 
+/// T204: 카메라 화면 미니맵이 그릴 것. 경로가 없으면 null.
+@immutable
+class RouteView {
+  final RouteGeometry geo;
+  final math.Point<double> me;
+  final double s;
+
+  /// 진행 방향(진북 0 · 시계방향 +, [gpsHeading]). null이면 북쪽 위.
+  final double? heading;
+
+  /// 미니맵 밑 짧은 글자(예: "20m 왼쪽"). 없으면 null.
+  final String? caption;
+  const RouteView(this.geo, this.me, this.s, this.heading, this.caption);
+}
+
 /// 위치를 받아 주변 횡단보도 정보를 모으고, 경로 안내를 돌린다.
 class WalkInfoService {
   WalkInfoService._();
@@ -140,6 +156,10 @@ class WalkInfoService {
   final _offRoute = OffRouteDetector();
   RerouteLimiter _limiter = RerouteLimiter();
   bool _rerouting = false;
+  double? _heading;
+
+  /// T204: 카메라 화면 미니맵이 듣는다(RouteOverlay).
+  final ValueNotifier<RouteView?> view = ValueNotifier(null);
 
   bool get running => _sub != null;
   NavGuide? get nav => _nav;
@@ -219,6 +239,31 @@ class WalkInfoService {
         unawaited(_reroute(dest));
       }
     }
+    _publish();
+  }
+
+  void _publish() {
+    final nav = _nav;
+    final pos = _last;
+    if (nav == null || pos == null) {
+      view.value = null;
+      return;
+    }
+    _heading = gpsHeading(pos.speed, pos.heading, _heading);
+    final me = nav.geo.frame.toXY(pos.latitude, pos.longitude);
+    final fix = nav.geo.locate(me);
+    final turn = nav.nextTurn(fix.s);
+    final ahead = turn == null ? null : math.max(0.0, turn.s - fix.s);
+    final lang = _feedback?.language ?? AppLanguage.ko;
+    view.value = RouteView(
+      nav.geo,
+      me,
+      fix.s,
+      _heading,
+      turn == null || ahead == null || ahead > kTurnPreM
+          ? null
+          : '${roundTo10(ahead)}m ${turnPhrase(turn.turnType, lang)}',
+    );
   }
 
   Future<void> _reroute(({double lat, double lon, String name}) dest) async {
@@ -384,6 +429,7 @@ class WalkInfoService {
         'm': g.length.round(),
         'guides': g.guides.length,
       });
+      _publish();
       return null;
     } catch (e) {
       EventLog.instance.log('walk.error', {'where': 'route', 'e': '$e'});
@@ -394,6 +440,8 @@ class WalkInfoService {
   void stopRoute() {
     _nav = null;
     _dest = null;
+    _heading = null;
+    view.value = null;
   }
 
   static Future<Map<String, dynamic>> _getJson(Uri uri,
