@@ -14,7 +14,6 @@ import 'package:share_plus/share_plus.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import '../services/classifier.dart';
 import '../services/crossing_hold.dart';
-import '../services/crosswalk_outline.dart';
 import '../services/crosswalk_surface_gate.dart';
 import '../services/curb_front_gate.dart';
 import '../services/dev_capture.dart';
@@ -32,9 +31,7 @@ import '../services/ground_projection.dart';
 import '../services/stripe_direction_estimator.dart';
 import '../services/score_timeline.dart';
 import '../services/share_picker.dart';
-import '../widgets/crosswalk_outline_painter.dart';
 import '../widgets/haptic_score.dart';
-import '../widgets/route_overlay.dart';
 import '../widgets/slab_guidance.dart';
 import '../localization/app_strings.dart';
 import 'settings_screen.dart';
@@ -1159,41 +1156,7 @@ class _CameraScreenState extends State<CameraScreen>
   bool _crosswalkGateEnabled = false;
 
   bool get _surfaceRunning =>
-      (_surfaceEnabled || _cautionEnabled || _outlineEnabled) &&
-      _surfaceEstimator.isReady;
-
-  // T200: 횡단보도 경계 표시(개발·동행자용, 기본 꺼짐). 노면 모델 결과를 그린다 —
-  // 노면 안내가 꺼져 있어도 이 설정만 켜면 노면 모델이 돈다(비용은 `surf` 기록의 dur).
-  bool _outlineEnabled = false;
-  CrosswalkOutline? _outline;
-  final CrosswalkOutlineSmoother _outlineSmoother = CrosswalkOutlineSmoother();
-
-  Future<void> _setOutlineEnabled(bool enabled) async {
-    EventLog.instance.log('set', {'key': 'outline', 'value': enabled});
-    if (enabled && !_surfaceEstimator.isReady) {
-      final loadClock = Stopwatch()..start();
-      try {
-        await _surfaceEstimator.init();
-        EventLog.instance.log('model', {
-          'name': 'surface',
-          'ok': true,
-          'dur': loadClock.elapsedMilliseconds,
-        });
-      } catch (e) {
-        debugPrint('[T200] 노면 모델 초기화 실패: $e');
-        EventLog.instance
-            .log('model', {'name': 'surface', 'ok': false, 'err': '$e'});
-        return;
-      }
-    }
-    _outlineSmoother.reset();
-    if (mounted) {
-      setState(() {
-        _outlineEnabled = enabled;
-        _outline = null;
-      });
-    }
-  }
+      (_surfaceEnabled || _cautionEnabled) && _surfaceEstimator.isReady;
 
   void _setCrosswalkGateEnabled(bool enabled) {
     EventLog.instance.log('set', {'key': 'cwGate', 'value': enabled});
@@ -1212,10 +1175,6 @@ class _CameraScreenState extends State<CameraScreen>
       return;
     }
     _crosswalkGate.note(f.crosswalkAll, DateTime.now());
-    if (_outlineEnabled) {
-      _outline = _outlineSmoother
-          .add(CrosswalkOutline.fromRows(f.crosswalkRows, f.gridWidth));
-    }
     // T138: 발밑(맨 아래 1/6 줄) 비율 — 연석 위 오판 확인(CurbFrontGate 표).
     final foot = _surfaceEstimator.lastFoot;
     if (foot != null) _curbFrontGate.note(foot, DateTime.now());
@@ -1243,9 +1202,6 @@ class _CameraScreenState extends State<CameraScreen>
       // T138: 발밑(맨 아래 1/6 줄, 전체 폭) [인도+선형+점형, 횡단보도] 비율.
       if (foot != null) 'foot': [foot.ground, foot.crosswalk],
       'st': _fieldState,
-      // T200: 경계 표시가 켜져 있으면 [왼쪽 선, 오른쪽 선]을 그렸는지(1/0).
-      if (_outlineEnabled)
-        'ol': [_outline?.left == null ? 0 : 1, _outline?.right == null ? 0 : 1],
       'dur': surfClock.elapsedMilliseconds,
     });
     // 상태 게이트(판정표 §2): none/crossed에서만 말한다. 무판정·오류·횡단보도
@@ -2067,8 +2023,6 @@ class _CameraScreenState extends State<CameraScreen>
                   onCautionGuidanceChanged: _setCautionEnabled,
                   crosswalkGateEnabled: _crosswalkGateEnabled,
                   onCrosswalkGateChanged: _setCrosswalkGateEnabled,
-                  outlineEnabled: _outlineEnabled,
-                  onOutlineChanged: _setOutlineEnabled,
                   eventLogEnabled: EventLog.instance.enabled,
                   onEventLogChanged: EventLog.instance.setEnabled,
                   onShareEventLog: _shareEventLog,
@@ -2266,24 +2220,6 @@ class _CameraScreenState extends State<CameraScreen>
       body: Stack(
         children: [
           if (showPreview) Positioned.fill(child: _buildFullBleedPreview()),
-          // T200: 횡단보도 경계 표시 층 — 미리보기와 경로 화살표 사이.
-          if (showPreview && _outlineEnabled && !_hasError)
-            Positioned.fill(
-              child: ExcludeSemantics(
-                child: IgnorePointer(
-                  child: CustomPaint(
-                    painter: CrosswalkOutlinePainter(
-                      outline: _outline,
-                      mode: outlineModeFor(_fieldState),
-                      camAspect: 1 / _controller!.value.aspectRatio,
-                      position: _smoothedPosition,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          // T198: 경로 안내 층(바닥 화살표 + 위쪽 미니맵). 경로가 없으면 빈 층.
-          if (!_hasError) const Positioned.fill(child: RouteOverlay()),
           // T129: 노란 면 + 위험 막대(화면 전체 높이). 오류 카드 뒤에는 그리지 않는다.
           if (!_hasError)
             Positioned.fill(

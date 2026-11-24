@@ -210,9 +210,6 @@ class AppStrings {
   // T125: 노면 횡단보도 확인(개발, 기본 꺼짐).
   final String settingsCrosswalkGateLabel;
   final String settingsCrosswalkGateNote;
-  // T200: 횡단보도 경계 표시(개발, 기본 꺼짐).
-  final String settingsOutlineLabel;
-  final String settingsOutlineNote;
   // T106: 개발용 기록 — 켜기/끄기(기본 켬)와 기록 보내기.
   final String settingsDevLogSectionHeader;
   final String settingsDevLogLabel;
@@ -405,8 +402,6 @@ class AppStrings {
     required this.settingsCautionGuidanceNote,
     required this.settingsCrosswalkGateLabel,
     required this.settingsCrosswalkGateNote,
-    required this.settingsOutlineLabel,
-    required this.settingsOutlineNote,
     required this.settingsDevLogSectionHeader,
     required this.settingsDevLogLabel,
     required this.settingsDevLogNote,
@@ -573,11 +568,6 @@ class AppStrings {
     settingsCrosswalkGateNote: '노면 모델이 횡단보도를 거의 못 보면 "앞에 횡단보도"를 '
         '말하지 않습니다. 노면 안내나 주의 구역 안내가 켜져 있을 때만 동작합니다. '
         '초광각 0.6배이거나 폰 방향이 가로면 쉽니다(노면 모델이 세로·1배로만 학습됨).',
-    settingsOutlineLabel: '횡단보도 경계 표시 (개발)',
-    settingsOutlineNote: '카메라 화면에 인식한 횡단보도를 보라색으로 칠하고, 건너는 중에는 '
-        '보이는 양쪽 경계선과 위치 막대를 그립니다. 동행자·개발 확인용입니다. '
-        '차가 가린 선을 경계로 잘못 그릴 수 있습니다. 노면 안내가 꺼져 있어도 이 설정을 켜면 '
-        '노면 모델이 돌아 배터리를 더 씁니다(약 0.4초마다 1회, 1회 약 80ms — 기록의 surf dur로 확인).',
     settingsDevLogSectionHeader: '개발용 기록',
     settingsDevLogLabel: '기록 남기기',
     settingsDevLogNote: '진동·음성·판정 결과를 이 폰에만 기록합니다. '
@@ -775,12 +765,6 @@ class AppStrings {
         'sees a crosswalk. Works only while surface or caution guidance is on. '
         'Paused at 0.6x ultra-wide or in landscape (the surface model was trained '
         'on portrait 1x only).',
-    settingsOutlineLabel: 'Crosswalk outline (dev)',
-    settingsOutlineNote: 'Tints the detected crosswalk purple on the camera view and, '
-        'while crossing, draws the visible side edges and a position bar. For companions '
-        'and developers. A car blocking the view can be drawn as an edge. Turning this on '
-        'runs the surface model even when surface guidance is off, using more battery '
-        '(about every 0.4 s, ~80 ms each - see surf dur in the log).',
     settingsDevLogSectionHeader: 'Developer log',
     settingsDevLogLabel: 'Keep a log',
     settingsDevLogNote: 'Records vibration, speech and detection results '

@@ -2260,8 +2260,8 @@ class FeedbackService {
   String? Function()? approachInfo;
   String? _lastWalkInfo;
 
-  /// T198: 지금 횡단보도 위인가(마지막 판정이 front·left·right). 경로 턴 안내와
-  /// 바닥 화살표는 이때 보류한다.
+  /// T198: 지금 횡단보도 위인가(마지막 판정이 front·left·right). 경로 턴 안내는
+  /// 이때 보류한다.
   bool get onCrosswalk =>
       _lastRawClass == 'front' ||
       _lastRawClass == 'left' ||
