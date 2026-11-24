@@ -1831,6 +1831,31 @@ class FeedbackService {
     _vibModule?.sendStop(why);
   }
 
+  /// G(사용자 결정 2026-11-24): 설정 화면에 들어가 인식을 멈출 때 부른다. 반복 진동을
+  /// 멈추고, 보류·대기 중인 안내(차도 보류, 멈춤 블록 보류, 대기 슬롯, 끼운 P0, 딩 보류,
+  /// 회복 보류)를 말하지 않고 버린 뒤, 말하는 중인 음성을 끊는다. dispose와 달리 서비스는
+  /// 계속 쓴다(설정 화면의 미리 듣기 등).
+  /// shortcut: stop과 speak 사이에 이미 들어간 발화 1개는 막지 못함(수 ms 창), 문제 되면 세대 번호로 막기.
+  Future<void> pauseGuidance() async {
+    stopDirectionVibration('settings');
+    _drainTimer?.cancel();
+    _drainTimer = null;
+    audioPolicy.clearPending();
+    _insertHoldTimer?.cancel();
+    _insertHoldTimer = null;
+    _insertHeld = null;
+    _dotBlockTimer?.cancel();
+    _heldDotBlockAt = null;
+    _clearHeldRoad();
+    if (_chimeDeferredAt != null) _clearDeferredChime();
+    _clearHeldRecovery();
+    try {
+      await _tts.stop();
+    } catch (e) {
+      debugPrint('FeedbackService.pauseGuidance: stop error: $e');
+    }
+  }
+
   /// 진동을 내고 `vib` 줄을 남긴다. [src]는 T142 타이머로 울린 것만 'timer'.
   Future<void> _vibrate(String kind, List<int> pattern, {String? src}) async {
     // T132 ④: 방향 진동이면 단계와 적용한 반복 간격(ms)을 함께 남긴다.

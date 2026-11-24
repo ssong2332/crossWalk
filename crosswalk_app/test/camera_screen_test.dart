@@ -13,6 +13,7 @@
 // not guessed — matching this repo's established verification discipline
 // (see docs/Tasks.md T24/T25 notes).
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
@@ -22,6 +23,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:wakelock_plus_platform_interface/messages.g.dart';
 import 'package:crosswalk_app/screens/camera_screen.dart';
+import 'package:crosswalk_app/services/event_log.dart';
 import 'package:crosswalk_app/services/ground_projection.dart';
 
 void main() {
@@ -204,6 +206,46 @@ void main() {
       expect(ttsCalls, isNot(contains('speak')),
           reason: '닫힌 뒤 setState 예외 → 오류 안내가 나오면 안 된다');
       expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('G: 설정 화면 중 인식 멈춤', () {
+    testWidgets('설정에 들어가면 pause, 돌아오면 resume을 남기고 재개 때 말하지 않는다',
+        (tester) async {
+      // 오류 카드에서는 설정 버튼이 숨으므로 초기화(권한 대기) 중 화면에서 누른다.
+      final answer = Completer<Map<int, int>>();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(permissionChannel, (call) async {
+        if (call.method == 'requestPermissions') return answer.future;
+        return null;
+      });
+      final ttsCalls = <String>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(ttsChannel, (call) async {
+        ttsCalls.add(call.method);
+        return 1;
+      });
+      await tester.pumpWidget(const MaterialApp(home: CameraScreen()));
+      await tester.pump();
+      EventLog.instance.clearForTest();
+      List<String> evs() => [
+            for (final l in EventLog.instance.earlyLines)
+              (jsonDecode(l) as Map<String, dynamic>)['ev'] as String
+          ];
+
+      await tester.tap(find.byIcon(Icons.settings_outlined));
+      await tester.pump(const Duration(seconds: 1));
+      expect(evs(), contains('pause'));
+      expect(evs(), isNot(contains('resume')));
+      expect(ttsCalls, contains('stop'), reason: '말하는 중인 안내를 끊는다');
+
+      ttsCalls.clear();
+      tester.state<NavigatorState>(find.byType(Navigator)).pop(); // 뒤로
+      await tester.pump(const Duration(seconds: 1));
+      expect(evs().where((e) => e == 'resume'), hasLength(1));
+      expect(ttsCalls, isNot(contains('speak')), reason: '재개는 말없이');
+      answer.complete({cameraPermissionValue: deniedStatusValue});
+      await tester.pump();
     });
   });
 
