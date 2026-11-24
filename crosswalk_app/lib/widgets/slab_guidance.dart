@@ -228,7 +228,12 @@ class SlabHeadline extends StatelessWidget {
     this.backing,
     this.dimColor = const Color(0xFFF1F3F4),
     this.slabColor = kSlabYellow,
+    this.visuallyHidden = false,
   });
+
+  /// T201: 글자만 안 보이게 한다(투명). 자리와 화면 읽기 라벨·라이브 영역은 그대로 —
+  /// '횡단보도 없음'이 왼쪽 위 경로 미니맵을 덮지 않게.
+  final bool visuallyHidden;
 
   final SlabSpec spec;
   final String bigText;
@@ -349,7 +354,7 @@ class SlabHeadline extends StatelessWidget {
               widthFactor: spec.level == SlabLevel.severe ? spec.coverage : 1.0,
               alignment:
                   alignRight ? Alignment.centerRight : Alignment.centerLeft,
-              child: content,
+              child: visuallyHidden ? Opacity(opacity: 0, child: content) : content,
             ),
           ),
         ),

@@ -168,6 +168,30 @@ void main() {
       expect(bigColor(tester, '직진'), const Color(0xFFA8CDE8));
     });
 
+    testWidgets('T201: 글자만 숨겨도 화면 읽기 라벨·라이브 영역은 남는다', (tester) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: SlabHeadline(
+            spec: SlabSpec.none,
+            bigText: '횡단보도 없음',
+            smallText: '',
+            semanticsLabel: '횡단보도 없음',
+            color: const Color(0xFFA8CDE8),
+            reducedMotion: true,
+            visuallyHidden: true,
+          ),
+        ),
+      ));
+      final op = tester.widget<Opacity>(find.ancestor(
+          of: find.text('횡단보도 없음'), matching: find.byType(Opacity)));
+      expect(op.opacity, 0);
+      expect(
+          tester.getSemantics(find.bySemanticsLabel('횡단보도 없음')),
+          matchesSemantics(label: '횡단보도 없음', isLiveRegion: true));
+      handle.dispose();
+    });
+
     testWidgets('즉시(62%)면 글자도 면 안에만 놓인다', (tester) async {
       await tester
           .pumpWidget(host(const SlabSpec(SlabLevel.severe, SlabSide.right)));
