@@ -19,6 +19,13 @@ import 'dart:math' as math;
 ///   | 4 | 그 사이 값(둘 사이)                                      | 지금 상태 유지. 서 있음 아님이면 3의 시계를 처음부터 |
 ///   | 5 | 마지막 표본이 [staleAfter]보다 오래됨(센서 멈춤)            | [isStillAt]이 false  |
 ///
+/// T207 ②(사용자 결정 2026-11-25): **음성 억제용** [isSettledAt]은 위 서 있음에 하나를 더한다 —
+/// 서 있음이 풀린 뒤 [reonWindow] 안에 움직임 < [moveThreshold]가 [reonHold] 이상이면
+/// 다시 '멈춤'. 11/25 연석 신호 대기 70초에 몸을 조금 움직일 때마다(mot 0.6~0.9) 서 있음이
+/// 풀린 채 3번 규칙(2초)을 기다려 still이 8번 바뀌었다(`train/field_1125/report.md` 3-2).
+/// 걸음을 떼면 움직임이 [moveThreshold] 위에 머물러 다시 멈춤이 되지 않는다(기록 재생
+/// 3일치 실제 횡단 교정 손실 0, 추정). [isStill]·`still` 기록·서 있던 구간(T190 등)은 바꾸지 않는다.
+///
 /// 기준값은 **추정값**이다(실측 전). 근거: 가슴 거치(목걸이형) 폰은 걸을 때 발걸음마다
 /// 상하 가속이 크게 흔들려 |a|의 표준편차가 대략 1 m/s² 이상, 서서 숨쉬기·몸 흔들림은
 /// 대략 0.2 m/s² 이하로 본다(일반적인 보행 가속도 범위 — 이 앱 기록으로 잰 값 아님).
@@ -32,12 +39,17 @@ class StillnessDetector {
   static const holdOn = Duration(seconds: 2);
   static const staleAfter = Duration(seconds: 1);
   static const minSamples = 5;
+  static const reonWindow = Duration(seconds: 10);
+  static const reonHold = Duration(seconds: 1);
 
   final List<(DateTime, double)> _samples = [];
   bool _still = false;
   DateTime? _quietSince;
   DateTime? _lastSampleAt;
   double? _motion;
+  bool _settled = false;
+  DateTime? _offAt;
+  DateTime? _belowMoveSince;
 
   /// 마지막 판정 상태(센서가 멈췄는지는 보지 않음 — [isStillAt]을 쓴다).
   bool get isStill => _still;
@@ -49,6 +61,14 @@ class StillnessDetector {
   bool isStillAt(DateTime now) {
     final last = _lastSampleAt;
     return _still && last != null && now.difference(last) <= staleAfter;
+  }
+
+  /// T207 ②: 음성 억제용 멈춤 — 서 있음이거나, 풀린 직후 다시 조용해짐. 센서가 멈추면 false.
+  bool isSettledAt(DateTime now) {
+    final last = _lastSampleAt;
+    return (_still || _settled) &&
+        last != null &&
+        now.difference(last) <= staleAfter;
   }
 
   /// 가속도 표본 하나(m/s², 중력 포함)를 넣는다. 서 있음 상태가 바뀌었으면 true.
@@ -73,6 +93,21 @@ class StillnessDetector {
       if (!_still && now.difference(_quietSince!) >= holdOn) _still = true;
     } else if (!_still) {
       _quietSince = null;
+    }
+    // T207 ②: 음성 억제용 멈춤.
+    if (_still) {
+      _settled = true;
+      _belowMoveSince = null;
+    } else if (motion >= moveThreshold) {
+      if (was || _settled) _offAt = now;
+      _settled = false;
+      _belowMoveSince = null;
+    } else if (!_settled) {
+      final off = _offAt;
+      if (off != null && now.difference(off) <= reonWindow) {
+        _belowMoveSince ??= now;
+        if (now.difference(_belowMoveSince!) >= reonHold) _settled = true;
+      }
     }
     return _still != was;
   }
