@@ -511,11 +511,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  bool get _hasDevItems =>
-      widget.onCrosswalkGateChanged != null ||
-      widget.onEventLogChanged != null ||
-      widget.onUltraWideChanged != null;
-
   // T209: '개발자' 묶음. 머리글 56dp·18sp, 화면 읽기는 "개발자, 접힘/펼침".
   Widget _buildDevGroup(List<Widget> children) {
     final ko = _language == AppLanguage.ko;
@@ -757,24 +752,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _buildVibModuleSection(),
           ],
           // T206: 보행 정보·목적지 입력은 카메라 화면의 목적지 버튼(DestinationScreen)으로 옮김.
-          _buildSectionHeader(_strings.settingsAccessibilitySectionHeader),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: SwitchListTile(
-              value: false,
-              onChanged: null,
-              activeColor: _colorAccent,
-              contentPadding: EdgeInsets.zero,
-              title: Text(
-                _strings.settingsScreenReaderOptimizationLabel,
-                style: const TextStyle(color: Colors.white70),
-              ),
-              subtitle: Text(
-                _strings.settingsScreenReaderOptimizationNote,
-                style: const TextStyle(color: Colors.white70, fontSize: 16),
-              ),
-            ),
-          ),
           _buildSectionHeader(_strings.settingsLowLightSectionHeader),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -795,7 +772,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           // T209(사용자 결정 "개발용 항목은 맨 아래 개발자 묶음으로 접어줘"): 개발용 항목을
           // 한 묶음으로, 매번 접힌 채 시작(설정은 저장하지 않음).
-          if (_hasDevItems) _buildDevGroup([
+          // T210: 동작하지 않는 자리표시 '화면 읽기 프로그램 최적화'도 일반 화면에서 빼
+          // 묶음 맨 앞에 둔다(항상 있으므로 묶음도 항상 그린다).
+          _buildDevGroup([
+                    _buildSectionHeader(_strings.settingsAccessibilitySectionHeader),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: SwitchListTile(
+                        value: false,
+                        onChanged: null,
+                        activeColor: _colorAccent,
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(
+                          _strings.settingsScreenReaderOptimizationLabel,
+                          style: const TextStyle(color: Colors.white70),
+                        ),
+                        subtitle: Text(
+                          _strings.settingsScreenReaderOptimizationNote,
+                          style: const TextStyle(color: Colors.white70, fontSize: 16),
+                        ),
+                      ),
+                    ),
                     if (widget.onCrosswalkGateChanged != null) ...[
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
