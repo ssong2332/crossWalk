@@ -6,22 +6,17 @@ import '../localization/app_strings.dart';
 import '../services/route_nav.dart';
 import '../services/walk_info.dart';
 
-/// T204(사용자 결정 2026-11-24): 카메라 화면 왼쪽 위의 작은 경로선 미니맵(배경 지도
-/// 없음). T198의 바닥 화살표는 T203에서 지웠고 미니맵만 되살렸다.
+/// T204(사용자 결정 2026-11-24): 카메라 화면의 작은 경로선 미니맵(배경 지도 없음).
+/// T198의 바닥 화살표는 T203에서 지웠고 미니맵만 되살렸다. 경로가 없으면 아무것도
+/// 그리지 않는다. 미니맵·밑 글자는 음성으로 같은 안내가 나가므로 화면 읽기에서 뺀다.
 ///
-/// 층 순서(아래->위): 미리보기 -> **미니맵(여기)** -> 노란 면 -> 글자. 경로가 없으면
-/// 아무것도 그리지 않는다. 음성으로 같은 안내가 나가므로 화면 읽기에서는 제외한다.
+/// T206: 미니맵 옆에 "OO까지 N미터" 글자 — 누르면 [onSpeak]로 같은 문장을 읽는다.
 ///
-/// T206: [destLabel]이 true면 미니맵·밑 글자 자리는 비워 두고(같은 배치) 그 아래
-/// "OO까지 N미터" 글자만 그린다 — 화면 맨 위 층에 하나 더 깔아 누르기·화면 읽기가
-/// 위 층(안내 글자 판)에 막히지 않게 한다. 누르면 [onSpeak]로 같은 문장을 읽는다.
+/// T209: 위쪽 큰 안내 글자와 겹치지 않도록 카메라 화면 Column 안, 아래 카드 바로
+/// 위에 한 줄로 놓는다(미니맵 왼쪽, 글자 오른쪽). 미니맵 크기 104는 유지.
 class RouteOverlay extends StatelessWidget {
   const RouteOverlay(
-      {super.key,
-      this.destLabel = false,
-      this.language = AppLanguage.ko,
-      this.onSpeak});
-  final bool destLabel;
+      {super.key, this.language = AppLanguage.ko, this.onSpeak});
   final AppLanguage language;
   final ValueChanged<String>? onSpeak;
 
@@ -31,47 +26,52 @@ class RouteOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     final svc = WalkInfoService.instance;
     return ValueListenableBuilder<RouteView?>(
-          valueListenable: svc.view,
-          builder: (context, v, _) {
-            if (v == null) return const SizedBox.shrink();
-            // 미니맵·밑 글자: 음성으로 같은 안내가 나가므로 화면 읽기 제외.
-            Widget map(Widget w) => ExcludeSemantics(
+      valueListenable: svc.view,
+      builder: (context, v, _) {
+        if (v == null) return const SizedBox.shrink();
+        final name = v.dest;
+        final text = name == null
+            ? null
+            : destRemainText(name, v.geo.length - v.s, language);
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ExcludeSemantics(
                 child: IgnorePointer(
-                    child: destLabel ? Opacity(opacity: 0, child: w) : w));
-            final name = v.dest;
-            final text = name == null
-                ? null
-                : destRemainText(name, v.geo.length - v.s, language);
-            return Stack(children: [
-              Positioned(
-                left: 12,
-                top: MediaQuery.paddingOf(context).top + 8,
+                  child: Container(
+                    width: 104,
+                    height: 104,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.white24),
+                    ),
+                    child: CustomPaint(painter: MiniRoutePainter(v)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    map(Container(
-                      width: 104,
-                      height: 104,
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.55),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.white24),
-                      ),
-                      child: CustomPaint(painter: MiniRoutePainter(v)),
-                    )),
                     if (v.caption != null)
-                      map(Container(
-                        margin: const EdgeInsets.only(top: 4),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
-                        color: Colors.black,
-                        child: Text(v.caption!,
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700)),
-                      )),
-                    if (destLabel && text != null)
+                      ExcludeSemantics(
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          color: Colors.black,
+                          child: Text(v.caption!,
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700)),
+                        ),
+                      ),
+                    if (text != null)
                       Semantics(
                         button: true,
                         label: text,
@@ -80,17 +80,17 @@ class RouteOverlay extends StatelessWidget {
                         child: GestureDetector(
                           onTap: () => onSpeak?.call(text),
                           child: Container(
-                            margin: const EdgeInsets.only(top: 4),
                             // T209: 24sp 흰 글자, 불투명 검정 바탕, 누르는 영역 48dp 이상.
-                            // 말줄임 대신 줄바꿈(글자 확대 200%에서도 끝까지 보이게).
-                            constraints: BoxConstraints(
-                                minWidth: 48,
-                                minHeight: 48,
-                                maxWidth: MediaQuery.sizeOf(context).width * 0.6),
+                            constraints: const BoxConstraints(
+                                minWidth: 48, minHeight: 48),
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 10, vertical: 8),
                             color: Colors.black,
+                            // shortcut: 아주 긴 이름은 3줄에서 자른다(누르기·화면 읽기는
+                            // 전체 문장) — 메인 화면 높이를 넘지 않게.
                             child: Text(text,
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 24,
@@ -101,8 +101,10 @@ class RouteOverlay extends StatelessWidget {
                   ],
                 ),
               ),
-            ]);
-          },
+            ],
+          ),
+        );
+      },
     );
   }
 }

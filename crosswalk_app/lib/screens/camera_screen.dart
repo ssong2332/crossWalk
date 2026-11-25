@@ -2250,8 +2250,6 @@ class _CameraScreenState extends State<CameraScreen>
       body: Stack(
         children: [
           if (showPreview) Positioned.fill(child: _buildFullBleedPreview()),
-          // T204: 경로 미니맵(왼쪽 위). 경로가 없으면 빈 층.
-          if (!_hasError) const Positioned.fill(child: RouteOverlay()),
           // T129: 노란 면 + 위험 막대(화면 전체 높이). 오류 카드 뒤에는 그리지 않는다.
           if (!_hasError)
             Positioned.fill(
@@ -2380,6 +2378,18 @@ class _CameraScreenState extends State<CameraScreen>
                           ),
                         ],
                       ),
+                    ),
+                  ),
+
+                // T204/T206/T209: 미니맵 + "OO까지 N미터". 큰 안내 글자와 겹치지 않게
+                // 아래 카드 바로 위(경로가 없으면 빈 칸). 읽기 순서는 판독부 앞.
+                if (!_hasError)
+                  Semantics(
+                    container: true,
+                    sortKey: const OrdinalSortKey(0.5),
+                    child: RouteOverlay(
+                      language: _language,
+                      onSpeak: (t) => _feedback.announceRoute(t),
                     ),
                   ),
 
@@ -2527,15 +2537,6 @@ class _CameraScreenState extends State<CameraScreen>
               ],
             ),
           ),
-          // T206: 미니맵 아래 "OO까지 N미터" — 맨 위 층이라 누르기·화면 읽기가 막히지 않는다.
-          if (!_hasError)
-            Positioned.fill(
-              child: RouteOverlay(
-                destLabel: true,
-                language: _language,
-                onSpeak: (t) => _feedback.announceRoute(t),
-              ),
-            ),
         ],
       ),
     );
@@ -2702,6 +2703,14 @@ class StateFieldPainter extends CustomPainter {
     final head = projection.headPolygon(yaw, size, widthScale: widthScale);
     if (slices == null || head == null) return false;
 
+    // T209: 밝은 낮 영상 위에서도 화살표 경계가 보이게 어두운 외곽선을 먼저 깐다
+    // (모양·색은 그대로, 바깥으로 3px 드러남 — 흰 바탕 대비 21:1).
+    var outline = _polygonPath(head);
+    for (final sl in slices) {
+      outline = Path.combine(PathOperation.union, outline, _polygonPath(sl));
+    }
+    canvas.drawPath(outline, _outlinePaint(6));
+
     for (var i = 0; i < slices.length; i++) {
       final t = (i + 0.5) / slices.length;
       canvas.drawPath(
@@ -2743,10 +2752,21 @@ class StateFieldPainter extends CustomPainter {
     return path..close();
   }
 
+  static Paint _outlinePaint(double width) => Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = width
+    ..strokeJoin = StrokeJoin.round
+    ..color = Colors.black;
+
   void _arrow(Canvas canvas, Paint p, Offset c, double unit, double rot) {
     canvas.save();
     canvas.translate(c.dx, c.dy);
     canvas.rotate(rot);
+    // T209: 어두운 외곽선(선 굵기 + 6) 먼저 — 밝은 영상 위에서도 3:1 이상.
+    final o = _outlinePaint(p.strokeWidth + 6)..strokeCap = StrokeCap.round;
+    canvas.drawLine(Offset(-unit, 0), Offset(unit, 0), o);
+    canvas.drawLine(Offset(unit, 0), Offset(unit - unit * 0.5, -unit * 0.5), o);
+    canvas.drawLine(Offset(unit, 0), Offset(unit - unit * 0.5, unit * 0.5), o);
     canvas.drawLine(Offset(-unit, 0), Offset(unit, 0), p);
     canvas.drawLine(Offset(unit, 0), Offset(unit - unit * 0.5, -unit * 0.5), p);
     canvas.drawLine(Offset(unit, 0), Offset(unit - unit * 0.5, unit * 0.5), p);

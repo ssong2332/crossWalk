@@ -73,7 +73,7 @@ void main() {
           home: Scaffold(
               body: Stack(children: [
         Positioned.fill(
-            child: RouteOverlay(destLabel: true, onSpeak: spoken.add)),
+            child: RouteOverlay(onSpeak: spoken.add)),
       ]))));
       // 경로 150m 중 70m 진행 -> 80m 남음.
       svc.view.value = RouteView(
@@ -82,14 +82,16 @@ void main() {
       return spoken;
     }
 
-    testWidgets('맨 위 층: 미니맵은 투명, 글자를 누르면 같은 문장을 읽는다', (t) async {
+    testWidgets('T209: 미니맵 오른쪽에 글자, 누르면 같은 문장을 읽는다', (t) async {
       final spoken = await pumpLabel(t);
       expect(find.text('시청역까지 80미터'), findsOneWidget);
-      final op = t.widget<Opacity>(find.ancestor(
-          of: find.byWidgetPredicate(
-              (w) => w is CustomPaint && w.painter is MiniRoutePainter),
-          matching: find.byType(Opacity)));
-      expect(op.opacity, 0);
+      final map = find.byWidgetPredicate(
+          (w) => w is CustomPaint && w.painter is MiniRoutePainter);
+      expect(t.getTopLeft(find.text('시청역까지 80미터')).dx,
+          greaterThan(t.getTopRight(map).dx));
+      expect(t.getSize(find.ancestor(
+              of: find.text('시청역까지 80미터'), matching: find.byType(Container)).first)
+          .height, greaterThanOrEqualTo(48));
       await t.tap(find.text('시청역까지 80미터'));
       expect(spoken, ['시청역까지 80미터']);
     });
@@ -108,10 +110,10 @@ void main() {
       h.dispose();
     });
 
-    testWidgets('아래 층(기본)에는 목적지 글자가 없다', (t) async {
+    testWidgets('목적지가 없으면 목적지 글자가 없다', (t) async {
       await pump(t);
-      svc.view.value = RouteView(
-          geo, const math.Point(0, 70), 70, null, null, '시청역');
+      svc.view.value =
+          RouteView(geo, const math.Point(0, 70), 70, null, null, null);
       await t.pump();
       expect(find.textContaining('까지'), findsNothing);
     });

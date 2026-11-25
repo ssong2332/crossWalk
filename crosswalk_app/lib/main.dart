@@ -30,6 +30,18 @@ ThemeData lowVisionTheme() {
       labelSmall: base.textTheme.labelSmall?.merge(s16),
       titleSmall: base.textTheme.titleSmall?.merge(s16),
     ),
+    // T209: 꺼진 스위치도 검정 바탕에서 보이게 손잡이·트랙 테두리를 white70(10:1)으로.
+    // 켜짐·비활성은 기본값(각 화면의 activeColor) 그대로.
+    switchTheme: SwitchThemeData(
+      thumbColor: WidgetStateProperty.resolveWith((s) =>
+          s.contains(WidgetState.selected) || s.contains(WidgetState.disabled)
+              ? null
+              : Colors.white70),
+      trackOutlineColor: WidgetStateProperty.resolveWith((s) =>
+          s.contains(WidgetState.selected) || s.contains(WidgetState.disabled)
+              ? null
+              : Colors.white70),
+    ),
     snackBarTheme: const SnackBarThemeData(
       backgroundColor: Colors.white,
       contentTextStyle: TextStyle(color: Colors.black, fontSize: 16),

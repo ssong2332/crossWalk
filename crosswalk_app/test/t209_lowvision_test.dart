@@ -107,6 +107,19 @@ void main() {
         await t.pump();
       });
 
+      testWidgets('카메라 화면: 준비 중 + 경로 안내 중(미니맵·목적지 글자)', (t) async {
+        final answer = Completer<Map<int, int>>();
+        permissionAnswer(() => answer.future);
+        WalkInfoService.instance.view.value = RouteView(_geo(),
+            const math.Point(0, 70), 70, null, '30m 왼쪽', '서울특별시청 시민청 서울도서관');
+        await pumpAt(t, scale, const CameraScreen());
+        expect(find.textContaining('까지'), findsOneWidget);
+        expect(t.takeException(), isNull);
+        await t.pumpWidget(const SizedBox());
+        answer.complete(<int, int>{1: 0});
+        await t.pump();
+      });
+
       testWidgets('온보딩 화면', (t) async {
         await pumpAt(t, scale, const OnboardingScreen());
         await scrollToEnd(t);
@@ -199,12 +212,7 @@ void main() {
         await pumpAt(
             t,
             scale,
-            Scaffold(
-                body: Stack(children: [
-              const Positioned.fill(child: RouteOverlay()),
-              Positioned.fill(
-                  child: RouteOverlay(destLabel: true, onSpeak: (_) {})),
-            ])));
+            Scaffold(body: RouteOverlay(onSpeak: (_) {})));
         WalkInfoService.instance.view.value = RouteView(_geo(), const math.Point(0, 70),
             70, null, '30m 왼쪽', '서울특별시청 시민청 서울도서관');
         await t.pump();
@@ -250,6 +258,32 @@ void main() {
         await t.pump();
       });
     }
+  });
+
+  group('T209 대비 보강', () {
+    test('정상 화살표는 검정 외곽선을 먼저 그린다(평면·지면 모두)', () {
+      for (final angle in [null, 0.0]) {
+        final c = _ColorCanvas();
+        StateFieldPainter(
+                state: 'front',
+                color: const Color(0xFFA8CDE8),
+                stripeAngleDegrees: angle)
+            .paint(c, const Size(360, 600));
+        expect(c.colors, isNotEmpty);
+        expect(c.colors.first, Colors.black, reason: 'angle=$angle');
+        expect(c.colors, contains(isNot(Colors.black)));
+        // 지면 화살표: 외곽선 1 + 몸통 14조각 + 머리 1. 평면: 외곽선 3 + 선 3.
+        expect(c.colors.length, angle == null ? 6 : 16);
+      }
+    });
+
+    test('꺼진 스위치 손잡이·테두리는 white70, 켜짐·비활성은 기본값', () {
+      final sw = lowVisionTheme().switchTheme;
+      expect(sw.thumbColor!.resolve({}), Colors.white70);
+      expect(sw.trackOutlineColor!.resolve({}), Colors.white70);
+      expect(sw.thumbColor!.resolve({WidgetState.selected}), isNull);
+      expect(sw.thumbColor!.resolve({WidgetState.disabled}), isNull);
+    });
   });
 
   group('T209 화면 읽기', () {
@@ -326,4 +360,14 @@ RouteGeometry _geo() {
       },
     ]
   });
+}
+
+class _ColorCanvas implements Canvas {
+  final colors = <Color>[];
+  @override
+  void drawPath(Path path, Paint paint) => colors.add(paint.color);
+  @override
+  void drawLine(Offset p1, Offset p2, Paint paint) => colors.add(paint.color);
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
 }
