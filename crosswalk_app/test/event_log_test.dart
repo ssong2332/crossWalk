@@ -122,6 +122,24 @@ void main() {
       expect(events, ['log.start', 'log.off', 'log.on', 'shown']);
     });
 
+    // T207 ③(사용자 승인 2026-11-25): 앱 기록기는 기본 꺼짐. 켜면 log.on에 빌드가 남는다.
+    test('T207: 기본 꺼짐이면 아무것도 남기지 않고, 켜면 log.on에 빌드·파일', () async {
+      expect(EventLog.instance.enabled, isFalse, reason: '앱 기록기 기본 꺼짐');
+      final log = EventLog(baseDir: () async => tmp, enabled: false);
+      log.log('early');
+      await log.start(info: {'build': 'abc1234'});
+      log.log('hidden');
+      log.setEnabled(true);
+      log.log('shown');
+      final files = await log.filesForExport();
+      await log.close();
+
+      final lines = readLines(files.single);
+      expect(lines.map((m) => m['ev']), ['log.on', 'shown']);
+      expect(lines.first['build'], 'abc1234');
+      expect(lines.first['file'], files.single.uri.pathSegments.last);
+    });
+
     // T192: 주기·64KB flush와 종료 때 flushSync가 섞여도 줄이 사라지거나
     // 깨지거나 두 번 남지 않는다(쓰기가 동기 하나뿐이라 겹치지 않음).
     test('flush·flushSync를 섞어도 모든 줄이 정확히 한 번 남는다', () async {
