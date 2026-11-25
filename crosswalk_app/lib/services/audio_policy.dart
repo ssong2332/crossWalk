@@ -163,6 +163,8 @@ class AudioPolicy {
   /// 않는다(무음 예산은 그대로 본다). 재생 중인 것이 있으면 아무 효과가 없다.
   /// T132 ①: [atP0Cut]은 재생 중인 P0가 다른 P0에 끊기는 순간 끼워 넣는 진입
   /// 안내 — 재생 중인 P0를 끊고 바로 말한다(무음 예산은 본다, `p0_cut`).
+  /// T207 ①(사용자 승인 2026-11-25): [budgetExempt]면 무음 예산으로 버리지 않는다
+  /// (앞에 횡단보도·진입·건넜습니다, 사용자가 요청한 검색 목록 낭독).
   SpeechAction decide(
     FeedbackPriority incoming,
     DateTime now, {
@@ -171,6 +173,7 @@ class AudioPolicy {
     bool supersedes = false,
     bool afterP0 = false,
     bool atP0Cut = false,
+    bool budgetExempt = false,
   }) {
     final active = _active;
 
@@ -178,7 +181,7 @@ class AudioPolicy {
       if (atP0Cut &&
           incoming == FeedbackPriority.p1 &&
           active == FeedbackPriority.p0) {
-        if (spokenInWindow(now) >= budgetLimit) {
+        if (!budgetExempt && spokenInWindow(now) >= budgetLimit) {
           lastReason = 'budget';
           return SpeechAction.drop;
         }
@@ -238,7 +241,7 @@ class AudioPolicy {
       lastReason = 'min_gap';
       return SpeechAction.drop;
     }
-    if (spokenInWindow(now) >= budgetLimit) {
+    if (!budgetExempt && spokenInWindow(now) >= budgetLimit) {
       lastReason = 'budget';
       return SpeechAction.drop;
     }
@@ -277,8 +280,10 @@ class AudioPolicy {
   /// 발화가 재생 중이므로 '재생 중' 상태와 마지막 종료 시각을 건드리지 않는다
   /// (예산 누적만 한다). T108 전에는 같은 등급끼리 끊으면 끊긴 쪽의 마무리가
   /// 새 발화의 '재생 중' 상태를 지워, 정책이 재생 중인 이탈 경고를 못 봤다.
+  /// T207 ①: [countBudget]이 false면 예산에 누적하지 않는다(사용자가 요청한 검색
+  /// 목록 낭독 — 11/25 실기기에서 목록 2번(약 20초)이 예산을 다 써 횡단 안내가 버려졌다).
   void markFinished(FeedbackPriority priority, DateTime start, DateTime end,
-      {bool current = true}) {
+      {bool current = true, bool countBudget = true}) {
     if (current && _active == priority) {
       _active = null;
       _activeRank = null;
@@ -287,7 +292,7 @@ class AudioPolicy {
     }
     if (current) _lastSpeechEnd = end;
     if (current && priority == FeedbackPriority.p0) _lastP0End = end;
-    if (priority != FeedbackPriority.p0) {
+    if (priority != FeedbackPriority.p0 && countBudget) {
       _spans.add(_Span(start, end));
       final cutoff = end.subtract(budgetWindow);
       _spans.removeWhere((s) => s.end.isBefore(cutoff));

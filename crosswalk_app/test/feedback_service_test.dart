@@ -4186,6 +4186,49 @@ void main() {
       });
     });
   });
+
+  // T207 ①(사용자 승인 2026-11-25): 11/25 실기기 — 검색 목록 2번이 P1 예산을 다 써
+  // '앞에 횡단보도'가 budget으로 버려졌다(train/field_1125/report.md 2절).
+  group('무음 예산 예외 (T207 ①)', () {
+    List<Map<String, dynamic>> says() => EventLog.instance.earlyLines
+        .map((l) => jsonDecode(l) as Map<String, dynamic>)
+        .where((m) => m['ev'] == 'say')
+        .toList();
+
+    testWidgets('예산이 가득해도 앞에 횡단보도·진입·건넜습니다·검색 목록은 말한다',
+        (tester) async {
+      EventLog.instance.clearForTest();
+      final ko = AppStrings.of(AppLanguage.ko);
+      final s = FeedbackService();
+      // 다른 P1 안내로 예산을 채운다(끝난 지 2초 — 최소 간격 밖).
+      final now = DateTime.now();
+      s.audioPolicy.markStarted(FeedbackPriority.p1);
+      s.audioPolicy.markFinished(FeedbackPriority.p1,
+          now.subtract(const Duration(seconds: 25)),
+          now.subtract(const Duration(seconds: 2)));
+      await s.announceRoute('후문까지 650미터');
+      await s.announceRoute('1번 평택대학교 660미터', userRequested: true);
+      await s.alert('none', 0.9);
+      await s.alert('approach', 0.9);
+      await s.alert('front', 0.9);
+      await s.alert('crossed', 0.9);
+      final got = {for (final m in says()) m['text']: m['why']};
+      expect(
+          got.keys,
+          containsAll([
+            '1번 평택대학교 660미터',
+            ko.approachAheadMessage,
+            ko.enteredCrosswalkMessage,
+            ko.crossedCrosswalkMessage,
+          ]));
+      expect(got['후문까지 650미터'], 'budget');
+      expect(got['1번 평택대학교 660미터'], isNot('budget'));
+      expect(got[ko.approachAheadMessage], isNot('budget'));
+      expect(got[ko.enteredCrosswalkMessage], isNot('budget'));
+      expect(got[ko.crossedCrosswalkMessage], isNot('budget'));
+      await _disposeIn(tester, s);
+    });
+  });
 }
 
 /// T121: 대기 꺼내기 타이머를 정리한다. 최소 간격은 실제 시각으로 재므로 가짜 시계에서는

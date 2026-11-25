@@ -693,4 +693,49 @@ void main() {
           isNull);
     });
   });
+
+  // T207 ①(사용자 승인 2026-11-25): 검색 목록 낭독은 예산 밖, 횡단 구간 안내는 예산으로 안 버림.
+  group('AudioPolicy 무음 예산 예외 (T207 ①)', () {
+    DateTime at(int s) => t0.add(Duration(seconds: s));
+
+    test('11/25 순서: 목록 2번(각 10초) 뒤 앞에 횡단보도가 말해진다', () {
+      // 전(종전 동작): 목록이 예산에 누적되면 20초로 가득 -> budget 버림.
+      final before = AudioPolicy();
+      for (final s in [0, 12]) {
+        before.markStarted(FeedbackPriority.p1);
+        before.markFinished(FeedbackPriority.p1, at(s), at(s + 10));
+      }
+      expect(before.decide(FeedbackPriority.p1, at(24)), SpeechAction.drop);
+      expect(before.lastReason, 'budget');
+
+      // 후: 목록(사용자 요청)은 누적하지 않는다.
+      final p = AudioPolicy();
+      for (final s in [0, 12]) {
+        p.markStarted(FeedbackPriority.p1);
+        p.markFinished(FeedbackPriority.p1, at(s), at(s + 10),
+            countBudget: false);
+      }
+      expect(p.spokenInWindow(at(24)), Duration.zero);
+      expect(p.decide(FeedbackPriority.p1, at(24)), SpeechAction.speakNow);
+    });
+
+    test('예산이 가득해도 budgetExempt면 말하고, 아니면 종전대로 버린다', () {
+      final p = AudioPolicy();
+      p.markStarted(FeedbackPriority.p1);
+      p.markFinished(FeedbackPriority.p1, at(0), at(21));
+      expect(p.decide(FeedbackPriority.p1, at(24)), SpeechAction.drop);
+      expect(p.lastReason, 'budget');
+      expect(p.decide(FeedbackPriority.p1, at(24), budgetExempt: true),
+          SpeechAction.speakNow);
+      expect(p.lastReason, 'ok');
+      // P0 끊는 순간 끼우는 진입(p0_cut)도 같다.
+      p.markStarted(FeedbackPriority.p0);
+      expect(p.decide(FeedbackPriority.p1, at(24), atP0Cut: true),
+          SpeechAction.drop);
+      expect(
+          p.decide(FeedbackPriority.p1, at(24),
+              atP0Cut: true, budgetExempt: true),
+          SpeechAction.speakNow);
+    });
+  });
 }

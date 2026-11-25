@@ -70,7 +70,8 @@ class _WalkInfoSectionState extends State<WalkInfoSection> {
         _places = r.places;
         _status = r.why == null ? null : msg;
       });
-      await widget.feedback.announceRoute(msg);
+      // T207 ①: 사용자가 요청한 목록 낭독 — 무음 예산 밖.
+      await widget.feedback.announceRoute(msg, userRequested: true);
     });
     if (mounted) setState(() {});
   }

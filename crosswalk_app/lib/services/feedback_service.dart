@@ -1147,8 +1147,18 @@ class FeedbackService {
     double? rate,
     bool afterP0 = false,
     bool atP0Cut = false,
+    bool userRequested = false,
   }) async {
     final now = DateTime.now();
+    // T207 ①(사용자 승인 2026-11-25): 사용자가 요청한 낭독(검색 목록)은 예산을 보지도
+    // 쓰지도 않는다. 대기 슬롯에서 다시 꺼낼 때는 문구로 알아본다.
+    final userReq = userRequested || message == _userRequestedMessage;
+    final phase = AppStrings.of(_language);
+    // T207 ①: 앞에 횡단보도·진입·건넜습니다는 예산 때문에 버리지 않는다(예산에는 누적).
+    final budgetExempt = userReq ||
+        message == phase.approachAheadMessage ||
+        message == phase.enteredCrosswalkMessage ||
+        message == phase.crossedCrosswalkMessage;
     // T131: 끼워 넣은 진입 안내 재생 중이면 이탈·회복 P0는 끊지 않고 기다린다.
     if (priority == FeedbackPriority.p0 &&
         audioPolicy.holdsP0ForInsert(rank, now)) {
@@ -1168,7 +1178,8 @@ class FeedbackService {
         message: message,
         supersedes: supersedes,
         afterP0: afterP0,
-        atP0Cut: atP0Cut);
+        atP0Cut: atP0Cut,
+        budgetExempt: budgetExempt);
     var why = audioPolicy.lastReason;
     if (action == SpeechAction.queue) {
       // 만료된 대기 항목이 슬롯을 막지 않게 먼저 치운다(버린 것은 기록).
@@ -1276,7 +1287,8 @@ class FeedbackService {
         if (rateMs != null) 'rateMs': rateMs,
       });
       finishSpeechGeneration(generation);
-      audioPolicy.markFinished(priority, start, end, current: current);
+      audioPolicy.markFinished(priority, start, end,
+          current: current, countBudget: !userReq);
       // T131: 끼워 넣은 진입 안내가 끝나면(끊겼어도) 기다리게 한 P0를 내보낸다.
       // T132 ②: 바로 재생된 진입 안내도 같다.
       if (inserted) _releaseInsertHeld();
@@ -2268,9 +2280,14 @@ class FeedbackService {
       _lastRawClass == 'right';
 
   /// T198: 경로 안내("N미터 앞 횡단보도", "목적지 근처") — 1회성 사실이라 P1.
-  Future<void> announceRoute(String message) async {
-    await _speak(message, priority: FeedbackPriority.p1);
+  /// T207 ①: [userRequested]면 사용자가 요청한 낭독(검색 목록)이라 무음 예산 밖이다.
+  Future<void> announceRoute(String message, {bool userRequested = false}) async {
+    if (userRequested) _userRequestedMessage = message;
+    await _speak(message,
+        priority: FeedbackPriority.p1, userRequested: userRequested);
   }
+
+  String? _userRequestedMessage;
 
   // 앱 초기화 실패 시 사용자에게 오류 상황을 음성으로 안내
   Future<void> announceError(String message) async {
