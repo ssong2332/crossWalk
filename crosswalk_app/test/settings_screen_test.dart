@@ -131,6 +131,7 @@ void main() {
       );
       expect(torchTile.value, isFalse);
 
+      await openDevGroup(tester); // T210: 자리표시 항목은 '개발자' 묶음 안
       final screenReaderTile = tester.widget<SwitchListTile>(
         find.widgetWithText(SwitchListTile, '화면 읽기 프로그램 최적화'),
       );

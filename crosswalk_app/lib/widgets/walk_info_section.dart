@@ -135,13 +135,10 @@ class _WalkInfoSectionState extends State<WalkInfoSection> {
             TextField(
               controller: _dest,
               enabled: !_busy,
-              style: const TextStyle(color: Colors.white),
+              style: destInputStyle,
               textInputAction: TextInputAction.go,
               onSubmitted: (_) => _search(),
-              decoration: InputDecoration(
-                labelText: _ko ? '목적지' : 'Destination',
-                labelStyle: const TextStyle(color: Colors.white70, fontSize: 16),
-              ),
+              decoration: destInputDecoration(_ko),
             ),
             // T209: 배경 있는 버튼, 높이 56dp·18sp, 사이 8dp. 글자가 커지면 다음 줄로.
             // 찾기: 검정 on #3AA0FF 7.65:1, 안내 끝: 검정 on 흰색 21:1.
@@ -174,6 +171,17 @@ class _WalkInfoSectionState extends State<WalkInfoSection> {
     );
   }
 }
+
+/// T210: 목적지 입력 글자 18sp 흰색(21:1).
+const destInputStyle = TextStyle(color: Colors.white, fontSize: 18);
+
+/// T210: 라벨 18sp white70(10.02:1). 떠 있는 라벨은 Flutter가 0.75배로 줄여
+/// 그리므로(input_decorator `_kFinalLabelScale`) 22sp로 줘서 보이는 크기 16.5sp.
+InputDecoration destInputDecoration(bool ko) => InputDecoration(
+      labelText: ko ? '목적지' : 'Destination',
+      labelStyle: const TextStyle(color: Colors.white70, fontSize: 18),
+      floatingLabelStyle: const TextStyle(color: Colors.white70, fontSize: 22),
+    );
 
 /// T205: 목적지 검색 결과 목록 — "1. 이름 … 350미터". 20km 넘는 곳은 거리를 흐리게.
 class PlaceList extends StatelessWidget {

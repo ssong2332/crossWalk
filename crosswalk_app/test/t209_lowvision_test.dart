@@ -329,6 +329,9 @@ void main() {
       ]) {
         expect(find.text(dev), findsNothing, reason: dev);
       }
+      // T210: 동작하지 않는 자리표시 '화면 읽기 프로그램 최적화'도 접힌 묶음 안.
+      expect(find.text(ko.settingsScreenReaderOptimizationLabel), findsNothing);
+      expect(find.text(ko.settingsAccessibilitySectionHeader), findsNothing);
       final header = find.text('개발자');
       // 묶음은 손전등(일반 마지막 항목) 아래, 빌드 표시 위.
       expect(t.getTopLeft(header).dy,
@@ -344,8 +347,37 @@ void main() {
       expect(find.text(ko.settingsDevLogLabel), findsOneWidget);
       expect(find.text(ko.settingsCrosswalkGateLabel), findsOneWidget);
       expect(find.text(ko.settingsUltraWideLabel), findsOneWidget);
+      expect(find.text(ko.settingsScreenReaderOptimizationLabel), findsOneWidget);
       h.dispose();
     });
+  });
+
+  group('T210 목적지 입력칸', () {
+    for (final scale in [1.0, 2.0]) {
+      testWidgets('배율 $scale: 입력 18sp 흰색, 라벨 white70·떠 있을 때도 16sp 이상', (t) async {
+        await pumpAt(
+            t,
+            scale,
+            Scaffold(
+                body: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: TextField(
+                        style: destInputStyle,
+                        decoration: destInputDecoration(true)))));
+        final d = destInputDecoration(true);
+        expect(destInputStyle.fontSize, greaterThanOrEqualTo(18));
+        expect(destInputStyle.color, Colors.white);
+        expect(d.labelStyle!.fontSize, greaterThanOrEqualTo(16));
+        expect(d.labelStyle!.color, Colors.white70);
+        expect(d.floatingLabelStyle!.color, Colors.white70);
+        // 떠 있는 라벨은 0.75배로 그려진다 — 보이는 크기 16 이상.
+        expect(d.floatingLabelStyle!.fontSize! * 0.75, greaterThanOrEqualTo(16));
+        await t.enterText(find.byType(TextField), '서울특별시청 시민청');
+        await t.pumpAndSettle();
+        expect(find.text('목적지'), findsOneWidget);
+        expect(t.takeException(), isNull);
+      });
+    }
   });
 
   group('T209 화면 읽기', () {
