@@ -64,11 +64,11 @@ class RouteOverlay extends StatelessWidget {
                         margin: const EdgeInsets.only(top: 4),
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 2),
-                        color: Colors.black.withValues(alpha: 0.6),
+                        color: Colors.black,
                         child: Text(v.caption!,
                             style: const TextStyle(
                                 color: Colors.white,
-                                fontSize: 15,
+                                fontSize: 16,
                                 fontWeight: FontWeight.w700)),
                       )),
                     if (destLabel && text != null)
@@ -81,16 +81,20 @@ class RouteOverlay extends StatelessWidget {
                           onTap: () => onSpeak?.call(text),
                           child: Container(
                             margin: const EdgeInsets.only(top: 4),
-                            // 글자 폭만큼, 누르는 높이는 48dp 이상.
-                            constraints: const BoxConstraints(maxWidth: 200),
+                            // T209: 24sp 흰 글자, 불투명 검정 바탕, 누르는 영역 48dp 이상.
+                            // 말줄임 대신 줄바꿈(글자 확대 200%에서도 끝까지 보이게).
+                            constraints: BoxConstraints(
+                                minWidth: 48,
+                                minHeight: 48,
+                                maxWidth: MediaQuery.sizeOf(context).width * 0.6),
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 15),
-                            color: Colors.black.withValues(alpha: 0.6),
+                                horizontal: 10, vertical: 8),
+                            color: Colors.black,
                             child: Text(text,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
-                                    color: Colors.white70, fontSize: 13)),
+                                    color: Colors.white,
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.w700)),
                           ),
                         ),
                       ),

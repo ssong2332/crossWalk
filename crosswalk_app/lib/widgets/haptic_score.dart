@@ -102,7 +102,7 @@ class _HapticScoreViewState extends State<HapticScoreView>
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                     color: ScorePainter.speechColor,
-                    fontSize: 13,
+                    fontSize: 16,
                     fontWeight: FontWeight.w700)),
             Text(waitingLine,
                 key: const ValueKey('score-waiting'),
@@ -112,13 +112,16 @@ class _HapticScoreViewState extends State<HapticScoreView>
                     color: t.pending.isEmpty
                         ? ScorePainter.labelColor
                         : ScorePainter.pendingColor,
-                    fontSize: 12,
+                    fontSize: 16,
                     fontWeight: FontWeight.w600)),
             const SizedBox(height: 4),
             SizedBox(
               height: HapticScoreView.canvasHeight,
               child: CustomPaint(
-                painter: ScorePainter(timeline: t, now: now),
+                painter: ScorePainter(
+                    timeline: t,
+                    now: now,
+                    textScaler: MediaQuery.textScalerOf(context)),
               ),
             ),
           ],
@@ -130,15 +133,21 @@ class _HapticScoreViewState extends State<HapticScoreView>
 
 /// 네 줄(음성·대기·진동·위치) 시간축. 오른쪽 끝이 지금, 왼쪽 끝이 [span] 전.
 class ScorePainter extends CustomPainter {
-  ScorePainter({required this.timeline, required this.now})
+  ScorePainter(
+      {required this.timeline,
+      required this.now,
+      this.textScaler = TextScaler.noScaling})
       : _revision = timeline.revision;
 
   final ScoreTimeline timeline;
   final DateTime now;
+
+  /// T209: 그림 안 글자도 시스템 글자 크기를 따른다.
+  final TextScaler textScaler;
   final int _revision;
 
   static const span = Duration(seconds: 8);
-  static const gutter = 34.0;
+  static const gutter = 40.0;
 
   // 배경 #0E1013 대비(계산값): 하늘 9.9:1, 앰버 9.6:1, 회색 7.4:1.
   static const speechColor = Color(0xFFA8CDE8);
@@ -170,7 +179,7 @@ class ScorePainter extends CustomPainter {
     const names = ['음성', '대기', '진동', '위치'];
     for (var r = 0; r < 4; r++) {
       _text(canvas, names[r], Offset(0, rowH * r + rowH / 2 - 7),
-          labelColor, 11, gutter - 2);
+          labelColor, 14, gutter - 2);
     }
 
     canvas.save();
@@ -182,7 +191,7 @@ class ScorePainter extends CustomPainter {
       final mx = x(m.at);
       canvas.drawRect(Rect.fromLTWH(mx, 0, 1.5, size.height),
           Paint()..color = labelColor.withValues(alpha: 0.5));
-      _text(canvas, m.text, Offset(mx + 2, rowH * 3 + 1), labelColor, 9, 60);
+      _text(canvas, m.text, Offset(mx + 2, rowH * 3 + 1), labelColor, 14, 80);
     }
 
     // 음성: 말한 구간 막대 + 문장. 끊김·오류는 끝을 빨갛게.
@@ -192,7 +201,7 @@ class ScorePainter extends CustomPainter {
       final r = Rect.fromLTRB(x0, 3, x1 < x0 + 2 ? x0 + 2 : x1, rowH - 3);
       canvas.drawRRect(RRect.fromRectAndRadius(r, const Radius.circular(3)),
           Paint()..color = speechColor);
-      _text(canvas, s.text, Offset(x0 + 3, 5), ink, 11, 400);
+      _text(canvas, s.text, Offset(x0 + 3, 5), ink, 14, 400);
       if (!s.open && s.result != 'done') {
         canvas.drawRect(Rect.fromLTWH(r.right - 3, r.top, 3, r.height),
             Paint()..color = alertColor);
@@ -207,7 +216,7 @@ class ScorePainter extends CustomPainter {
             ..color = pendingColor
             ..style = PaintingStyle.stroke
             ..strokeWidth = 2);
-      _text(canvas, p.text, Offset(r.left + 3, rowH + 5), pendingColor, 11, 400);
+      _text(canvas, p.text, Offset(r.left + 3, rowH + 5), pendingColor, 14, 400);
     }
     // 만료·취소·버림: 그 시각에 표시.
     for (final m in timeline.marks) {
@@ -221,8 +230,8 @@ class ScorePainter extends CustomPainter {
       final rowTop = m.kind == ScoreMarkKind.drop ? 0.0 : rowH;
       canvas.drawRect(
           Rect.fromLTWH(mx - 1, rowTop + 2, 3, rowH - 4), Paint()..color = alertColor);
-      _text(canvas, '$label ${m.text}', Offset(mx + 4, rowTop + rowH - 14),
-          alertColor, 9, 160);
+      _text(canvas, '$label ${m.text}', Offset(mx + 4, rowTop + rowH - 18),
+          alertColor, 14, 160);
     }
     // 진동: 켜짐 구간.
     final buzz = Paint()..color = buzzColor;
@@ -256,6 +265,7 @@ class ScorePainter extends CustomPainter {
           style: TextStyle(
               color: color, fontSize: size, fontWeight: FontWeight.w700)),
       textDirection: TextDirection.ltr,
+      textScaler: textScaler,
       maxLines: 1,
       ellipsis: '…',
     )..layout(maxWidth: maxWidth);

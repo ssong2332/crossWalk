@@ -146,11 +146,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // T38's interactive-element accent color, reused here per the approved
   // mockup guidance (docs/Tasks.md T39).
   static const _colorAccent = Color(0xFF3AA0FF);
-  // T46: dark navy used for text/icons drawn on top of _colorAccent.
-  // White-on-accent measures ~2.74:1 (fails WCAG AA's 4.5:1 for normal
-  // text); this matches camera_screen.dart's _colorAccentOnText, which
-  // already carries that same fix for the analogous case there.
-  static const _colorAccentOnText = Color(0xFF08182A);
+  // T46: dark text/icons drawn on top of _colorAccent (white-on-accent
+  // ~2.74:1 fails WCAG AA). T209: navy #08182A (6.52:1) -> black (7.65:1)
+  // to reach AAA 7:1.
+  static const _colorAccentOnText = Colors.black;
 
   late AppLanguage _language;
   late AppStrings _strings;
@@ -330,7 +329,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // T153: 진동 모듈 구역. 시험 버튼·세기·폰 함께는 설정을 켰을 때만 그린다.
   Widget _buildVibModuleSection() {
-    const noteStyle = TextStyle(color: Colors.white38, fontSize: 12);
+    const noteStyle = TextStyle(color: Colors.white70, fontSize: 16);
     final stateListenable = widget.vibModuleState;
     final buttonStyle = OutlinedButton.styleFrom(
       foregroundColor: Colors.white,
@@ -362,8 +361,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               valueListenable: stateListenable,
               builder: (context, state, _) => Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Text(_vibModuleStateText(state),
-                    style: const TextStyle(color: Colors.white)),
+                // T209: 연결 상태가 바뀌면 화면 읽기가 알린다.
+                child: Semantics(
+                  liveRegion: true,
+                  child: Text(_vibModuleStateText(state),
+                      style: const TextStyle(color: Colors.white)),
+                ),
               ),
             ),
           if (_vibModule) ...[
@@ -432,7 +435,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildDevCaptureSection() {
-    const noteStyle = TextStyle(color: Colors.white38, fontSize: 12);
+    const noteStyle = TextStyle(color: Colors.white70, fontSize: 16);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
@@ -514,7 +517,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         title,
         style: const TextStyle(
           color: _colorAccent,
-          fontSize: 14,
+          fontSize: 16,
           fontWeight: FontWeight.w700,
         ),
       ),
@@ -574,24 +577,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             color: Colors.white, fontWeight: FontWeight.w800)),
                   ],
                 ),
-                Slider(
-                  value: _speechRate,
-                  min: 0.1,
-                  max: 1.0,
-                  divisions: 9,
-                  activeColor: _colorAccent,
-                  label: _speechRate.toStringAsFixed(1),
-                  onChanged: _changeSpeechRate,
+                // T209: 화면 읽기가 "TTS 속도, 0.5"처럼 기능명과 값을 함께 읽게 한다.
+                MergeSemantics(
+                  child: Semantics(
+                    label: _strings.settingsTtsRateLabel,
+                    child: Slider(
+                      value: _speechRate,
+                      min: 0.1,
+                      max: 1.0,
+                      divisions: 9,
+                      activeColor: _colorAccent,
+                      label: _speechRate.toStringAsFixed(1),
+                      semanticFormatterCallback: (v) => v.toStringAsFixed(1),
+                      onChanged: _changeSpeechRate,
+                    ),
+                  ),
                 ),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(_strings.settingsTtsRateSlowLabel,
                         style: const TextStyle(
-                            color: Colors.white38, fontSize: 12)),
+                            color: Colors.white70, fontSize: 16)),
                     Text(_strings.settingsTtsRateFastLabel,
                         style: const TextStyle(
-                            color: Colors.white38, fontSize: 12)),
+                            color: Colors.white70, fontSize: 16)),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -613,24 +623,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             color: Colors.white, fontWeight: FontWeight.w800)),
                   ],
                 ),
-                Slider(
-                  value: _vibrationDurationMs.toDouble(),
-                  min: 200,
-                  max: 1000,
-                  divisions: 8,
-                  activeColor: _colorAccent,
-                  label: '${_vibrationDurationMs}ms',
-                  onChanged: _changeVibrationDuration,
+                MergeSemantics(
+                  child: Semantics(
+                    label: _strings.settingsVibrationStrengthLabel,
+                    child: Slider(
+                      value: _vibrationDurationMs.toDouble(),
+                      min: 200,
+                      max: 1000,
+                      divisions: 8,
+                      activeColor: _colorAccent,
+                      label: '${_vibrationDurationMs}ms',
+                      semanticFormatterCallback: (v) =>
+                          _language == AppLanguage.ko
+                              ? '${v.round()}밀리초'
+                              : '${v.round()} milliseconds',
+                      onChanged: _changeVibrationDuration,
+                    ),
+                  ),
                 ),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(_strings.settingsVibrationWeakLabel,
                         style: const TextStyle(
-                            color: Colors.white38, fontSize: 12)),
+                            color: Colors.white70, fontSize: 16)),
                     Text(_strings.settingsVibrationStrongLabel,
                         style: const TextStyle(
-                            color: Colors.white38, fontSize: 12)),
+                            color: Colors.white70, fontSize: 16)),
                   ],
                 ),
               ],
@@ -650,7 +669,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               subtitle: Text(
                 _strings.settingsPowerSaveNote,
-                style: const TextStyle(color: Colors.white38, fontSize: 12),
+                style: const TextStyle(color: Colors.white70, fontSize: 16),
               ),
             ),
           ),
@@ -672,7 +691,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 subtitle: Text(
                   _strings.settingsSurfaceGuidanceNote,
-                  style: const TextStyle(color: Colors.white38, fontSize: 12),
+                  style: const TextStyle(color: Colors.white70, fontSize: 16),
                 ),
               ),
             ),
@@ -691,7 +710,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 subtitle: Text(
                   _strings.settingsCautionGuidanceNote,
-                  style: const TextStyle(color: Colors.white38, fontSize: 12),
+                  style: const TextStyle(color: Colors.white70, fontSize: 16),
                 ),
               ),
             ),
@@ -710,7 +729,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 subtitle: Text(
                   _strings.settingsCrosswalkGateNote,
-                  style: const TextStyle(color: Colors.white38, fontSize: 12),
+                  style: const TextStyle(color: Colors.white70, fontSize: 16),
                 ),
               ),
             ),
@@ -734,7 +753,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     subtitle: Text(
                       _strings.settingsDevLogNote,
                       style:
-                          const TextStyle(color: Colors.white38, fontSize: 12),
+                          const TextStyle(color: Colors.white70, fontSize: 16),
                     ),
                   ),
                   if (widget.onScoreChanged != null)
@@ -750,7 +769,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       subtitle: Text(
                         _strings.settingsScoreNote,
                         style: const TextStyle(
-                            color: Colors.white38, fontSize: 12),
+                            color: Colors.white70, fontSize: 16),
                       ),
                     ),
                   if (widget.onShareEventLog != null)
@@ -791,7 +810,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               subtitle: Text(
                 _strings.settingsScreenReaderOptimizationNote,
-                style: const TextStyle(color: Colors.white38, fontSize: 12),
+                style: const TextStyle(color: Colors.white70, fontSize: 16),
               ),
             ),
           ),
@@ -809,7 +828,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               subtitle: Text(
                 _strings.settingsTorchNote,
-                style: const TextStyle(color: Colors.white38, fontSize: 12),
+                style: const TextStyle(color: Colors.white70, fontSize: 16),
               ),
             ),
           ),
@@ -835,7 +854,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         excludeSemantics: true,
         child: Text(
           text,
-          style: const TextStyle(color: Colors.white38, fontSize: 12),
+          style: const TextStyle(color: Colors.white70, fontSize: 16),
         ),
       ),
     );

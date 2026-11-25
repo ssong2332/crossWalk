@@ -16,6 +16,27 @@ void main() {
   runApp(const CrosswalkApp());
 }
 
+/// T209: 저시력 사용자용 기본 테마 — 크기를 따로 주지 않은 글자(본문·목록 부제·
+/// 버튼 글자)를 14sp에서 16sp로 올리고, SnackBar는 흰 바탕 검정 글자 16sp(21:1)로 한다.
+ThemeData lowVisionTheme() {
+  final base = ThemeData.dark();
+  const s16 = TextStyle(fontSize: 16);
+  return base.copyWith(
+    textTheme: base.textTheme.copyWith(
+      bodyMedium: base.textTheme.bodyMedium?.merge(s16),
+      bodySmall: base.textTheme.bodySmall?.merge(s16),
+      labelLarge: base.textTheme.labelLarge?.merge(s16),
+      labelMedium: base.textTheme.labelMedium?.merge(s16),
+      labelSmall: base.textTheme.labelSmall?.merge(s16),
+      titleSmall: base.textTheme.titleSmall?.merge(s16),
+    ),
+    snackBarTheme: const SnackBarThemeData(
+      backgroundColor: Colors.white,
+      contentTextStyle: TextStyle(color: Colors.black, fontSize: 16),
+    ),
+  );
+}
+
 class CrosswalkApp extends StatefulWidget {
   const CrosswalkApp({super.key});
 
@@ -46,7 +67,7 @@ class _CrosswalkAppState extends State<CrosswalkApp> {
     return MaterialApp(
       title: '횡단보도 이탈 감지',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData.dark(),
+      theme: lowVisionTheme(),
       // T40: OnboardingScreen (posture guidance + legal disclaimer) now
       // runs first; it routes to CameraScreen once the user confirms. Both
       // screens are given the same FeedbackService instance owned here.

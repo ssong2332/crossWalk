@@ -1833,20 +1833,17 @@ class _CameraScreenState extends State<CameraScreen>
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           // T129: 노란 면 위에서는 반투명 바탕이 노랑에 섞여 아이콘이 안 보인다.
-          color: active
-              ? _colorAccent
-              : _slabSpec.onSlab
-                  ? _colorBg
-                  : Colors.black.withValues(alpha: 0.35),
+          // T209: 카메라 영상 위에서도 불투명 바탕. 켜짐은 하늘색 위 검정 아이콘.
+          color: active ? _colorAccent : _colorBg,
           border: Border.all(
-            color: active ? _colorAccent : Colors.white38,
+            color: active ? _colorAccent : Colors.white70,
             width: 1.5,
           ),
         ),
         child: Icon(
           icon,
           size: 20,
-          color: active ? Colors.white : Colors.white38,
+          color: active ? Colors.black : Colors.white,
         ),
       ),
     );
@@ -1903,7 +1900,7 @@ class _CameraScreenState extends State<CameraScreen>
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 19,
+                    fontSize: 24,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -1926,8 +1923,8 @@ class _CameraScreenState extends State<CameraScreen>
                           ? _strings.openSettingsButton
                           : _strings.retryButton,
                       style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                     style: ElevatedButton.styleFrom(
@@ -1974,11 +1971,11 @@ class _CameraScreenState extends State<CameraScreen>
                   Text(title,
                       style: const TextStyle(
                           color: Color(0xFF3A2C00),
-                          fontSize: 13,
+                          fontSize: 18,
                           fontWeight: FontWeight.w700)),
                   Text(body,
                       style: const TextStyle(
-                          color: Color(0xFF5C4A1F), fontSize: 12)),
+                          color: Color(0xFF3A2C00), fontSize: 16)),
                 ],
               ),
             ),
@@ -1996,10 +1993,10 @@ class _CameraScreenState extends State<CameraScreen>
       label: _language == AppLanguage.ko ? '목적지 안내' : 'Destination',
       button: true,
       child: Material(
-        color:
-            _slabSpec.onSlab ? _colorBg : Colors.black.withValues(alpha: 0.35),
+        // T209: 카메라 영상 위에서도 불투명 바탕, 흰 아이콘.
+        color: _colorBg,
         shape: const CircleBorder(
-          side: BorderSide(color: Colors.white38, width: 1.5),
+          side: BorderSide(color: Colors.white70, width: 1.5),
         ),
         child: InkWell(
           customBorder: const CircleBorder(),
@@ -2009,7 +2006,7 @@ class _CameraScreenState extends State<CameraScreen>
           )),
           child: const Padding(
             padding: EdgeInsets.all(14),
-            child: Icon(Icons.place_outlined, size: 20, color: Colors.white70),
+            child: Icon(Icons.place_outlined, size: 20, color: Colors.white),
           ),
         ),
       ),
@@ -2027,10 +2024,10 @@ class _CameraScreenState extends State<CameraScreen>
       label: _strings.settingsButtonLabel,
       button: true,
       child: Material(
-        color:
-            _slabSpec.onSlab ? _colorBg : Colors.black.withValues(alpha: 0.35),
+        // T209: 카메라 영상 위에서도 불투명 바탕, 흰 아이콘.
+        color: _colorBg,
         shape: const CircleBorder(
-          side: BorderSide(color: Colors.white38, width: 1.5),
+          side: BorderSide(color: Colors.white70, width: 1.5),
         ),
         child: InkWell(
           customBorder: const CircleBorder(),
@@ -2084,7 +2081,7 @@ class _CameraScreenState extends State<CameraScreen>
             // minimum touch-target size for an accessibility-focused app.
             padding: EdgeInsets.all(14),
             child:
-                Icon(Icons.settings_outlined, size: 20, color: Colors.white70),
+                Icon(Icons.settings_outlined, size: 20, color: Colors.white),
           ),
         ),
       ),
@@ -2226,6 +2223,9 @@ class _CameraScreenState extends State<CameraScreen>
     // 음성으로만 남는다. 어떤 컨테이너에도 고정 높이를 주지 않는다.
     final scale = MediaQuery.textScalerOf(context).scale(16) / 16;
     final dense = scale > 1.5;
+    // T209: 디버그 상자(신뢰도·줄무늬·빌드·줌·노면 %)는 '개발용 기록'을 켰을 때만.
+    // 설정에서만 바뀌고, 돌아올 때 _resumeAfterSettings의 setState로 다시 그린다.
+    final devInfo = EventLog.instance.enabled;
     final color = _fieldColor;
     final reducedMotion = MediaQuery.of(context).disableAnimations;
     final slab = _slabSpec;
@@ -2418,7 +2418,7 @@ class _CameraScreenState extends State<CameraScreen>
                         // T89: 무판정("판정 없음")일 때는 숨긴다 — 이 값은
                         // 3초 전 마지막 유효 판정의 신뢰도라, "판정 없음 65%"
                         // 처럼 보이면 오도한다(실기기 #15).
-                        if (!dense && _confidence > 0 && !_hasError && !_noCall) ...[
+                        if (devInfo && !dense && _confidence > 0 && !_hasError && !_noCall) ...[
                           Padding(
                             padding: const EdgeInsets.only(top: 0),
                             child: Text(
@@ -2426,7 +2426,7 @@ class _CameraScreenState extends State<CameraScreen>
                               '${(_confidence * 100).toStringAsFixed(0)}%',
                               textAlign: TextAlign.center,
                               style: const TextStyle(
-                                  color: _colorTextDim, fontSize: 14),
+                                  color: _colorTextDim, fontSize: 16),
                             ),
                           ),
                           Padding(
@@ -2455,7 +2455,7 @@ class _CameraScreenState extends State<CameraScreen>
                         // 볼 수 있게 화면에 직접 낸다(2026-08-24 요청). 정식
                         // 기능처럼 보이지 않도록 점선 테두리 + "실험적" 라벨로
                         // 구분한다.
-                        if (!dense && !_hasError)
+                        if (!dense && !_hasError && (devInfo || _scoreEnabled))
                           Padding(
                             padding: const EdgeInsets.only(top: 10),
                             child: DecoratedBox(
@@ -2473,6 +2473,7 @@ class _CameraScreenState extends State<CameraScreen>
                                   crossAxisAlignment: CrossAxisAlignment.stretch,
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
+                                if (devInfo)
                                 Text(
                                   // T99: 어느 커밋의 APK인지 실기기 테스트
                                   // 중 메인 화면에서 바로 보이게 한다
@@ -2485,9 +2486,9 @@ class _CameraScreenState extends State<CameraScreen>
                                   // T104: 노면 안내가 켜져 있으면 발 앞 칸 비율(%).
                                   '${_surfaceEnabled || _cautionEnabled ? '\n노면 앞: ${_lastSurface?.front ?? '-'}' : ''}',
                                   textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: _colorTextDim.withValues(alpha: 0.8),
-                                    fontSize: 12,
+                                  style: const TextStyle(
+                                    color: _colorTextDim,
+                                    fontSize: 16,
                                   ),
                                 ),
                                 // T129: 촉각 악보(개발 설정에서 켬). 위 글자 줄은
@@ -2512,7 +2513,7 @@ class _CameraScreenState extends State<CameraScreen>
                             textAlign: TextAlign.center,
                             style: const TextStyle(
                                 color: _colorTextDim,
-                                fontSize: 13,
+                                fontSize: 16,
                                 height: 1.4),
                           ),
                         ),

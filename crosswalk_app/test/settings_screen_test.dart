@@ -180,7 +180,9 @@ void main() {
       ));
       await tester.pumpAndSettle();
       final finder = find.widgetWithText(SwitchListTile, '노면 안내 (실험)');
-      await tester.ensureVisible(finder);
+      // T209: 글자가 커져 이 줄이 처음 화면 밖(아직 안 그려짐)이라 스크롤로 찾는다.
+      await tester.scrollUntilVisible(finder, 300,
+          scrollable: find.byType(Scrollable).first);
       await tester.pumpAndSettle();
       expect(tester.widget<SwitchListTile>(finder).value, isFalse);
       await tester.tap(finder);
