@@ -97,6 +97,13 @@ class _WalkInfoSectionState extends State<WalkInfoSection> {
     if (mounted) setState(() {});
   }
 
+  static ButtonStyle _button(Color bg) => FilledButton.styleFrom(
+        backgroundColor: bg,
+        foregroundColor: Colors.black,
+        minimumSize: const Size(48, 56),
+        textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+      );
+
   @override
   void dispose() {
     _dest.dispose();
@@ -105,7 +112,7 @@ class _WalkInfoSectionState extends State<WalkInfoSection> {
 
   @override
   Widget build(BuildContext context) {
-    const note = TextStyle(color: Colors.white38, fontSize: 12);
+    const note = TextStyle(color: Colors.white70, fontSize: 16);
     final on = _svc.running;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -133,20 +140,26 @@ class _WalkInfoSectionState extends State<WalkInfoSection> {
               onSubmitted: (_) => _search(),
               decoration: InputDecoration(
                 labelText: _ko ? '목적지' : 'Destination',
-                labelStyle: const TextStyle(color: Colors.white70),
+                labelStyle: const TextStyle(color: Colors.white70, fontSize: 16),
               ),
             ),
-            Row(children: [
-              TextButton(
+            // T209: 배경 있는 버튼, 높이 56dp·18sp, 사이 8dp. 글자가 커지면 다음 줄로.
+            // 찾기: 검정 on #3AA0FF 7.65:1, 안내 끝: 검정 on 흰색 21:1.
+            const SizedBox(height: 12),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              FilledButton(
+                style: _button(const Color(0xFF3AA0FF)),
                 onPressed: _busy || _flight.busy ? null : _search,
                 child: Text(_ko ? '목적지 찾기' : 'Find destination'),
               ),
               if (_svc.nav != null)
-                TextButton(
+                FilledButton(
+                  style: _button(Colors.white),
                   onPressed: () => setState(_svc.stopRoute),
                   child: Text(_ko ? '경로 안내 끝' : 'Stop route'),
                 ),
             ]),
+            const SizedBox(height: 8),
             PlaceList(
                 places: _places,
                 language: widget.language,
@@ -154,7 +167,8 @@ class _WalkInfoSectionState extends State<WalkInfoSection> {
                 onTap: _choose),
           ],
           if (_status != null)
-            Text(_status!, style: const TextStyle(color: Colors.white70)),
+            Text(_status!,
+                style: const TextStyle(color: Colors.white70, fontSize: 16)),
         ],
       ),
     );
@@ -188,19 +202,24 @@ class PlaceList extends StatelessWidget {
               : '${i + 1}, ${places[i].name}, ${placeDistance(places[i].distM, language)}',
           excludeSemantics: true,
           onTap: enabled ? () => onTap(places[i]) : null,
+          // T209: 줄 사이 8dp, 줄 높이 48dp 이상(dense 해제).
+          child: Padding(
+          padding: const EdgeInsets.only(bottom: 8),
           child: ListTile(
-          dense: true,
+          minTileHeight: 48,
           contentPadding: EdgeInsets.zero,
           enabled: enabled,
           onTap: () => onTap(places[i]),
           title: Text('${i + 1}. ${places[i].name}',
-              style: const TextStyle(color: Colors.white)),
+              style: const TextStyle(color: Colors.white, fontSize: 18)),
+          // T209: 먼 곳(20km 넘음)은 white70, 가까운 곳은 흰색 — 둘 다 7:1 이상.
           trailing: Text(placeDistance(places[i].distM, language),
               style: TextStyle(
+                  fontSize: 18,
                   color: places[i].distM > kPlaceFarM
-                      ? Colors.white38
-                      : Colors.white70)),
-        )),
+                      ? Colors.white70
+                      : Colors.white)),
+        ))),
     ]);
   }
 }

@@ -28,8 +28,9 @@ class SharePickerScreen extends StatefulWidget {
 
 class _SharePickerScreenState extends State<SharePickerScreen> {
   // settings_screen.dart와 같은 강조색·그 위 글자색.
+  // T209: 글자색 #08182A(6.52:1) -> 검정(7.65:1).
   static const _colorAccent = Color(0xFF3AA0FF);
-  static const _colorAccentOnText = Color(0xFF08182A);
+  static const _colorAccentOnText = Colors.black;
 
   late final Set<String> _selected = defaultSelection(widget.items);
 
@@ -86,8 +87,11 @@ class _SharePickerScreenState extends State<SharePickerScreen> {
       ),
       body: ListView(
         children: [
+          // T209: 줄 사이 8dp(인접 터치 대상 간격).
           for (final item in widget.items)
-            CheckboxListTile(
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: CheckboxListTile(
               value: _selected.contains(item.path),
               onChanged: (v) => setState(() {
                 if (v == true) {
@@ -101,8 +105,8 @@ class _SharePickerScreenState extends State<SharePickerScreen> {
               title: Text(_title(item),
                   style: const TextStyle(color: Colors.white)),
               subtitle: Text(_subtitle(item),
-                  style: const TextStyle(color: Colors.white54, fontSize: 12)),
-            ),
+                  style: const TextStyle(color: Colors.white70, fontSize: 16)),
+            )),
         ],
       ),
       bottomNavigationBar: SafeArea(
@@ -118,7 +122,7 @@ class _SharePickerScreenState extends State<SharePickerScreen> {
                   child: Text(widget.strings.sharePickTooMany,
                       textAlign: TextAlign.center,
                       style: const TextStyle(
-                          color: Colors.orangeAccent, fontSize: 14)),
+                          color: Colors.orangeAccent, fontSize: 16)),
                 ),
               FilledButton.icon(
                 onPressed: count == 0 || tooMany

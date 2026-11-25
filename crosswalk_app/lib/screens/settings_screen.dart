@@ -146,11 +146,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // T38's interactive-element accent color, reused here per the approved
   // mockup guidance (docs/Tasks.md T39).
   static const _colorAccent = Color(0xFF3AA0FF);
-  // T46: dark navy used for text/icons drawn on top of _colorAccent.
-  // White-on-accent measures ~2.74:1 (fails WCAG AA's 4.5:1 for normal
-  // text); this matches camera_screen.dart's _colorAccentOnText, which
-  // already carries that same fix for the analogous case there.
-  static const _colorAccentOnText = Color(0xFF08182A);
+  // T46: dark text/icons drawn on top of _colorAccent (white-on-accent
+  // ~2.74:1 fails WCAG AA). T209: navy #08182A (6.52:1) -> black (7.65:1)
+  // to reach AAA 7:1.
+  static const _colorAccentOnText = Colors.black;
 
   late AppLanguage _language;
   late AppStrings _strings;
@@ -168,6 +167,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late CameraMount _mount;
   late bool _frameSave;
   bool _sharingFrames = false;
+  bool _devExpanded = false;
   late bool _vibModule;
   late bool _vibModuleWithPhone;
   late int _vibModuleStrength;
@@ -330,7 +330,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // T153: 진동 모듈 구역. 시험 버튼·세기·폰 함께는 설정을 켰을 때만 그린다.
   Widget _buildVibModuleSection() {
-    const noteStyle = TextStyle(color: Colors.white38, fontSize: 12);
+    const noteStyle = TextStyle(color: Colors.white70, fontSize: 16);
     final stateListenable = widget.vibModuleState;
     final buttonStyle = OutlinedButton.styleFrom(
       foregroundColor: Colors.white,
@@ -362,8 +362,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               valueListenable: stateListenable,
               builder: (context, state, _) => Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Text(_vibModuleStateText(state),
-                    style: const TextStyle(color: Colors.white)),
+                // T209: 연결 상태가 바뀌면 화면 읽기가 알린다.
+                child: Semantics(
+                  liveRegion: true,
+                  child: Text(_vibModuleStateText(state),
+                      style: const TextStyle(color: Colors.white)),
+                ),
               ),
             ),
           if (_vibModule) ...[
@@ -432,7 +436,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Widget _buildDevCaptureSection() {
-    const noteStyle = TextStyle(color: Colors.white38, fontSize: 12);
+    const noteStyle = TextStyle(color: Colors.white70, fontSize: 16);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
@@ -507,6 +511,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  bool get _hasDevItems =>
+      widget.onCrosswalkGateChanged != null ||
+      widget.onEventLogChanged != null ||
+      widget.onUltraWideChanged != null;
+
+  // T209: '개발자' 묶음. 머리글 56dp·18sp, 화면 읽기는 "개발자, 접힘/펼침".
+  Widget _buildDevGroup(List<Widget> children) {
+    final ko = _language == AppLanguage.ko;
+    final title = ko ? '개발자' : 'Developer';
+    final state = _devExpanded
+        ? (ko ? '펼침' : 'expanded')
+        : (ko ? '접힘' : 'collapsed');
+    return Padding(
+      padding: const EdgeInsets.only(top: 24),
+      child: ExpansionTile(
+        minTileHeight: 56,
+        iconColor: Colors.white,
+        collapsedIconColor: Colors.white,
+        shape: const Border(top: BorderSide(color: Colors.white38)),
+        collapsedShape: const Border(top: BorderSide(color: Colors.white38)),
+        onExpansionChanged: (v) => setState(() => _devExpanded = v),
+        title: Semantics(
+          label: '$title, $state',
+          excludeSemantics: true,
+          child: Text(
+            title,
+            style: const TextStyle(
+                color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700),
+          ),
+        ),
+        expandedCrossAxisAlignment: CrossAxisAlignment.start,
+        // 안쪽 구역 제목이 머리글 이름에 합쳐져 읽히지 않게 각자 노드로.
+        children: [for (final c in children) Semantics(container: true, child: c)],
+      ),
+    );
+  }
+
   Widget _buildSectionHeader(String title) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
@@ -514,7 +555,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         title,
         style: const TextStyle(
           color: _colorAccent,
-          fontSize: 14,
+          fontSize: 16,
           fontWeight: FontWeight.w700,
         ),
       ),
@@ -574,24 +615,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             color: Colors.white, fontWeight: FontWeight.w800)),
                   ],
                 ),
-                Slider(
-                  value: _speechRate,
-                  min: 0.1,
-                  max: 1.0,
-                  divisions: 9,
-                  activeColor: _colorAccent,
-                  label: _speechRate.toStringAsFixed(1),
-                  onChanged: _changeSpeechRate,
+                // T209: 화면 읽기가 "TTS 속도, 0.5"처럼 기능명과 값을 함께 읽게 한다.
+                MergeSemantics(
+                  child: Semantics(
+                    label: _strings.settingsTtsRateLabel,
+                    child: Slider(
+                      value: _speechRate,
+                      min: 0.1,
+                      max: 1.0,
+                      divisions: 9,
+                      activeColor: _colorAccent,
+                      label: _speechRate.toStringAsFixed(1),
+                      semanticFormatterCallback: (v) => v.toStringAsFixed(1),
+                      onChanged: _changeSpeechRate,
+                    ),
+                  ),
                 ),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(_strings.settingsTtsRateSlowLabel,
                         style: const TextStyle(
-                            color: Colors.white38, fontSize: 12)),
+                            color: Colors.white70, fontSize: 16)),
                     Text(_strings.settingsTtsRateFastLabel,
                         style: const TextStyle(
-                            color: Colors.white38, fontSize: 12)),
+                            color: Colors.white70, fontSize: 16)),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -613,24 +661,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             color: Colors.white, fontWeight: FontWeight.w800)),
                   ],
                 ),
-                Slider(
-                  value: _vibrationDurationMs.toDouble(),
-                  min: 200,
-                  max: 1000,
-                  divisions: 8,
-                  activeColor: _colorAccent,
-                  label: '${_vibrationDurationMs}ms',
-                  onChanged: _changeVibrationDuration,
+                MergeSemantics(
+                  child: Semantics(
+                    label: _strings.settingsVibrationStrengthLabel,
+                    child: Slider(
+                      value: _vibrationDurationMs.toDouble(),
+                      min: 200,
+                      max: 1000,
+                      divisions: 8,
+                      activeColor: _colorAccent,
+                      label: '${_vibrationDurationMs}ms',
+                      semanticFormatterCallback: (v) =>
+                          _language == AppLanguage.ko
+                              ? '${v.round()}밀리초'
+                              : '${v.round()} milliseconds',
+                      onChanged: _changeVibrationDuration,
+                    ),
+                  ),
                 ),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(_strings.settingsVibrationWeakLabel,
                         style: const TextStyle(
-                            color: Colors.white38, fontSize: 12)),
+                            color: Colors.white70, fontSize: 16)),
                     Text(_strings.settingsVibrationStrongLabel,
                         style: const TextStyle(
-                            color: Colors.white38, fontSize: 12)),
+                            color: Colors.white70, fontSize: 16)),
                   ],
                 ),
               ],
@@ -650,13 +707,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               subtitle: Text(
                 _strings.settingsPowerSaveNote,
-                style: const TextStyle(color: Colors.white38, fontSize: 12),
+                style: const TextStyle(color: Colors.white70, fontSize: 16),
               ),
             ),
           ),
           if (widget.onSurfaceGuidanceChanged != null ||
-              widget.onCautionGuidanceChanged != null ||
-              widget.onCrosswalkGateChanged != null)
+              widget.onCautionGuidanceChanged != null)
             _buildSectionHeader(_strings.settingsExperimentalSectionHeader),
           if (widget.onSurfaceGuidanceChanged != null) ...[
             Padding(
@@ -672,7 +728,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 subtitle: Text(
                   _strings.settingsSurfaceGuidanceNote,
-                  style: const TextStyle(color: Colors.white38, fontSize: 12),
+                  style: const TextStyle(color: Colors.white70, fontSize: 16),
                 ),
               ),
             ),
@@ -691,86 +747,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 subtitle: Text(
                   _strings.settingsCautionGuidanceNote,
-                  style: const TextStyle(color: Colors.white38, fontSize: 12),
+                  style: const TextStyle(color: Colors.white70, fontSize: 16),
                 ),
               ),
             ),
-          ],
-          if (widget.onCrosswalkGateChanged != null) ...[
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: SwitchListTile(
-                value: _crosswalkGate,
-                onChanged: _toggleCrosswalkGate,
-                activeColor: _colorAccent,
-                contentPadding: EdgeInsets.zero,
-                title: Text(
-                  _strings.settingsCrosswalkGateLabel,
-                  style: const TextStyle(color: Colors.white70),
-                ),
-                subtitle: Text(
-                  _strings.settingsCrosswalkGateNote,
-                  style: const TextStyle(color: Colors.white38, fontSize: 12),
-                ),
-              ),
-            ),
-          ],
-          if (widget.onEventLogChanged != null) ...[
-            _buildSectionHeader(_strings.settingsDevLogSectionHeader),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SwitchListTile(
-                    value: _eventLog,
-                    onChanged: _toggleEventLog,
-                    activeColor: _colorAccent,
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(
-                      _strings.settingsDevLogLabel,
-                      style: const TextStyle(color: Colors.white70),
-                    ),
-                    subtitle: Text(
-                      _strings.settingsDevLogNote,
-                      style:
-                          const TextStyle(color: Colors.white38, fontSize: 12),
-                    ),
-                  ),
-                  if (widget.onScoreChanged != null)
-                    SwitchListTile(
-                      value: _score,
-                      onChanged: _toggleScore,
-                      activeColor: _colorAccent,
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(
-                        _strings.settingsScoreLabel,
-                        style: const TextStyle(color: Colors.white70),
-                      ),
-                      subtitle: Text(
-                        _strings.settingsScoreNote,
-                        style: const TextStyle(
-                            color: Colors.white38, fontSize: 12),
-                      ),
-                    ),
-                  if (widget.onShareEventLog != null)
-                    OutlinedButton.icon(
-                      onPressed: _sharingLog ? null : _shareEventLog,
-                      icon: const Icon(Icons.share_outlined, size: 18),
-                      label: Text(_strings.settingsDevLogShare),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        side: const BorderSide(color: Colors.white38),
-                        minimumSize: const Size(48, 48),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
-          if (widget.onUltraWideChanged != null) ...[
-            _buildSectionHeader(_strings.settingsDevCaptureSectionHeader),
-            _buildDevCaptureSection(),
           ],
           if (widget.onVibModuleChanged != null) ...[
             _buildSectionHeader(_strings.settingsVibModuleSectionHeader),
@@ -791,7 +771,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               subtitle: Text(
                 _strings.settingsScreenReaderOptimizationNote,
-                style: const TextStyle(color: Colors.white38, fontSize: 12),
+                style: const TextStyle(color: Colors.white70, fontSize: 16),
               ),
             ),
           ),
@@ -809,10 +789,90 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               subtitle: Text(
                 _strings.settingsTorchNote,
-                style: const TextStyle(color: Colors.white38, fontSize: 12),
+                style: const TextStyle(color: Colors.white70, fontSize: 16),
               ),
             ),
           ),
+          // T209(사용자 결정 "개발용 항목은 맨 아래 개발자 묶음으로 접어줘"): 개발용 항목을
+          // 한 묶음으로, 매번 접힌 채 시작(설정은 저장하지 않음).
+          if (_hasDevItems) _buildDevGroup([
+                    if (widget.onCrosswalkGateChanged != null) ...[
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: SwitchListTile(
+                          value: _crosswalkGate,
+                          onChanged: _toggleCrosswalkGate,
+                          activeColor: _colorAccent,
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            _strings.settingsCrosswalkGateLabel,
+                            style: const TextStyle(color: Colors.white70),
+                          ),
+                          subtitle: Text(
+                            _strings.settingsCrosswalkGateNote,
+                            style: const TextStyle(color: Colors.white70, fontSize: 16),
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (widget.onEventLogChanged != null) ...[
+                      _buildSectionHeader(_strings.settingsDevLogSectionHeader),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SwitchListTile(
+                              value: _eventLog,
+                              onChanged: _toggleEventLog,
+                              activeColor: _colorAccent,
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(
+                                _strings.settingsDevLogLabel,
+                                style: const TextStyle(color: Colors.white70),
+                              ),
+                              subtitle: Text(
+                                _strings.settingsDevLogNote,
+                                style:
+                                    const TextStyle(color: Colors.white70, fontSize: 16),
+                              ),
+                            ),
+                            if (widget.onScoreChanged != null)
+                              SwitchListTile(
+                                value: _score,
+                                onChanged: _toggleScore,
+                                activeColor: _colorAccent,
+                                contentPadding: EdgeInsets.zero,
+                                title: Text(
+                                  _strings.settingsScoreLabel,
+                                  style: const TextStyle(color: Colors.white70),
+                                ),
+                                subtitle: Text(
+                                  _strings.settingsScoreNote,
+                                  style: const TextStyle(
+                                      color: Colors.white70, fontSize: 16),
+                                ),
+                              ),
+                            if (widget.onShareEventLog != null)
+                              OutlinedButton.icon(
+                                onPressed: _sharingLog ? null : _shareEventLog,
+                                icon: const Icon(Icons.share_outlined, size: 18),
+                                label: Text(_strings.settingsDevLogShare),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.white,
+                                  side: const BorderSide(color: Colors.white38),
+                                  minimumSize: const Size(48, 48),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    if (widget.onUltraWideChanged != null) ...[
+                      _buildSectionHeader(_strings.settingsDevCaptureSectionHeader),
+                      _buildDevCaptureSection(),
+                    ],
+          ]),
           const SizedBox(height: 24),
           _buildBuildIdentifier(),
           const SizedBox(height: 24),
@@ -835,7 +895,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         excludeSemantics: true,
         child: Text(
           text,
-          style: const TextStyle(color: Colors.white38, fontSize: 12),
+          style: const TextStyle(color: Colors.white70, fontSize: 16),
         ),
       ),
     );

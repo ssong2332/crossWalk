@@ -166,7 +166,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         _strings.onboardingDisclaimerDraftBadge,
         style: const TextStyle(
           color: Color(0xFF3A2C00),
-          fontSize: 11,
+          fontSize: 16,
           fontWeight: FontWeight.w600,
         ),
       ),
@@ -217,8 +217,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         Text(
           '[ ${_strings.onboardingPosturePlaceholder} ]',
           style: const TextStyle(
-            color: Colors.white38,
-            fontSize: 11,
+            color: Colors.white70,
+            fontSize: 16,
             fontFamily: 'monospace',
           ),
         ),
@@ -240,7 +240,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           Expanded(
             child: Text(
               _strings.onboardingTtsNotice,
-              style: const TextStyle(color: Colors.white70, fontSize: 13),
+              style: const TextStyle(color: Colors.white70, fontSize: 16),
             ),
           ),
         ],
@@ -265,7 +265,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       _strings.onboardingEyebrow,
                       style: const TextStyle(
                         color: _colorAccent,
-                        fontSize: 13,
+                        fontSize: 16,
                         fontWeight: FontWeight.w600,
                         letterSpacing: 0.8,
                       ),
@@ -288,7 +288,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         _strings.onboardingDisclaimerBody,
                         style: const TextStyle(
                           color: Colors.white70,
-                          fontSize: 15,
+                          fontSize: 16,
                           height: 1.5,
                         ),
                       ),
@@ -304,7 +304,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                             textAlign: TextAlign.center,
                             style: const TextStyle(
                               color: Colors.white70,
-                              fontSize: 14,
+                              fontSize: 16,
                               height: 1.5,
                             ),
                           ),
@@ -326,9 +326,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     minimumSize: const Size.fromHeight(56),
                     backgroundColor: _colorAccent,
                     // Contrast fix (Claude Design spec §1): #3AA0FF against
-                    // white text is under WCAG AA; dark navy text on this
-                    // accent color measures 6.49:1.
-                    foregroundColor: const Color(0xFF08182A),
+                    // white text is under WCAG AA. T209: navy #08182A (6.52:1)
+                    // -> black (7.65:1) for AAA 7:1.
+                    foregroundColor: Colors.black,
                   ),
                   child: Text(
                     _strings.onboardingConfirmButton,
