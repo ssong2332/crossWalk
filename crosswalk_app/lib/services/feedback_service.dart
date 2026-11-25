@@ -108,7 +108,6 @@ class FeedbackService {
     _logMotion(now);
     if (!changed) return;
     // T178: 서 있음이 바뀌면(시작·끝) 정지 중 끝 확인 문구 1회 기록을 비운다.
-    _stillEdgeSaid = null;
     _stillEdgeDevSaid = null; // T183 G4: 같은 방식으로 비운다.
     _stillVibSide = null; // T194 A: 같은 방식으로 비운다.
     _noteStillSpan(stillness.isStill, now);
@@ -403,10 +402,6 @@ class FeedbackService {
   // T102: 직전 alert()가 "끝 + 이미 중앙 쪽으로 틀었음(front)"이었는가.
   bool _lastEdgeTurned = false;
   DateTime? _lastEdgeTurnedAt;
-
-  // T178(사용자 승인 C안, 2026-11-08): 이번 정지 구간에서 이미 낸 끝 확인 문구의 쪽
-  // ('left'/'right'). 서 있음이 바뀌면([addAccelerometer]) 비운다.
-  String? _stillEdgeSaid;
 
   // T183 G4(사용자 승인, 2026-11-10): 이번 정지 구간에서 이미 말한 이탈+끝 문구
   // ('…가장자리입니다', 빠른형 제외)의 이탈 쪽('left'/'right'). 서 있음이 바뀌면
@@ -720,6 +715,22 @@ class FeedbackService {
       return null;
     }
 
+    // T207 ②(사용자 결정 2026-11-25, 안 가): 서 있으면 이탈 경고는 말하지 않는다
+    // (진동은 그대로). 11/25 연석 신호 대기 70초에 진입 판정이 나 교정 말이 18번
+    // 나왔다(`train/field_1125/report.md` 3-2). 걸음을 떼면 서 있음이 바로 풀려 말한다.
+    // 말하지 않았으므로 마지막 경고(_lastAlert*)는 바꾸지 않는다.
+    if (!stillOff && stillness.isSettledAt(now)) {
+      if (_bundleLogText != message ||
+          _bundleLogAt == null ||
+          now.difference(_bundleLogAt!).inSeconds >= _cooldownSeconds) {
+        _bundleLogAt = now;
+        _bundleLogText = message;
+        EventLog.instance
+            .log('say.cancel', {'text': message, 'why': 'still_all'});
+      }
+      return null;
+    }
+
     // T133(사용자 승인 안 A, 2026-10-25): 서 있으면 같은 방향 반복(6초 재경고,
     // 단계가 같거나 내려감)은 말하지 않는다 — 진동은 그대로(T132 ④ 박자).
     // 첫 경고·방향 바뀜·단계 올라감·회복 뒤 새 이탈은 위 조건에 걸리지 않아 말한다.
@@ -981,15 +992,11 @@ class FeedbackService {
     // 15:23:43~15:24:51 연석 신호 대기 68초에 각도 떨림으로 front↔끝이 10번 바뀌어
     // '왼쪽 끝입니다'가 8번 나왔다(`train/field_1108/report_t177.md` 2절).
     // 반대쪽으로 바뀌면 말한다. 서 있음이 풀리면 원래대로. 진동·상태는 그대로.
-    if (stillness.isStillAt(now)) {
-      if (_stillEdgeSaid == edgeSteerClass) {
-        EventLog.instance
-            .log('say.cancel', {'text': message, 'why': 'still_edge'});
-        return null;
-      }
-      _stillEdgeSaid = edgeSteerClass;
-    } else {
-      _stillEdgeSaid = null;
+    // T207 ②(안 가): 서 있으면 끝 문구도 말하지 않는다(첫 1번도).
+    if (stillness.isSettledAt(now)) {
+      EventLog.instance
+          .log('say.cancel', {'text': message, 'why': 'still_edge'});
+      return null;
     }
     _lastEdgeTurnedAt = now;
     return message;
@@ -1649,14 +1656,12 @@ class FeedbackService {
           // 흔들림 — 말하지 않았으므로 쿨다운도 되돌려, 곧 진짜로 회복하면 안내한다.
           if (_heldRecoveryIsEdge) {
             _lastEdgeTurnedAt = null;
-            _stillEdgeSaid = null; // T178: 말하지 않았으므로 정지 중 1회도 되돌린다.
           } else {
             _lastRecoveryAt = null;
           }
           _clearHeldRecovery();
           EventLog.instance.log('say.cancel', {'text': held, 'why': 'flicker'});
         case HeldRecoveryVerdict.expire:
-          if (_heldRecoveryIsEdge) _stillEdgeSaid = null; // T178: 말하지 않음.
           _clearHeldRecovery();
           EventLog.instance.log('say.ttl', {'text': held, 'p': 0});
       }

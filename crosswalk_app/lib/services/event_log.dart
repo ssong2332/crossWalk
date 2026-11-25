@@ -9,6 +9,8 @@ import 'package:path_provider/path_provider.dart';
 ///
 /// 진동·음성·판정 결과를 폰 안에 JSON Lines 파일로 남긴다. 한 줄이 사건 하나다.
 /// 카메라 영상·사진과 위치는 남기지 않는다(Q1, Q4). 기본값은 켬이다(Q3).
+/// T207 ③(사용자 승인 2026-11-25): 앱이 쓰는 [instance]는 **기본 꺼짐**이다 — 실기기
+/// 분석 때는 설정에서 켠다. 켜면 `log.on`에 `log.start`와 같은 정보(빌드 등)를 남긴다.
 /// 앱을 켤 때마다 파일 하나(`log_YYYYMMDD_HHMMSS.jsonl`)를 만들고, 합계가
 /// [maxTotalBytes]를 넘으면 오래된 파일부터 지운다. 설정의 "기록 보내기"가
 /// 이 파일들을 안드로이드 공유 창으로 넘긴다(Q2).
@@ -20,11 +22,13 @@ class EventLog {
     Future<Directory> Function()? baseDir,
     this.maxTotalBytes = defaultMaxTotalBytes,
     this.flushInterval = const Duration(seconds: 2),
-  }) : _baseDir = baseDir ?? getApplicationSupportDirectory;
+    bool enabled = true,
+  })  : _baseDir = baseDir ?? getApplicationSupportDirectory,
+        _enabled = enabled;
 
   /// 앱 전체가 쓰는 기록기. `main()`이 [start]한다. 시작 전에 들어온 기록은
   /// [maxEarlyLines]줄까지 모아 두었다가 파일이 열리면 함께 쓴다.
-  static final EventLog instance = EventLog();
+  static final EventLog instance = EventLog(enabled: false);
 
   static const defaultMaxTotalBytes = 50 * 1024 * 1024;
   static const maxEarlyLines = 500;
@@ -39,7 +43,7 @@ class EventLog {
   /// 프로세스 안 경과 시간(ms). 폰 시계(`t`)가 바뀌어도 순서를 지킨다.
   final Stopwatch _clock = Stopwatch()..start();
 
-  bool _enabled = true;
+  bool _enabled;
   bool get enabled => _enabled;
 
   Directory? _dir;
@@ -50,6 +54,7 @@ class EventLog {
   final StringBuffer _buf = StringBuffer();
   RandomAccessFile? _raf;
   bool _starting = false;
+  Map<String, Object?> _startInfo = const {};
   Timer? _timer;
 
   /// T129: [log]에 들어온 사건을 그대로 넘겨받는 화면 구독자. 기본 null.
@@ -104,7 +109,8 @@ class EventLog {
         _buf.writeln(l);
       }
       _early.clear();
-      log('log.start', {'file': name, ...info});
+      _startInfo = {'file': name, ...info};
+      log('log.start', _startInfo);
       _timer = Timer.periodic(flushInterval, (_) => unawaited(flush()));
       await flush();
     } catch (e) {
@@ -156,7 +162,8 @@ class EventLog {
     if (value == _enabled) return;
     if (value) {
       _enabled = true;
-      log('log.on');
+      // T207 ③: 꺼진 채 시작했으면 log.start가 없다 — 빌드 등을 여기 남긴다.
+      log('log.on', _startInfo);
     } else {
       log('log.off');
       _enabled = false;

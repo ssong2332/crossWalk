@@ -79,4 +79,45 @@ void main() {
       expect(StillnessDetector.holdOn, const Duration(seconds: 2));
     });
   });
+
+  // T207 ②(사용자 결정 2026-11-25): 11/25 연석 대기 중 몸을 조금 움직이면(mot 0.6~0.9)
+  // 서 있음이 풀린 채 남았다 — 음성 억제용 멈춤(isSettledAt)은 풀린 뒤 10초 안에 1초 조용하면 다시.
+  group('StillnessDetector 음성 억제용 멈춤 (T207 ②)', () {
+    test('풀린 직후 중간 흔들림(0.35~0.6)이 1초 이어지면 다시 멈춤, isStill은 그대로', () {
+      final d = StillnessDetector();
+      feed(d, 0, 3000, amp: 0.1);
+      expect(d.isSettledAt(at(3000)), isTrue);
+      feed(d, 3066, 3600, amp: 1.2); // 몸을 잠깐 움직임
+      expect(d.isSettledAt(at(3600)), isFalse);
+      // std 약 0.46 — 3번 규칙(0.35 미만 2초)으로는 서 있음이 되지 않는다.
+      final ch = feed(d, 3666, 6500, amp: 0.65);
+      expect(d.isStill, isFalse);
+      expect(ch, isEmpty, reason: 'still 기록·서 있던 구간은 종전대로');
+      expect(d.isSettledAt(at(6500)), isTrue);
+    });
+
+    test('걸음을 떼면(흔들림 큼) 다시 멈춤이 되지 않는다', () {
+      final d = StillnessDetector();
+      feed(d, 0, 3000, amp: 0.1);
+      for (var ms = 3066; ms <= 13000; ms += 66) {
+        d.add(0, 0, g + 2.0 * math.sin(2 * math.pi * 2 * ms / 1000), at(ms));
+        expect(d.isSettledAt(at(ms)), ms < 3400 ? anything : isFalse);
+      }
+    });
+
+    test('풀린 지 10초가 지나면 종전 규칙(0.35 미만 2초)만', () {
+      final d = StillnessDetector();
+      feed(d, 0, 3000, amp: 0.1);
+      feed(d, 3066, 14000, amp: 2.0); // 걸음 — 풀린 지 10초 넘음
+      feed(d, 14066, 18000, amp: 0.65);
+      expect(d.isSettledAt(at(18000)), isFalse);
+    });
+
+    test('센서가 멈추면 멈춤 아님', () {
+      final d = StillnessDetector();
+      feed(d, 0, 3000, amp: 0.1);
+      expect(d.isSettledAt(at(3000)), isTrue);
+      expect(d.isSettledAt(at(5000)), isFalse);
+    });
+  });
 }

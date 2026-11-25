@@ -1508,14 +1508,15 @@ void main() {
         .where((m) => m['ev'] == 'say.cancel')
         .toList();
 
-    test('서 있으면 6초 재경고를 말하지 않는다(say.cancel why=still)', () {
+    // T207 ②(안 가): 서 있으면 첫 경고·재경고 모두 말하지 않는다(진동은 그대로).
+    test('T207: 서 있으면 첫 경고도 말하지 않는다(say.cancel why=still_all)', () {
       EventLog.instance.clearForTest();
       final s = FeedbackService();
       stand(s, -3000, 0);
-      expect(s.decideMessage('left', mild, at(0)), leftMild, reason: '첫 경고는 말함');
+      expect(s.decideMessage('left', mild, at(0)), isNull);
       stand(s, 66, 6500);
       expect(s.decideMessage('left', mild, at(6500)), isNull);
-      expect(cancels().last, containsPair('why', 'still'));
+      expect(cancels().last, containsPair('why', 'still_all'));
       expect(cancels().last['text'], leftMild);
       // 진동은 그대로 — 진동 정책은 서 있음과 무관하다.
       expect(s.vibrationPolicy.decidePattern('left', at(0), 500), isNotNull);
@@ -1528,36 +1529,32 @@ void main() {
       expect(s.decideMessage('left', mild, at(6500)), leftMild);
     });
 
-    test('서 있어도 단계가 오르면 말한다', () {
+    test('T207: 서 있으면 단계 오름·방향 바뀜·회복 뒤 새 이탈도 말하지 않는다', () {
       final s = FeedbackService();
-      stand(s, -3000, 0);
-      expect(s.decideMessage('left', mild, at(0)), leftMild);
-      stand(s, 66, 7000);
-      expect(s.decideMessage('left', severe, at(7000)), leftSevere);
-    });
-
-    test('서 있어도 방향이 바뀌면 말한다', () {
-      final s = FeedbackService();
-      stand(s, -3000, 0);
-      expect(s.decideMessage('left', mild, at(0)), leftMild);
-      stand(s, 66, 2000);
-      expect(s.decideMessage('right', mild, at(2000)), rightMild);
-    });
-
-    test('서 있어도 회복(front 1.0초 이상) 뒤 새 이탈은 첫 경고로 말한다', () {
-      final s = FeedbackService();
-      stand(s, -3000, 0);
-      expect(s.decideMessage('left', mild, at(0)), leftMild);
-      stand(s, 66, 9000);
+      stand(s, -3000, 9000);
+      expect(s.decideMessage('left', mild, at(0)), isNull);
+      expect(s.decideMessage('left', severe, at(1000)), isNull);
+      expect(s.decideMessage('right', mild, at(2000)), isNull);
       s.decideMessage('front', null, at(7000));
       s.decideMessage('front', null, at(8000));
-      expect(s.decideMessage('left', mild, at(9000)), leftMild);
+      expect(s.decideMessage('left', mild, at(9000)), isNull);
+    });
+
+    test('T207: 서 있다가 걸음을 떼면 바로 말한다', () {
+      final s = FeedbackService();
+      stand(s, -3000, 0);
+      expect(s.decideMessage('left', mild, at(0)), isNull);
+      for (var ms = 66; ms <= 1000; ms += 66) {
+        s.addAccelerometer(0, 0, (ms ~/ 66).isEven ? 12.0 : 7.6, at(ms));
+      }
+      expect(s.isStillAt(at(1000)), isFalse);
+      expect(s.decideMessage('left', mild, at(1000)), leftMild);
     });
 
     test('센서가 멈추면 서 있음으로 보지 않는다 — 재경고를 말한다', () {
       final s = FeedbackService();
       stand(s, -3000, 0);
-      expect(s.decideMessage('left', mild, at(0)), leftMild);
+      expect(s.decideMessage('left', mild, at(0)), isNull);
       expect(s.decideMessage('left', mild, at(6500)), leftMild,
           reason: '마지막 표본이 6.5초 전');
     });
@@ -1767,47 +1764,47 @@ void main() {
       final s = FeedbackService();
       stand(s, 0, 30000);
       expect(s.isStillAt(at(30000)), isTrue);
-      expect(reenter(s, 30000, 'left'), '왼쪽 끝입니다', reason: '정지 중 첫 1번');
-      // 3초 쿨다운이 지나도 같은 쪽은 다시 말하지 않는다.
+      // T207 ②: 정지 중에는 첫 1번도 말하지 않는다.
+      expect(reenter(s, 30000, 'left'), isNull);
       stand(s, 30066, 40000);
       expect(reenter(s, 35000, 'left'), isNull);
       expect(reenter(s, 40000, 'left'), isNull);
       final c = stillEdgeCancels();
-      expect(c, hasLength(2));
+      expect(c, hasLength(3));
       expect(c.first['text'], '왼쪽 끝입니다');
     });
 
-    test('서 있는 동안 반대쪽 끝으로 바뀌면 말한다', () {
+    test('T207: 서 있는 동안 반대쪽 끝으로 바뀌어도 말하지 않는다', () {
       EventLog.instance.clearForTest();
       final s = FeedbackService();
       stand(s, 0, 40000);
-      expect(reenter(s, 30000, 'left'), '왼쪽 끝입니다');
-      expect(reenter(s, 35000, 'right'), '오른쪽 끝입니다');
-      expect(stillEdgeCancels(), isEmpty);
+      expect(reenter(s, 30000, 'left'), isNull);
+      expect(reenter(s, 35000, 'right'), isNull);
+      expect(stillEdgeCancels(), hasLength(2));
     });
 
     test('서 있음이 풀리면 원래대로 다시 말한다', () {
       EventLog.instance.clearForTest();
       final s = FeedbackService();
       stand(s, 0, 30000);
-      expect(reenter(s, 30000, 'left'), '왼쪽 끝입니다');
+      expect(reenter(s, 30000, 'left'), isNull);
       walk(s, 30066, 34000);
       expect(s.isStillAt(at(34000)), isFalse);
       expect(reenter(s, 34000, 'left'), '왼쪽 끝입니다');
       // 걷는 중에는 3초 쿨다운만(종전과 같다).
       walk(s, 34066, 38000);
       expect(reenter(s, 38000, 'left'), '왼쪽 끝입니다');
-      expect(stillEdgeCancels(), isEmpty);
+      expect(stillEdgeCancels(), hasLength(1));
     });
 
-    test('정지 전에 말했어도 정지 뒤 첫 1번은 말한다', () {
+    test('T207: 걷는 중엔 말하고 정지 뒤에는 말하지 않는다', () {
       EventLog.instance.clearForTest();
       final s = FeedbackService();
       walk(s, 0, 2000);
       expect(reenter(s, 2000, 'left'), '왼쪽 끝입니다');
       stand(s, 2066, 30000);
       expect(s.isStillAt(at(30000)), isTrue);
-      expect(reenter(s, 30000, 'left'), '왼쪽 끝입니다');
+      expect(reenter(s, 30000, 'left'), isNull);
       stand(s, 30066, 34000);
       expect(reenter(s, 34000, 'left'), isNull);
     });
@@ -1865,40 +1862,37 @@ void main() {
       for (var lap = 0; lap < 4; lap++) {
         said.addAll(g4Lap(s, 12000 + lap * 12000));
       }
-      expect(said.where((m) => m == rightEdge), hasLength(1),
-          reason: '11/10 기록은 66초에 4번');
-      // 반대쪽(일반 이탈)은 이번 범위가 아니라 종전대로 말한다.
-      expect(said.where((m) => m == leftMild), hasLength(4));
-      final c = cancels('still_edge_dev');
-      expect(c, hasLength(3));
-      expect(c.first['text'], rightEdge);
+      // T207 ②: 서 있으면 가장자리 문구·일반 이탈 모두 말하지 않는다(11/10 기록은 66초에 4번).
+      expect(said, isEmpty);
+      expect(cancels('still_all').map((m) => m['text']),
+          containsAll([rightEdge, leftMild]));
     });
 
-    test('G4: 서 있는 동안 반대쪽 가장자리로 바뀌면 말한다', () {
+    test('T207: 서 있는 동안 반대쪽 가장자리로 바뀌어도 말하지 않는다', () {
       final s = FeedbackService();
       stand(s, 0, 30000);
-      expect(s.decideMessage('right', -20, at(20000), atEdge: true), rightEdge);
-      expect(s.decideMessage('left', 20, at(22000), atEdge: true), leftEdge);
-      expect(cancels('still_edge_dev'), isEmpty);
+      expect(s.decideMessage('right', -20, at(20000), atEdge: true), isNull);
+      expect(s.decideMessage('left', 20, at(22000), atEdge: true), isNull);
+      expect(cancels('still_all').map((m) => m['text']), [rightEdge, leftEdge]);
     });
 
     test('G4: 서 있음이 풀리면 같은 쪽 가장자리 문구를 다시 말한다', () {
       final s = FeedbackService();
       stand(s, 0, 30000);
-      expect(g4Lap(s, 12000), [rightEdge, leftMild]);
+      expect(g4Lap(s, 12000), isEmpty);
       walk(s, 30066, 34000);
       expect(s.isStillAt(at(34000)), isFalse);
       expect(s.decideMessage('right', -20, at(34000), atEdge: true), rightEdge);
       expect(cancels('still_edge_dev'), isEmpty);
     });
 
-    test('G4: 정지 전에 말했어도 정지 뒤 첫 1번은 말한다', () {
+    test('T207: 걷는 중엔 말하고 정지 뒤에는 말하지 않는다(가장자리)', () {
       final s = FeedbackService();
       walk(s, 0, 2000);
       expect(s.decideMessage('right', -20, at(2000), atEdge: true), rightEdge);
       s.decideMessage('left', 15, at(2500));
       stand(s, 2066, 32000);
-      expect(s.decideMessage('right', -20, at(30000), atEdge: true), rightEdge);
+      expect(s.decideMessage('right', -20, at(30000), atEdge: true), isNull);
       s.decideMessage('left', 15, at(31000));
       expect(s.decideMessage('right', -20, at(32000), atEdge: true), isNull);
     });
@@ -1934,8 +1928,8 @@ void main() {
         prev = 'front';
       }
       expect(said.where((m) => m == straight), isEmpty);
-      expect(said.where((m) => m == leftMild || m == rightMild), hasLength(10),
-          reason: '좌우 이탈 음성은 이번 범위가 아니라 그대로');
+      // T207 ②: 서 있으면 좌우 이탈 음성도 말하지 않는다.
+      expect(said.where((m) => m == leftMild || m == rightMild), isEmpty);
       final c = cancels('still_recover');
       expect(c, hasLength(10));
       expect(c.first['text'], straight);
@@ -3100,17 +3094,14 @@ void main() {
       final base = DateTime.now();
       stand(s, base, -3000, 0);
       expect(s.stillness.isStill, isTrue);
-      await s.alert('left', 0.9, angleDegrees: mild); // 첫 경고 — 말함
-      await s.alert('left', 0.9, angleDegrees: mild); // 6초 안 — 묶임
+      // T207 ②: 서 있는 동안은 첫 경고도 말하지 않는다.
+      await s.alert('left', 0.9, angleDegrees: mild);
+      await s.alert('left', 0.9, angleDegrees: mild);
       walk(s, base, 66, 1000); // 서 있음이 풀림
       expect(s.stillness.isStill, isFalse);
-      await s.alert('left', 0.9, angleDegrees: mild); // 걸음 뗌 — 한 번 말함
-      await s.alert('left', 0.9, angleDegrees: mild); // 다시 묶임
-      expect(alertMsgs(), [leftMild, null, leftMild, null]);
-      final force = lines('say.force');
-      expect(force, hasLength(1));
-      expect(force.single['why'], 'still_off');
-      expect(force.single['text'], leftMild);
+      await s.alert('left', 0.9, angleDegrees: mild); // 걸음 뗌 — 첫 경고로 말함
+      await s.alert('left', 0.9, angleDegrees: mild); // 묶임
+      expect(alertMsgs(), [null, null, leftMild, null]);
       await s.dispose();
     });
 
@@ -3119,11 +3110,11 @@ void main() {
       final s = FeedbackService();
       final base = DateTime.now();
       stand(s, base, -3000, 0);
-      await s.alert('left', 0.9, angleDegrees: mild); // 말함
-      await s.alert('front', 0.9); // 짧은 front — 회복 아님, 묶음 유지
+      await s.alert('left', 0.9, angleDegrees: mild); // T207: 서 있어 말 안 함
+      await s.alert('front', 0.9);
       walk(s, base, 66, 1000);
-      await s.alert('left', 0.9, angleDegrees: mild);
-      expect(alertMsgs(), [leftMild, null, null]);
+      await s.alert('left', 0.9, angleDegrees: mild); // 걸음 — 첫 경고
+      expect(alertMsgs(), [null, null, leftMild]);
       expect(lines('say.force'), isEmpty);
       await s.dispose();
     });
@@ -3134,11 +3125,11 @@ void main() {
       final s = FeedbackService();
       final base = DateTime.now();
       stand(s, base, -3000, 0);
-      await s.alert('left', 0.9, angleDegrees: mild);
+      await s.alert('left', 0.9, angleDegrees: mild); // T207: 서 있어 말 안 함
       walk(s, base, 66, 1000);
       await s.alert('front', 0.9);
-      await s.alert('left', 0.9, angleDegrees: mild);
-      expect(alertMsgs(), [leftMild, null, null]);
+      await s.alert('left', 0.9, angleDegrees: mild); // 걸음 — 첫 경고
+      expect(alertMsgs(), [null, null, leftMild]);
       expect(lines('say.force'), isEmpty);
       await s.dispose();
     });
