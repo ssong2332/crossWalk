@@ -102,10 +102,18 @@ class Player {
     side_ = side;
     strength_ = strength;
     n_ = n;
-    for (uint8_t i = 0; i < n; i++) steps_[i] = steps[i];
+    total_ = 0;
+    for (uint8_t i = 0; i < n; i++) {
+      steps_[i] = steps[i];
+      total_ += steps[i].onMs + steps[i].offMs;
+    }
     startedAt_ = now;
     active_ = n > 0;
   }
+
+  // 양쪽(side=3)일 때 오른쪽을 이 시간(ms)만큼 늦게 시작해 같은 길이로 켠다.
+  // 모터 6개가 한꺼번에 시동하면 500mAh 배터리 전압이 무너져 못 돈다(2026-11-22 실측). 0이면 동시에 켠다.
+  void setStagger(uint32_t ms) { staggerMs_ = ms; }
 
   void startCommand(const Command& c, uint32_t now) {
     start(c.side, c.strength, c.steps, c.n, now);
@@ -121,6 +129,15 @@ class Player {
   uint8_t update(uint32_t now) {
     if (!active_) return 0;
     uint32_t t = now - startedAt_;
+    if (side_ == SIDE_BOTH && staggerMs_ > 0) {
+      if (t >= total_ + staggerMs_) {
+        active_ = false;
+        return 0;
+      }
+      const uint8_t l = onAt(t) ? SIDE_LEFT : 0;
+      const uint8_t r = (t >= staggerMs_ && onAt(t - staggerMs_)) ? SIDE_RIGHT : 0;
+      return static_cast<uint8_t>(l | r);
+    }
     for (uint8_t i = 0; i < n_; i++) {
       if (t < steps_[i].onMs) return side_;
       t -= steps_[i].onMs;
@@ -132,7 +149,20 @@ class Player {
   }
 
  private:
+  // 시작부터 t ms 지난 때 "켬" 구간인지.
+  bool onAt(uint32_t t) const {
+    for (uint8_t i = 0; i < n_; i++) {
+      if (t < steps_[i].onMs) return true;
+      t -= steps_[i].onMs;
+      if (t < steps_[i].offMs) return false;
+      t -= steps_[i].offMs;
+    }
+    return false;
+  }
+
   bool active_ = false;
+  uint32_t staggerMs_ = 0;
+  uint32_t total_ = 0;
   uint8_t side_ = 0;
   uint8_t strength_ = 0;
   uint8_t n_ = 0;
