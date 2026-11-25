@@ -31,6 +31,16 @@ void main() {
         .setMockMethodCallHandler(ttsChannel, null);
   });
 
+  // T209: 개발용 항목은 맨 아래 접힌 '개발자' 묶음 안에 있다 — 펼친 뒤 찾는다.
+  Future<void> openDevGroup(WidgetTester tester) async {
+    final header = find.text('개발자');
+    await tester.scrollUntilVisible(header, 300,
+        scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
+    await tester.tap(header);
+    await tester.pumpAndSettle();
+  }
+
   Widget buildSettingsScreen({
     required FeedbackService feedback,
     required AppLanguage language,
@@ -247,6 +257,7 @@ void main() {
         onCrosswalkGateChanged: (v) => gate = v,
       ));
       await tester.pumpAndSettle();
+      await openDevGroup(tester); // T209: 개발용 항목은 접힌 '개발자' 묶음 안
       final finder =
           find.widgetWithText(SwitchListTile, '노면 횡단보도 확인 (개발)');
       await tester.ensureVisible(finder);
@@ -286,6 +297,7 @@ void main() {
         onEventLogChanged: (v) => toggledTo = v,
       ));
       await tester.pumpAndSettle();
+      await openDevGroup(tester); // T209: 개발용 항목은 접힌 '개발자' 묶음 안
       final finder = find.widgetWithText(SwitchListTile, '기록 남기기');
       await tester.scrollUntilVisible(
         finder,
@@ -310,6 +322,7 @@ void main() {
         onScoreChanged: (v) => toggledTo = v,
       ));
       await tester.pumpAndSettle();
+      await openDevGroup(tester); // T209: 개발용 항목은 접힌 '개발자' 묶음 안
       final finder = find.widgetWithText(SwitchListTile, '촉각 악보 (개발)');
       await tester.scrollUntilVisible(
         finder,
@@ -333,6 +346,7 @@ void main() {
         onEventLogChanged: (_) {},
       ));
       await tester.pumpAndSettle();
+      await openDevGroup(tester); // T209: 개발용 항목은 접힌 '개발자' 묶음 안
       await tester.scrollUntilVisible(
         find.widgetWithText(SwitchListTile, '기록 남기기'),
         300,
@@ -356,6 +370,7 @@ void main() {
         },
       ));
       await tester.pumpAndSettle();
+      await openDevGroup(tester); // T209: 개발용 항목은 접힌 '개발자' 묶음 안
       final button = find.text('기록 보내기');
       await tester.scrollUntilVisible(
         button,
@@ -604,6 +619,7 @@ void main() {
         },
       ));
       await tester.pumpAndSettle();
+      await openDevGroup(tester); // T209: 개발용 항목은 접힌 '개발자' 묶음 안
 
       final uw = find.widgetWithText(SwitchListTile, '초광각 0.6배');
       final fs = find.widgetWithText(SwitchListTile, '프레임 저장');

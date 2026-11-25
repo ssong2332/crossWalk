@@ -156,6 +156,9 @@ void main() {
               onVibModuleTest: (_) {},
             ));
         await scrollToEnd(t);
+        await t.tap(find.text('개발자')); // 펼친 상태도 확인
+        await t.pump(const Duration(milliseconds: 500));
+        await scrollToEnd(t);
         expect(t.takeException(), isNull);
       });
 
@@ -283,6 +286,65 @@ void main() {
       expect(sw.trackOutlineColor!.resolve({}), Colors.white70);
       expect(sw.thumbColor!.resolve({WidgetState.selected}), isNull);
       expect(sw.thumbColor!.resolve({WidgetState.disabled}), isNull);
+    });
+  });
+
+  group('T209 개발자 묶음', () {
+    testWidgets('개발용 항목은 맨 아래 접힌 묶음, 일반 항목은 위에 그대로', (t) async {
+      final h = t.ensureSemantics();
+      t.view.physicalSize = const Size(800, 6000); // 목록 전체가 한 번에 빌드되게
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+      await t.pumpWidget(MaterialApp(
+          theme: lowVisionTheme(),
+          home: SettingsScreen(
+            feedback: FeedbackService(),
+            language: AppLanguage.ko,
+            onLanguageChanged: (_) {},
+            torchEnabled: false,
+            onTorchChanged: (_) async {},
+            powerSaveMode: true,
+            onPowerSaveModeChanged: (_) {},
+            onSurfaceGuidanceChanged: (_) {},
+            onCautionGuidanceChanged: (_) {},
+            onCrosswalkGateChanged: (_) {},
+            onEventLogChanged: (_) {},
+            onShareEventLog: () async => null,
+            onScoreChanged: (_) {},
+            onUltraWideChanged: (_) {},
+            onFrameSaveChanged: (_) {},
+          )));
+      await t.pumpAndSettle();
+      final ko = AppStrings.of(AppLanguage.ko);
+      // 일반 항목은 보이고, 개발용 항목은 접혀 안 보인다.
+      expect(find.text(ko.settingsSurfaceGuidanceLabel), findsOneWidget);
+      expect(find.text(ko.settingsCautionGuidanceLabel), findsOneWidget);
+      for (final dev in [
+        ko.settingsDevLogLabel,
+        ko.settingsDevLogShare,
+        ko.settingsScoreLabel,
+        ko.settingsCrosswalkGateLabel,
+        ko.settingsUltraWideLabel,
+        ko.settingsFrameSaveLabel,
+      ]) {
+        expect(find.text(dev), findsNothing, reason: dev);
+      }
+      final header = find.text('개발자');
+      // 묶음은 손전등(일반 마지막 항목) 아래, 빌드 표시 위.
+      expect(t.getTopLeft(header).dy,
+          greaterThan(t.getTopLeft(find.text(ko.settingsTorchLabel)).dy));
+      expect(t.getTopLeft(header).dy,
+          lessThan(t.getTopLeft(find.text('${ko.settingsBuildLabel} dev')).dy));
+      expect(t.getSize(find.byType(ExpansionTile)).height,
+          greaterThanOrEqualTo(48));
+      expect(find.semantics.byLabel('개발자, 접힘'), findsOne);
+      await t.tap(header);
+      await t.pumpAndSettle();
+      expect(find.semantics.byLabel('개발자, 펼침'), findsOne);
+      expect(find.text(ko.settingsDevLogLabel), findsOneWidget);
+      expect(find.text(ko.settingsCrosswalkGateLabel), findsOneWidget);
+      expect(find.text(ko.settingsUltraWideLabel), findsOneWidget);
+      h.dispose();
     });
   });
 
